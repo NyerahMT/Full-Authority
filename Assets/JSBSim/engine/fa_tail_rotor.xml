@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<rotor name="fa-r01-tail-rotor">
+  <diameter unit="FT"> 6.5 </diameter>
+  <numblades> 4 </numblades>
+  <gearratio> 3.2 </gearratio>
+  <nominalrpm> 2050.0 </nominalrpm>
+  <chord unit="FT"> 0.42 </chord>
+  <liftcurveslope> 5.7 </liftcurveslope>
+  <flappingmoment unit="SLUG*FT2"> 1.0 </flappingmoment>
+  <twist> 0.0 </twist>
+  <massmoment> 0.30 </massmoment>
+  <tiplossfactor> 0.97 </tiplossfactor>
+  <inflowlag> 0.06 </inflowlag>
+  <hingeoffset unit="FT"> 0.02 </hingeoffset>
+  <ExternalRPM> 0 </ExternalRPM>
+  <controlmap> TAIL </controlmap>
+</rotor>
