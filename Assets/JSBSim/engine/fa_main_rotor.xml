@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<rotor name="fa-r01-main-rotor">
+  <diameter unit="FT"> 34.0 </diameter>
+  <numblades> 4 </numblades>
+  <gearratio> 16.5 </gearratio>
+  <nominalrpm> 395.0 </nominalrpm>
+  <chord unit="FT"> 1.55 </chord>
+  <liftcurveslope> 5.7 </liftcurveslope>
+  <flappingmoment unit="SLUG*FT2"> 620.0 </flappingmoment>
+  <twist> -0.13 </twist>
+  <massmoment> 46.0 </massmoment>
+  <tiplossfactor> 0.97 </tiplossfactor>
+  <polarmoment unit="SLUG*FT2"> 1450.0 </polarmoment>
+  <inflowlag> 0.08 </inflowlag>
+  <hingeoffset unit="FT"> 0.85 </hingeoffset>
+  <groundeffectexp> 0.08 </groundeffectexp>
+  <groundeffectshift unit="FT"> 6.0 </groundeffectshift>
+</rotor>
