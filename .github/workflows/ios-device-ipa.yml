@@ -82,6 +82,15 @@ jobs:
             DEVELOPMENT_TEAM='' \
             build
 
+      - name: Stage AH-1S calibration data
+        run: |
+          set -euo pipefail
+          APP_PATH="$PWD/build/device/Build/Products/Release-iphoneos/FullAuthority.app"
+          chmod +x scripts/stage-ah1-calibration.sh
+          scripts/stage-ah1-calibration.sh "$APP_PATH"
+          test -s "$APP_PATH/JSBSim/aircraft/ah1s/ah1s.xml"
+          test -s "$APP_PATH/JSBSim/systems/afcs.xml"
+
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
@@ -95,7 +104,7 @@ jobs:
           cd "$PWD/package"
           zip -qry "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" Payload
           test -s "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa"
-          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | head -80
+          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | grep -E 'Payload/FullAuthority.app/(JSBSim/aircraft/ah1s/ah1s.xml|JSBSim/systems/afcs.xml|FullAuthority)' | head -20
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4

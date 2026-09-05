@@ -9,33 +9,35 @@ struct ContentView: View {
             PrototypeSceneView(simulation: simulation)
                 .ignoresSafeArea()
 
-            VStack {
-                HStack(alignment: .top) {
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 10) {
                     statusPanel
-                    Spacer()
+                    Spacer(minLength: 8)
+                    rotorPanel
                     telemetryPanel
                 }
-                .padding(.top, 8)
-                .safeAreaPadding(.horizontal, 10)
+                .safeAreaPadding(.horizontal, 18)
+                .padding(.top, 6)
 
                 Spacer()
 
-                HStack(alignment: .bottom) {
+                HStack(alignment: .bottom, spacing: 18) {
                     CollectiveControl(value: simulation.controls.collective) { newValue in
                         var controls = simulation.controls
                         controls.collective = newValue
                         simulation.controls = controls
                     }
 
-                    Spacer()
+                    Spacer(minLength: 10)
 
                     PedalControl(value: simulation.controls.pedals) { newValue in
                         var controls = simulation.controls
                         controls.pedals = newValue
                         simulation.controls = controls
                     }
+                    .padding(.bottom, 4)
 
-                    Spacer()
+                    Spacer(minLength: 10)
 
                     CyclicControl(
                         roll: simulation.controls.cyclicRoll,
@@ -47,44 +49,60 @@ struct ContentView: View {
                         simulation.controls = controls
                     }
                 }
-                .safeAreaPadding(.horizontal, 18)
-                .padding(.bottom, 14)
+                .safeAreaPadding(.horizontal, 42)
+                .padding(.bottom, 10)
             }
         }
     }
 
     private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("FULL AUTHORITY")
-                .font(.system(size: 18, weight: .black, design: .rounded))
+                .font(.system(size: 17, weight: .black, design: .rounded))
 
-            Text("FLIGHT FOUNDATION 003 · FA-R01")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            Text("CALIBRATION 004 · AH-1S")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(.secondary)
 
             Text(backendLabel)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
+    }
+
+    private var rotorPanel: some View {
+        let nominalMainRotorRPM: Float = 324
+        let nrPercent = nominalMainRotorRPM > 0
+            ? simulation.state.mainRotorRPM / nominalMainRotorRPM * 100
+            : 0
+
+        return HStack(spacing: 12) {
+            telemetryItem("NR", String(format: "%.0f%%", nrPercent))
+            telemetryItem("RPM", String(format: "%.0f", simulation.state.mainRotorRPM))
+            telemetryItem("SAS", "ON")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
     }
 
     private var telemetryPanel: some View {
         let knots = simulation.state.airspeedMetersPerSecond * 1.94384
         let verticalSpeed = simulation.state.verticalSpeedMetersPerSecond
 
-        return HStack(spacing: 13) {
+        return HStack(spacing: 12) {
             telemetryItem("ALT", String(format: "%.0f m", simulation.state.altitudeMeters))
             telemetryItem("IAS", String(format: "%.0f kt", knots))
             telemetryItem("V/S", String(format: "%+.1f", verticalSpeed))
             telemetryItem("HDG", String(format: "%03.0f°", simulation.state.headingDegrees))
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
     }
 
     private func telemetryItem(_ label: String, _ value: String) -> some View {
@@ -115,29 +133,49 @@ private struct CollectiveControl: View {
     let onChange: (Float) -> Void
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text("COL")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+        VStack(spacing: 7) {
+            HStack(spacing: 5) {
+                Text("COLLECTIVE")
+                Text(String(format: "%02.0f%%", value * 100))
+                    .foregroundStyle(.white)
+            }
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(.secondary)
 
             GeometryReader { geometry in
                 let height = geometry.size.height
-                let travel = max(1, height - 28)
-                let knobOffset = (0.5 - CGFloat(value)) * travel
+                let knobDiameter: CGFloat = 38
+                let travel = max(1, height - knobDiameter)
+                let centerY = (1 - CGFloat(value)) * travel + knobDiameter * 0.5
 
-                ZStack {
-                    Capsule()
-                        .fill(.black.opacity(0.32))
-                        .frame(width: 16)
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 11)
+                        .fill(.black.opacity(0.48))
+                        .frame(width: 26)
 
-                    Capsule()
-                        .fill(.white.opacity(0.18))
-                        .frame(width: 4, height: travel)
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.white.opacity(0.25))
+                        .frame(width: 10, height: max(4, CGFloat(value) * travel))
+                        .padding(.bottom, knobDiameter * 0.5)
+
+                    VStack {
+                        Text("100")
+                        Spacer()
+                        Text("50")
+                        Spacer()
+                        Text("0")
+                    }
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.52))
+                    .frame(maxHeight: .infinity)
+                    .offset(x: 28)
 
                     Circle()
-                        .fill(.white.opacity(0.92))
-                        .frame(width: 28, height: 28)
+                        .fill(.white)
+                        .overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 2))
+                        .frame(width: knobDiameter, height: knobDiameter)
+                        .position(x: geometry.size.width * 0.5, y: centerY)
                         .shadow(radius: 3)
-                        .offset(y: knobOffset)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
@@ -149,10 +187,11 @@ private struct CollectiveControl: View {
                         }
                 )
             }
-            .frame(width: 48, height: 155)
+            .frame(width: 78, height: 188)
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -161,44 +200,65 @@ private struct PedalControl: View {
     let onChange: (Float) -> Void
 
     var body: some View {
-        VStack(spacing: 5) {
-            Text("PEDALS")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+        VStack(spacing: 6) {
+            HStack {
+                Text("L PEDAL")
+                Spacer()
+                Text(String(format: "%+.0f%%", value * 100))
+                Spacer()
+                Text("R PEDAL")
+            }
+            .font(.system(size: 8, weight: .bold, design: .monospaced))
+            .foregroundStyle(.secondary)
 
             GeometryReader { geometry in
                 let width = geometry.size.width
-                let travel = max(1, width - 28)
-                let knobOffset = CGFloat(value) * travel * 0.5
+                let usable = max(1, width - 46)
+                let knobX = width * 0.5 + CGFloat(value) * usable * 0.5
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.32))
-                        .frame(height: 16)
+                        .fill(.black.opacity(0.52))
+                        .frame(height: 30)
+
                     Rectangle()
-                        .fill(.white.opacity(0.25))
-                        .frame(width: 1, height: 24)
+                        .fill(.white.opacity(0.32))
+                        .frame(width: 2, height: 34)
+
+                    HStack {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(.white.opacity(0.18))
+                            .frame(width: 64, height: 24)
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(.white.opacity(0.18))
+                            .frame(width: 64, height: 24)
+                    }
+                    .padding(.horizontal, 5)
+
                     Circle()
-                        .fill(.white.opacity(0.92))
-                        .frame(width: 28, height: 28)
+                        .fill(.white)
+                        .overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 2))
+                        .frame(width: 34, height: 34)
+                        .position(x: knobX, y: geometry.size.height * 0.5)
                         .shadow(radius: 3)
-                        .offset(x: knobOffset)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { gesture in
-                            let raw = Float((gesture.location.x / max(width, 1)) * 2 - 1)
-                            onChange(min(max(raw, -1), 1))
+                            let centered = Float((gesture.location.x - width * 0.5) / max(usable * 0.5, 1))
+                            let clamped = min(max(centered, -1), 1)
+                            onChange(abs(clamped) < 0.045 ? 0 : clamped)
                         }
                         .onEnded { _ in onChange(0) }
                 )
             }
-            .frame(width: 165, height: 34)
+            .frame(width: 230, height: 42)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -208,30 +268,42 @@ private struct CyclicControl: View {
     let onChange: (Float, Float) -> Void
 
     var body: some View {
-        VStack(spacing: 5) {
-            Text("CYCLIC")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+        VStack(spacing: 7) {
+            HStack {
+                Text("CYCLIC")
+                Spacer()
+                Text(String(format: "X%+.0f Y%+.0f", roll * 100, pitch * 100))
+            }
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(.secondary)
 
             GeometryReader { geometry in
                 let side = min(geometry.size.width, geometry.size.height)
-                let radius = max(1, (side - 34) * 0.5)
+                let knobDiameter: CGFloat = 42
+                let radius = max(1, (side - knobDiameter) * 0.5)
 
                 ZStack {
                     Circle()
-                        .fill(.black.opacity(0.30))
+                        .fill(.black.opacity(0.52))
                     Circle()
-                        .stroke(.white.opacity(0.20), lineWidth: 1)
-                        .padding(side * 0.24)
+                        .stroke(.white.opacity(0.22), lineWidth: 1)
+                        .padding(side * 0.23)
+                    Circle()
+                        .stroke(.white.opacity(0.10), lineWidth: 1)
+                        .padding(side * 0.40)
                     Rectangle()
-                        .fill(.white.opacity(0.13))
+                        .fill(.white.opacity(0.18))
                         .frame(width: 1)
+                        .padding(.vertical, 10)
                     Rectangle()
-                        .fill(.white.opacity(0.13))
+                        .fill(.white.opacity(0.18))
                         .frame(height: 1)
+                        .padding(.horizontal, 10)
                     Circle()
-                        .fill(.white.opacity(0.92))
-                        .frame(width: 34, height: 34)
-                        .shadow(radius: 3)
+                        .fill(.white)
+                        .overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 2))
+                        .frame(width: knobDiameter, height: knobDiameter)
+                        .shadow(radius: 4)
                         .offset(
                             x: CGFloat(roll) * radius,
                             y: -CGFloat(pitch) * radius
@@ -252,18 +324,19 @@ private struct CyclicControl: View {
                                 dy *= scale
                             }
 
-                            onChange(
-                                Float(dx / radius),
-                                Float(-dy / radius)
-                            )
+                            var normalizedRoll = Float(dx / radius)
+                            var normalizedPitch = Float(-dy / radius)
+                            if abs(normalizedRoll) < 0.04 { normalizedRoll = 0 }
+                            if abs(normalizedPitch) < 0.04 { normalizedPitch = 0 }
+                            onChange(normalizedRoll, normalizedPitch)
                         }
                         .onEnded { _ in onChange(0, 0) }
                 )
             }
-            .frame(width: 132, height: 132)
+            .frame(width: 166, height: 166)
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .padding(11)
+        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 22))
     }
 }
 

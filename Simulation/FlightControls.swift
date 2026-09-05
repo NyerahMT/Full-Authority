@@ -7,8 +7,9 @@ struct FlightControls: Equatable, Sendable {
     /// Longitudinal cyclic. -1 = full aft, +1 = full forward.
     var cyclicPitch: Float = 0
 
-    /// Collective. 0 = minimum, 1 = maximum.
-    var collective: Float = 0
+    /// Collective. 0 = minimum, 1 = maximum. Start at a low powered setting
+    /// so the calibration aircraft can spool without immediately trying to lift.
+    var collective: Float = 0.35
 
     /// Anti-torque pedals. -1 = left, +1 = right.
     var pedals: Float = 0
