@@ -1,0 +1,50 @@
+name: AH-1S Calibration Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'Simulation/**'
+      - 'scripts/stage-ah1-calibration.sh'
+      - '.github/workflows/ah1-calibration-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Load and run upstream AH-1S
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build native JSBSim CLI
+        run: |
+          set -euo pipefail
+          cmake \
+            -S ThirdParty/jsbsim \
+            -B Build/JSBSim/host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_SKIP_INSTALL_RULES=ON
+          cmake --build Build/JSBSim/host --target JSBSim -j3
+
+      - name: Run AH-1S calibration model
+        run: |
+          set -euo pipefail
+          Build/JSBSim/host/src/JSBSim \
+            --root="$PWD/ThirdParty/jsbsim" \
+            --aircraft=ah1s \
+            --initfile="$PWD/ThirdParty/jsbsim/aircraft/ah1s/reset00.xml" \
+            --simulation-rate=120 \
+            --end=1.5 \
+            --property=fcs/rpm-governor-active-norm=1.0 \
+            --property=fcs/collective-cmd-norm=0.35 \
+            --property=fcs/elevator-cmd-norm=0.0 \
+            --property=fcs/aileron-cmd-norm=0.0 \
+            --property=fcs/rudder-cmd-norm=0.0 \
+            --nohighlight
