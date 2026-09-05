@@ -17,7 +17,7 @@ struct PrototypeSceneView: View {
                 content.add(aircraft)
 
                 let ground = ModelEntity(
-                    mesh: .generateBox(size: [160, 0.08, 160]),
+                    mesh: .generateBox(size: [420, 0.08, 420]),
                     materials: [SimpleMaterial(
                         color: UIColor(red: 0.18, green: 0.21, blue: 0.18, alpha: 1),
                         isMetallic: false
@@ -31,10 +31,10 @@ struct PrototypeSceneView: View {
                 camera.name = "FA.camera"
                 camera.components.set(PerspectiveCameraComponent(
                     near: 0.05,
-                    far: 4_000,
-                    fieldOfViewInDegrees: 58
+                    far: 5_000,
+                    fieldOfViewInDegrees: 60
                 ))
-                camera.look(at: [0, 0.8, 1.5], from: [2.2, 2.6, -6.5], relativeTo: nil)
+                camera.look(at: [0, 1.2, 1.5], from: [0.8, 3.0, -8.5], relativeTo: nil)
                 content.add(camera)
 
                 let sun = Entity()
@@ -53,18 +53,16 @@ struct PrototypeSceneView: View {
                 aircraft.position = simulation.state.positionMeters
                 aircraft.orientation = simulation.state.orientation
 
-                let seconds = Float(timeline.date.timeIntervalSinceReferenceDate)
-
                 if let mainRotor = aircraft.findEntity(named: PrototypeAircraftFactory.mainRotorName) {
                     mainRotor.orientation = simd_quatf(
-                        angle: seconds * 32,
+                        angle: simulation.state.mainRotorPhaseRadians,
                         axis: SIMD3<Float>(0, 1, 0)
                     )
                 }
 
                 if let tailRotor = aircraft.findEntity(named: PrototypeAircraftFactory.tailRotorName) {
                     tailRotor.orientation = simd_quatf(
-                        angle: seconds * 115,
+                        angle: simulation.state.tailRotorPhaseRadians,
                         axis: SIMD3<Float>(1, 0, 0)
                     )
                 }
@@ -105,18 +103,19 @@ struct PrototypeSceneView: View {
         let worldUp = SIMD3<Float>(0, 1, 0)
         let right = simd_normalize(simd_cross(worldUp, horizontalForward))
 
+        let speed = simd_length(simulation.state.velocityMetersPerSecond)
+        let speedPullback = min(speed * 0.035, 2.5)
+
         let desiredPosition = aircraftPosition
-            - horizontalForward * 6.6
-            + right * 1.6
-            + worldUp * 2.7
+            - horizontalForward * (8.2 + speedPullback)
+            + right * 1.05
+            + worldUp * 3.1
 
         let lookTarget = aircraftPosition
-            + horizontalForward * 2.2
-            + worldUp * 0.45
+            + horizontalForward * (2.8 + min(speed * 0.025, 2.0))
+            + worldUp * 0.55
 
-        // Follow the aircraft's heading but filter out the ugly twitchiness that
-        // would come from rigidly inheriting every rotorcraft attitude change.
-        let smoothing: Float = 0.13
+        let smoothing: Float = speed > 18 ? 0.09 : 0.14
         let smoothedPosition = camera.position + (desiredPosition - camera.position) * smoothing
         camera.look(at: lookTarget, from: smoothedPosition, relativeTo: nil)
     }
