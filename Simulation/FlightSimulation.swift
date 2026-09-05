@@ -33,18 +33,15 @@ final class FlightSimulation: ObservableObject {
     }
 
     func loadModel(named modelName: String) -> Bool {
-        var error: NSError?
-        guard bridge.loadModel(modelName, error: &error) else {
-            backendStatus = .failed(message: error?.localizedDescription ?? "Unknown JSBSim load error")
-            return false
-        }
+        do {
+            try bridge.loadModel(modelName)
 
-        // Start from a deliberately neutral command state. Aircraft-specific
-        // initialization belongs in the aircraft package, not in the renderer.
-        applyControls()
-
-        guard bridge.runInitialConditions(&error) else {
-            backendStatus = .failed(message: error?.localizedDescription ?? "JSBSim initial-condition error")
+            // Start from a deliberately neutral command state. Aircraft-specific
+            // initialization belongs in the aircraft package, not in the renderer.
+            applyControls()
+            try bridge.runInitialConditions()
+        } catch {
+            backendStatus = .failed(message: error.localizedDescription)
             return false
         }
 
@@ -68,9 +65,10 @@ final class FlightSimulation: ObservableObject {
             controls.clampToValidRange()
             applyControls()
 
-            var error: NSError?
-            guard bridge.step(&error) else {
-                backendStatus = .failed(message: error?.localizedDescription ?? "JSBSim stopped")
+            do {
+                try bridge.step()
+            } catch {
+                backendStatus = .failed(message: error.localizedDescription)
                 accumulator = 0
                 return
             }
