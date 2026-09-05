@@ -16,5 +16,10 @@ struct AircraftState: Equatable, Sendable {
     var verticalSpeedMetersPerSecond: Float = 0
     var headingDegrees: Float = 0
 
-    static let parked = AircraftState(positionMeters: SIMD3<Float>(0, 1.1, 0))
+    var mainRotorRPM: Float = 0
+    var tailRotorRPM: Float = 0
+    var mainRotorPhaseRadians: Float = 0
+    var tailRotorPhaseRadians: Float = 0
+
+    static let parked = AircraftState(positionMeters: SIMD3<Float>(0, 1.9, 0))
 }
