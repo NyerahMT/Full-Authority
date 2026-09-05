@@ -69,7 +69,9 @@ struct PrototypeSceneView: View {
                     )
                 }
 
-                updateFollowCamera(in: content)
+                if let camera = content.entities.first(where: { $0.name == "FA.camera" }) {
+                    updateFollowCamera(camera)
+                }
             }
             .onChange(of: timeline.date) { oldDate, newDate in
                 simulation.advance(realDelta: newDate.timeIntervalSince(oldDate))
@@ -88,11 +90,7 @@ struct PrototypeSceneView: View {
     }
 
     @MainActor
-    private func updateFollowCamera(in content: RealityViewCameraContent) {
-        guard let camera = content.entities.first(where: { $0.name == "FA.camera" }) else {
-            return
-        }
-
+    private func updateFollowCamera(_ camera: Entity) {
         let aircraftPosition = simulation.state.positionMeters
         let fullForward = simd_act(simulation.state.orientation, SIMD3<Float>(0, 0, 1))
         let horizontalForwardVector = SIMD3<Float>(fullForward.x, 0, fullForward.z)
@@ -107,9 +105,6 @@ struct PrototypeSceneView: View {
         let worldUp = SIMD3<Float>(0, 1, 0)
         let right = simd_normalize(simd_cross(worldUp, horizontalForward))
 
-        // A game-style chase camera: mostly behind the aircraft, slightly to the
-        // right and above. It follows heading, but deliberately does not inherit
-        // every roll/pitch twitch from the flight model.
         let desiredPosition = aircraftPosition
             - horizontalForward * 6.6
             + right * 1.6
@@ -119,7 +114,8 @@ struct PrototypeSceneView: View {
             + horizontalForward * 2.2
             + worldUp * 0.45
 
-        // Ease the camera instead of rigidly bolting it to the aircraft.
+        // Follow the aircraft's heading but filter out the ugly twitchiness that
+        // would come from rigidly inheriting every rotorcraft attitude change.
         let smoothing: Float = 0.13
         let smoothedPosition = camera.position + (desiredPosition - camera.position) * smoothing
         camera.look(at: lookTarget, from: smoothedPosition, relativeTo: nil)
