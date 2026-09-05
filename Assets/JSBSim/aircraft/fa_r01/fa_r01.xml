@@ -114,7 +114,15 @@
     </engine>
   </propulsion>
 
+  <!-- Rotor thrust/moments come from FGRotor. Fuselage aerodynamics will be
+       added after first-flight tuning; this empty block keeps the model schema complete. -->
+  <aerodynamics>
+  </aerodynamics>
+
   <system name="FA-R01 rotor controls">
+    <!-- Collective is rotorcraft-specific, so declare it explicitly. The
+         conventional aileron/elevator/rudder/throttle commands come from FGFCS. -->
+    <property value="0.0">fcs/collective-cmd-norm</property>
     <property value="0.085">fcs/fa/collective-bias-rad</property>
     <property value="0.135">fcs/fa/pedal-bias-rad</property>
 
