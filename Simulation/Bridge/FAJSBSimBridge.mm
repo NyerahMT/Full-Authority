@@ -1,5 +1,12 @@
 #import "FAJSBSimBridge.h"
 
+// Xcode's Debug configuration defines DEBUG=1, while JSBSim uses DEBUG as an
+// enum member (LogLevel::DEBUG). Keep that app-level macro out of this C++
+// translation unit before including JSBSim headers.
+#ifdef DEBUG
+#undef DEBUG
+#endif
+
 #include <FGFDMExec.h>
 #include <simgear/misc/sg_path.hxx>
 
