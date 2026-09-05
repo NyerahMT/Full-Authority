@@ -1,0 +1,47 @@
+name: FA-R01 Runtime Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'Assets/JSBSim/**'
+      - '.github/workflows/fa-r01-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Load and run FA-R01 in JSBSim
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build native JSBSim CLI
+        run: |
+          set -euo pipefail
+          cmake \
+            -S ThirdParty/jsbsim \
+            -B Build/JSBSim/host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_SKIP_INSTALL_RULES=ON
+          cmake --build Build/JSBSim/host --target JSBSim -j3
+          test -x Build/JSBSim/host/src/JSBSim
+
+      - name: Load and run FA-R01
+        run: |
+          set -euo pipefail
+          Build/JSBSim/host/src/JSBSim \
+            --root="$PWD/Assets/JSBSim" \
+            --aircraft=fa_r01 \
+            --initfile="$PWD/Assets/JSBSim/aircraft/fa_r01/reset00.xml" \
+            --simulation-rate=120 \
+            --end=0.25 \
+            --property=fcs/throttle-cmd-norm=1.0 \
+            --property=fcs/collective-cmd-norm=0.30 \
+            --nohighlight
