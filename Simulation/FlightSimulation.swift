@@ -15,7 +15,6 @@ final class FlightSimulation: ObservableObject {
     @Published private(set) var backendStatus: BackendStatus
     @Published private(set) var simulationTime: TimeInterval = 0
 
-    /// JSBSim's recommended real-time stepping rate for this project.
     let fixedStep: TimeInterval = 1.0 / 120.0
 
     private let bridge: FAJSBSimBridge
@@ -30,14 +29,14 @@ final class FlightSimulation: ObservableObject {
         bridge = FAJSBSimBridge(rootPath: resourceRoot)
         bridge.setDeltaTime(fixedStep)
         backendStatus = .bridgeReady(version: bridge.version)
+
+        _ = loadModel(named: "fa_r01")
     }
 
     func loadModel(named modelName: String) -> Bool {
         do {
             try bridge.loadModel(modelName)
-
-            // Start from a deliberately neutral command state. Aircraft-specific
-            // initialization belongs in the aircraft package, not in the renderer.
+            configureInitialConditions()
             applyControls()
             try bridge.runInitialConditions()
         } catch {
@@ -54,11 +53,11 @@ final class FlightSimulation: ObservableObject {
         return true
     }
 
-    /// Advances the simulation using a fixed 120 Hz step regardless of display FPS.
+    /// Advances JSBSim at a fixed 120 Hz regardless of rendering frame rate.
     func advance(realDelta: TimeInterval) {
         guard bridge.isModelLoaded else { return }
 
-        // A breakpoint/background resume should not turn into hundreds of catch-up steps.
+        // Prevent a background/resume or debugger pause from causing a huge catch-up burst.
         accumulator += min(max(realDelta, 0), 0.25)
 
         while accumulator >= fixedStep {
@@ -73,31 +72,47 @@ final class FlightSimulation: ObservableObject {
                 return
             }
 
-            integrateLocalRenderPosition(deltaTime: fixedStep)
             readStateFromJSBSim()
+            integrateLocalHorizontalPosition(deltaTime: fixedStep)
             simulationTime += fixedStep
             accumulator -= fixedStep
         }
     }
 
+    private func configureInitialConditions() {
+        // Start FA-R01 sitting just above the local ground plane at rest.
+        bridge.setProperty("ic/terrain-elevation-ft", value: 0)
+        bridge.setProperty("ic/h-agl-ft", value: 3.6)
+        bridge.setProperty("ic/vg-fps", value: 0)
+        bridge.setProperty("ic/phi-deg", value: 0)
+        bridge.setProperty("ic/theta-deg", value: 0)
+        bridge.setProperty("ic/psi-true-deg", value: 0)
+    }
+
     private func applyControls() {
-        // These are the standard JSBSim pilot-command properties and are also
-        // the interface used by JSBSim's rotorcraft control system.
+        // Full Authority owns pilot input. The aircraft XML maps these normalized
+        // commands into actual rotor collective/cyclic/pedal angles.
         bridge.setProperty("fcs/aileron-cmd-norm", value: Double(controls.cyclicRoll))
         bridge.setProperty("fcs/elevator-cmd-norm", value: Double(controls.cyclicPitch))
         bridge.setProperty("fcs/collective-cmd-norm", value: Double(controls.collective))
         bridge.setProperty("fcs/rudder-cmd-norm", value: Double(controls.pedals))
+
+        // FA-R01 uses an electric motor as a clean stand-in for the turbine/governor
+        // while we tune the rotor model. Rotor power is therefore always available.
+        bridge.setProperty("fcs/throttle-cmd-norm", value: 1)
+        bridge.setProperty("fcs/throttle-cmd-norm[0]", value: 1)
+        bridge.setProperty("fcs/throttle-cmd-norm[1]", value: 1)
     }
 
     private func readStateFromJSBSim() {
         let feetToMeters: Float = 0.3048
+        let radiansToDegrees: Float = 180 / .pi
 
         let roll = Float(bridge.value(forProperty: "attitude/phi-rad"))
         let pitch = Float(bridge.value(forProperty: "attitude/theta-rad"))
         let yaw = Float(bridge.value(forProperty: "attitude/psi-rad"))
 
-        // JSBSim uses aerospace/NED conventions; Full Authority's render world
-        // is Y-up. Keep the conversion here so sign swaps never leak into UI code.
+        // JSBSim uses aerospace/NED conventions; Full Authority renders Y-up.
         let yawQ = simd_quatf(angle: -yaw, axis: SIMD3<Float>(0, 1, 0))
         let pitchQ = simd_quatf(angle: pitch, axis: SIMD3<Float>(1, 0, 0))
         let rollQ = simd_quatf(angle: -roll, axis: SIMD3<Float>(0, 0, 1))
@@ -114,12 +129,20 @@ final class FlightSimulation: ObservableObject {
             Float(bridge.value(forProperty: "velocities/q-rad_sec"))
         )
 
-        state.altitudeMeters = Float(bridge.value(forProperty: "position/h-agl-ft")) * feetToMeters
+        state.altitudeMeters = max(0, Float(bridge.value(forProperty: "position/h-agl-ft")) * feetToMeters)
+        state.positionMeters.y = max(0.55, state.altitudeMeters)
         state.airspeedMetersPerSecond = Float(bridge.value(forProperty: "velocities/vtrue-fps")) * feetToMeters
         state.verticalSpeedMetersPerSecond = -down
+
+        let rawHeading = yaw * radiansToDegrees
+        state.headingDegrees = rawHeading.truncatingRemainder(dividingBy: 360) >= 0
+            ? rawHeading.truncatingRemainder(dividingBy: 360)
+            : rawHeading.truncatingRemainder(dividingBy: 360) + 360
     }
 
-    private func integrateLocalRenderPosition(deltaTime: TimeInterval) {
-        state.positionMeters += state.velocityMetersPerSecond * Float(deltaTime)
+    private func integrateLocalHorizontalPosition(deltaTime: TimeInterval) {
+        let dt = Float(deltaTime)
+        state.positionMeters.x += state.velocityMetersPerSecond.x * dt
+        state.positionMeters.z += state.velocityMetersPerSecond.z * dt
     }
 }

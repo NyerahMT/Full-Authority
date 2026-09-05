@@ -1,0 +1,171 @@
+<?xml version="1.0"?>
+<fdm_config name="FA-R01" release="ALPHA" version="2.0">
+  <fileheader>
+    <author>NyerahWorks</author>
+    <filecreationdate>2026-09-05</filecreationdate>
+    <version>0.1</version>
+    <description>Full Authority generic rotorcraft flight-test model.</description>
+  </fileheader>
+
+  <metrics>
+    <wingarea unit="FT2"> 1.0 </wingarea>
+    <wingspan unit="FT"> 1.0 </wingspan>
+    <chord unit="FT"> 1.0 </chord>
+    <htailarea unit="FT2"> 1.0 </htailarea>
+    <htailarm unit="FT"> 14.0 </htailarm>
+    <vtailarea unit="FT2"> 1.0 </vtailarea>
+    <vtailarm unit="FT"> 14.0 </vtailarm>
+
+    <location name="AERORP" unit="IN">
+      <x> 120.0 </x>
+      <y> 0.0 </y>
+      <z> 46.0 </z>
+    </location>
+    <location name="EYEPOINT" unit="IN">
+      <x> 82.0 </x>
+      <y> 0.0 </y>
+      <z> 62.0 </z>
+    </location>
+    <location name="VRP" unit="IN">
+      <x> 0.0 </x>
+      <y> 0.0 </y>
+      <z> 0.0 </z>
+    </location>
+  </metrics>
+
+  <mass_balance>
+    <ixx unit="SLUG*FT2"> 1250.0 </ixx>
+    <iyy unit="SLUG*FT2"> 4100.0 </iyy>
+    <izz unit="SLUG*FT2"> 3600.0 </izz>
+    <ixz unit="SLUG*FT2"> 0.0 </ixz>
+    <emptywt unit="LBS"> 4700.0 </emptywt>
+    <location name="CG" unit="IN">
+      <x> 120.0 </x>
+      <y> 0.0 </y>
+      <z> 46.0 </z>
+    </location>
+  </mass_balance>
+
+  <ground_reactions>
+    <contact type="BOGEY" name="skid-front-left">
+      <location unit="IN"><x>78.0</x><y>-30.0</y><z>4.0</z></location>
+      <static_friction>0.85</static_friction>
+      <dynamic_friction>0.65</dynamic_friction>
+      <rolling_friction>0.65</rolling_friction>
+      <spring_coeff unit="LBS/FT">5200.0</spring_coeff>
+      <damping_coeff unit="LBS/FT/SEC">1000.0</damping_coeff>
+      <brake_group>NONE</brake_group>
+      <max_steer>0</max_steer>
+    </contact>
+    <contact type="BOGEY" name="skid-front-right">
+      <location unit="IN"><x>78.0</x><y>30.0</y><z>4.0</z></location>
+      <static_friction>0.85</static_friction>
+      <dynamic_friction>0.65</dynamic_friction>
+      <rolling_friction>0.65</rolling_friction>
+      <spring_coeff unit="LBS/FT">5200.0</spring_coeff>
+      <damping_coeff unit="LBS/FT/SEC">1000.0</damping_coeff>
+      <brake_group>NONE</brake_group>
+      <max_steer>0</max_steer>
+    </contact>
+    <contact type="BOGEY" name="skid-rear-left">
+      <location unit="IN"><x>164.0</x><y>-30.0</y><z>4.0</z></location>
+      <static_friction>0.85</static_friction>
+      <dynamic_friction>0.65</dynamic_friction>
+      <rolling_friction>0.65</rolling_friction>
+      <spring_coeff unit="LBS/FT">5200.0</spring_coeff>
+      <damping_coeff unit="LBS/FT/SEC">1000.0</damping_coeff>
+      <brake_group>NONE</brake_group>
+      <max_steer>0</max_steer>
+    </contact>
+    <contact type="BOGEY" name="skid-rear-right">
+      <location unit="IN"><x>164.0</x><y>30.0</y><z>4.0</z></location>
+      <static_friction>0.85</static_friction>
+      <dynamic_friction>0.65</dynamic_friction>
+      <rolling_friction>0.65</rolling_friction>
+      <spring_coeff unit="LBS/FT">5200.0</spring_coeff>
+      <damping_coeff unit="LBS/FT/SEC">1000.0</damping_coeff>
+      <brake_group>NONE</brake_group>
+      <max_steer>0</max_steer>
+    </contact>
+  </ground_reactions>
+
+  <propulsion>
+    <engine file="fa_main_motor">
+      <thruster file="fa_main_rotor">
+        <location unit="IN">
+          <x>120.0</x><y>0.0</y><z>94.0</z>
+        </location>
+        <orient unit="DEG">
+          <roll>0.0</roll><pitch>90.0</pitch><yaw>0.0</yaw>
+        </orient>
+        <sense>1</sense>
+      </thruster>
+    </engine>
+    <engine file="fa_tail_motor">
+      <thruster file="fa_tail_rotor">
+        <location unit="IN">
+          <x>300.0</x><y>0.0</y><z>70.0</z>
+        </location>
+        <orient unit="DEG">
+          <roll>0.0</roll><pitch>0.0</pitch><yaw>90.0</yaw>
+        </orient>
+        <sense>1</sense>
+      </thruster>
+    </engine>
+  </propulsion>
+
+  <!-- Rotor thrust/moments come from FGRotor. Fuselage aerodynamics will be
+       added after first-flight tuning; this empty block keeps the model schema complete. -->
+  <aerodynamics>
+  </aerodynamics>
+
+  <system name="FA-R01 rotor controls">
+    <!-- Collective is rotorcraft-specific, so declare it explicitly. The
+         conventional aileron/elevator/rudder/throttle commands come from FGFCS. -->
+    <property value="0.0">fcs/collective-cmd-norm</property>
+    <property value="0.085">fcs/fa/collective-bias-rad</property>
+    <property value="0.135">fcs/fa/pedal-bias-rad</property>
+
+    <channel name="collective">
+      <pure_gain name="fcs/fa/collective-gain">
+        <input>fcs/collective-cmd-norm</input>
+        <gain>0.26</gain>
+      </pure_gain>
+      <summer name="fcs/fa/collective-total">
+        <input>fcs/fa/collective-gain</input>
+        <input>fcs/fa/collective-bias-rad</input>
+        <clipto><min>0.0</min><max>0.40</max></clipto>
+        <output>propulsion/engine/collective-ctrl-rad</output>
+      </summer>
+    </channel>
+
+    <channel name="longitudinal cyclic">
+      <pure_gain name="fcs/fa/longitudinal">
+        <input>fcs/elevator-cmd-norm</input>
+        <gain>0.105</gain>
+        <output>propulsion/engine/longitudinal-ctrl-rad</output>
+      </pure_gain>
+    </channel>
+
+    <channel name="lateral cyclic">
+      <pure_gain name="fcs/fa/lateral">
+        <input>fcs/aileron-cmd-norm</input>
+        <gain>0.105</gain>
+        <output>propulsion/engine/lateral-ctrl-rad</output>
+      </pure_gain>
+    </channel>
+
+    <channel name="anti-torque pedals">
+      <pure_gain name="fcs/fa/pedal-gain">
+        <input>fcs/rudder-cmd-norm</input>
+        <gain>0.14</gain>
+      </pure_gain>
+      <summer name="fcs/fa/pedal-total">
+        <input>fcs/fa/pedal-gain</input>
+        <input>fcs/fa/pedal-bias-rad</input>
+        <clipto><min>0.0</min><max>0.32</max></clipto>
+        <output>propulsion/engine[1]/antitorque-ctrl-rad</output>
+      </summer>
+    </channel>
+  </system>
+</fdm_config>

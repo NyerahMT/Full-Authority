@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<electric_engine name="fa-r01-tail-motor">
+  <power unit="HP"> 1.0 </power>
+</electric_engine>

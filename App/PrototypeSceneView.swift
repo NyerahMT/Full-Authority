@@ -1,6 +1,7 @@
 import RealityKit
 import SwiftUI
 import UIKit
+import simd
 
 struct PrototypeSceneView: View {
     @ObservedObject var simulation: FlightSimulation
@@ -16,7 +17,7 @@ struct PrototypeSceneView: View {
                 content.add(aircraft)
 
                 let ground = ModelEntity(
-                    mesh: .generateBox(size: [40, 0.08, 40]),
+                    mesh: .generateBox(size: [160, 0.08, 160]),
                     materials: [SimpleMaterial(
                         color: UIColor(red: 0.18, green: 0.21, blue: 0.18, alpha: 1),
                         isMetallic: false
@@ -30,10 +31,10 @@ struct PrototypeSceneView: View {
                 camera.name = "FA.camera"
                 camera.components.set(PerspectiveCameraComponent(
                     near: 0.05,
-                    far: 2_000,
-                    fieldOfViewInDegrees: 55
+                    far: 4_000,
+                    fieldOfViewInDegrees: 58
                 ))
-                camera.look(at: [0, 0.65, 0], from: [5.2, 3.0, 6.8], relativeTo: nil)
+                camera.look(at: [0, 0.8, 1.5], from: [2.2, 2.6, -6.5], relativeTo: nil)
                 content.add(camera)
 
                 let sun = Entity()
@@ -69,9 +70,7 @@ struct PrototypeSceneView: View {
                 }
 
                 if let camera = content.entities.first(where: { $0.name == "FA.camera" }) {
-                    let target = simulation.state.positionMeters + SIMD3<Float>(0, 0.25, 0)
-                    let cameraPosition = simulation.state.positionMeters + SIMD3<Float>(5.2, 3.0, 6.8)
-                    camera.look(at: target, from: cameraPosition, relativeTo: nil)
+                    updateFollowCamera(camera)
                 }
             }
             .onChange(of: timeline.date) { oldDate, newDate in
@@ -88,5 +87,37 @@ struct PrototypeSceneView: View {
                 endPoint: .bottom
             )
         )
+    }
+
+    @MainActor
+    private func updateFollowCamera(_ camera: Entity) {
+        let aircraftPosition = simulation.state.positionMeters
+        let fullForward = simd_act(simulation.state.orientation, SIMD3<Float>(0, 0, 1))
+        let horizontalForwardVector = SIMD3<Float>(fullForward.x, 0, fullForward.z)
+
+        let horizontalForward: SIMD3<Float>
+        if simd_length_squared(horizontalForwardVector) > 0.0001 {
+            horizontalForward = simd_normalize(horizontalForwardVector)
+        } else {
+            horizontalForward = SIMD3<Float>(0, 0, 1)
+        }
+
+        let worldUp = SIMD3<Float>(0, 1, 0)
+        let right = simd_normalize(simd_cross(worldUp, horizontalForward))
+
+        let desiredPosition = aircraftPosition
+            - horizontalForward * 6.6
+            + right * 1.6
+            + worldUp * 2.7
+
+        let lookTarget = aircraftPosition
+            + horizontalForward * 2.2
+            + worldUp * 0.45
+
+        // Follow the aircraft's heading but filter out the ugly twitchiness that
+        // would come from rigidly inheriting every rotorcraft attitude change.
+        let smoothing: Float = 0.13
+        let smoothedPosition = camera.position + (desiredPosition - camera.position) * smoothing
+        camera.look(at: lookTarget, from: smoothedPosition, relativeTo: nil)
     }
 }
