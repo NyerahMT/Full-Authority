@@ -75,6 +75,8 @@ jobs:
             -target FullAuthority \
             -configuration Debug \
             -sdk iphonesimulator \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             SYMROOT="$PWD/build" \
