@@ -1,0 +1,81 @@
+name: iOS Simulator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'App/**'
+      - 'Simulation/**'
+      - 'Aircraft/**'
+      - 'World/**'
+      - 'Assets/**'
+      - 'FullAuthority.xcodeproj/**'
+      - '.github/workflows/ios-simulator.yml'
+  pull_request:
+    paths:
+      - 'App/**'
+      - 'Simulation/**'
+      - 'Aircraft/**'
+      - 'World/**'
+      - 'Assets/**'
+      - 'FullAuthority.xcodeproj/**'
+      - '.github/workflows/ios-simulator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-authority-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  simulator:
+    name: Build iOS Simulator
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+
+      - name: Show Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          xcodebuild -project FullAuthority.xcodeproj -list
+
+      - name: Build Full Authority
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project FullAuthority.xcodeproj \
+            -target FullAuthority \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            SYMROOT="$PWD/build" \
+            OBJROOT="$PWD/build/obj" \
+            build
+
+      - name: Package simulator app
+        run: |
+          set -euo pipefail
+          APP_PATH="$PWD/build/Debug-iphonesimulator/FullAuthority.app"
+          test -d "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$APP_PATH" \
+            "$PWD/build/FullAuthority-simulator.zip"
+
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FullAuthority-simulator
+          path: build/FullAuthority-simulator.zip
+          if-no-files-found: error
+          retention-days: 7
