@@ -1,0 +1,88 @@
+name: iOS Device IPA
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'App/**'
+      - 'Simulation/**'
+      - 'Aircraft/**'
+      - 'World/**'
+      - 'Assets/**'
+      - 'FullAuthority.xcodeproj/**'
+      - '.github/workflows/ios-device-ipa.yml'
+  pull_request:
+    paths:
+      - 'App/**'
+      - 'Simulation/**'
+      - 'Aircraft/**'
+      - 'World/**'
+      - 'Assets/**'
+      - 'FullAuthority.xcodeproj/**'
+      - '.github/workflows/ios-device-ipa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-authority-device-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  ipa:
+    name: Build unsigned iPhone IPA
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+
+      - name: Show Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build for iPhoneOS
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project FullAuthority.xcodeproj \
+            -scheme FullAuthority \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/build/device" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$PWD/build/device/Build/Products/Release-iphoneos/FullAuthority.app"
+          test -d "$APP_PATH"
+
+          rm -rf "$PWD/package"
+          mkdir -p "$PWD/package/Payload"
+          cp -R "$APP_PATH" "$PWD/package/Payload/"
+
+          cd "$PWD/package"
+          zip -qry "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa"
+          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | head -80
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FullAuthority-unsigned-ipa
+          path: FullAuthority-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
