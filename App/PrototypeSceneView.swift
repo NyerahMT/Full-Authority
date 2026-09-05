@@ -74,6 +74,9 @@ struct PrototypeSceneView: View {
                     camera.look(at: target, from: cameraPosition, relativeTo: nil)
                 }
             }
+            .onChange(of: timeline.date) { oldDate, newDate in
+                simulation.advance(realDelta: newDate.timeIntervalSince(oldDate))
+            }
         }
         .background(
             LinearGradient(
