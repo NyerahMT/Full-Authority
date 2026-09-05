@@ -10,6 +10,9 @@ on:
       - 'Aircraft/**'
       - 'World/**'
       - 'Assets/**'
+      - 'scripts/**'
+      - 'ThirdParty/**'
+      - '.gitmodules'
       - 'FullAuthority.xcodeproj/**'
       - '.github/workflows/ios-simulator.yml'
   pull_request:
@@ -19,6 +22,9 @@ on:
       - 'Aircraft/**'
       - 'World/**'
       - 'Assets/**'
+      - 'scripts/**'
+      - 'ThirdParty/**'
+      - '.gitmodules'
       - 'FullAuthority.xcodeproj/**'
       - '.github/workflows/ios-simulator.yml'
   workflow_dispatch:
@@ -32,6 +38,7 @@ concurrency:
 
 env:
   DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  IOS_DEPLOYMENT_TARGET: '18.0'
 
 jobs:
   simulator:
@@ -41,13 +48,24 @@ jobs:
     steps:
       - name: Checkout Full Authority
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Show Apple toolchain
         run: |
           set -euo pipefail
           xcodebuild -version
           xcrun --sdk iphonesimulator --show-sdk-version
+          cmake --version
           xcodebuild -project FullAuthority.xcodeproj -list
+
+      - name: Build JSBSim for simulator
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build-jsbsim-ios.sh
+          scripts/build-jsbsim-ios.sh iphonesimulator
+          test -f Build/JSBSim/iphonesimulator/lib/libJSBSim.a
+          lipo -info Build/JSBSim/iphonesimulator/lib/libJSBSim.a
 
       - name: Build Full Authority
         run: |
