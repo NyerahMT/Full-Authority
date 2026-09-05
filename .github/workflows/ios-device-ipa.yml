@@ -10,6 +10,9 @@ on:
       - 'Aircraft/**'
       - 'World/**'
       - 'Assets/**'
+      - 'scripts/**'
+      - 'ThirdParty/**'
+      - '.gitmodules'
       - 'FullAuthority.xcodeproj/**'
       - '.github/workflows/ios-device-ipa.yml'
   pull_request:
@@ -19,6 +22,9 @@ on:
       - 'Aircraft/**'
       - 'World/**'
       - 'Assets/**'
+      - 'scripts/**'
+      - 'ThirdParty/**'
+      - '.gitmodules'
       - 'FullAuthority.xcodeproj/**'
       - '.github/workflows/ios-device-ipa.yml'
   workflow_dispatch:
@@ -32,6 +38,7 @@ concurrency:
 
 env:
   DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  IOS_DEPLOYMENT_TARGET: '18.0'
 
 jobs:
   ipa:
@@ -41,12 +48,23 @@ jobs:
     steps:
       - name: Checkout Full Authority
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Show Apple toolchain
         run: |
           set -euo pipefail
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+          cmake --version
+
+      - name: Build JSBSim for iPhoneOS
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build-jsbsim-ios.sh
+          scripts/build-jsbsim-ios.sh iphoneos
+          test -f Build/JSBSim/iphoneos/lib/libJSBSim.a
+          lipo -info Build/JSBSim/iphoneos/lib/libJSBSim.a
 
       - name: Build for iPhoneOS
         run: |
