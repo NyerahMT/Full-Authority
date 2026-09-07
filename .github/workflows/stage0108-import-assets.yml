@@ -29,22 +29,22 @@ jobs:
           cd /tmp/FlightSim_F16
           git lfs pull --include="Assets/Models/F16.fbx,Assets/Models/afterburner.fbx,Assets/Textures/f16.png,Assets/Textures/afterburner.png"
           file Assets/Models/F16.fbx Assets/Models/afterburner.fbx Assets/Textures/f16.png Assets/Textures/afterburner.png
-      - name: Export RealityKit-friendly parts
+      - name: Export RealityKit-friendly parts into bundled resource tree
         run: |
-          rm -rf Models/AuthoredF16
+          rm -rf Assets/JSBSim/visuals/f16
           blender -b --python Scripts/import_authored_f16.py -- \
             /tmp/FlightSim_F16/Assets/Models/F16.fbx \
             /tmp/FlightSim_F16/Assets/Models/afterburner.fbx \
             /tmp/FlightSim_F16/Assets/Textures/f16.png \
             /tmp/FlightSim_F16/Assets/Textures/afterburner.png \
-            Models/AuthoredF16 \
+            Assets/JSBSim/visuals/f16 \
             /tmp/FlightSim_F16/license.txt
-          ls -lh Models/AuthoredF16
-          cat Models/AuthoredF16/manifest.json
+          ls -lh Assets/JSBSim/visuals/f16
+          cat Assets/JSBSim/visuals/f16/manifest.json
       - name: Commit imported assets
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Models/AuthoredF16
-          git diff --cached --quiet || git commit -m "Import authored MIT F-16 visual assets"
+          git add Assets/JSBSim/visuals/f16
+          git diff --cached --quiet || git commit -m "Bundle authored MIT F-16 visual assets"
           git push origin HEAD:stage-010-8-authored-f16-audio
