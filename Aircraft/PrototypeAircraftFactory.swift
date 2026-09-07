@@ -52,7 +52,7 @@ enum PrototypeAircraftFactory {
 
             let geometry = try loadF16MeshSet()
             let airframeMaterial = SimpleMaterial(
-                color: UIColor(red: 0.39, green: 0.41, blue: 0.42, alpha: 1),
+                color: UIColor(red: 0.43, green: 0.45, blue: 0.46, alpha: 1),
                 isMetallic: false
             )
 
@@ -60,7 +60,36 @@ enum PrototypeAircraftFactory {
             model.name = meshName
             visualRoot.addChild(model)
 
-            addVisualDetail(to: visualRoot)
+            if let canopyMesh = geometry.canopy {
+                let canopyMaterial = SimpleMaterial(
+                    color: UIColor(red: 0.055, green: 0.085, blue: 0.10, alpha: 1),
+                    isMetallic: true
+                )
+                let canopy = ModelEntity(mesh: canopyMesh, materials: [canopyMaterial])
+                canopy.name = "FA.aircraft.canopy.stock"
+                visualRoot.addChild(canopy)
+            }
+
+            if let radomeMesh = geometry.radome {
+                let radomeMaterial = SimpleMaterial(
+                    color: UIColor(red: 0.20, green: 0.21, blue: 0.21, alpha: 1),
+                    isMetallic: false
+                )
+                let radome = ModelEntity(mesh: radomeMesh, materials: [radomeMaterial])
+                radome.name = "FA.aircraft.radome.stock"
+                visualRoot.addChild(radome)
+            }
+
+            if let exhaustMesh = geometry.exhaust {
+                let exhaustMaterial = SimpleMaterial(
+                    color: UIColor(red: 0.15, green: 0.15, blue: 0.145, alpha: 1),
+                    isMetallic: true
+                )
+                let exhaust = ModelEntity(mesh: exhaustMesh, materials: [exhaustMaterial])
+                exhaust.name = "FA.aircraft.exhaust.stock"
+                visualRoot.addChild(exhaust)
+            }
+
             addAnimatedSurfaces(
                 to: visualRoot,
                 geometry: geometry,
@@ -80,76 +109,6 @@ enum PrototypeAircraftFactory {
         return root
     }
 
-    private static func addVisualDetail(to root: Entity) {
-        let canopy = ellipsoid(
-            radii: [0.62, 0.38, 1.50],
-            color: UIColor(red: 0.045, green: 0.105, blue: 0.135, alpha: 0.94),
-            metallic: true
-        )
-        canopy.name = "FA.aircraft.canopy"
-        canopy.position = [0, -0.18, 2.78]
-        root.addChild(canopy)
-
-        let radome = ellipsoid(
-            radii: [0.34, 0.28, 0.88],
-            color: UIColor(red: 0.16, green: 0.18, blue: 0.18, alpha: 1),
-            metallic: false
-        )
-        radome.name = "FA.aircraft.radome"
-        radome.position = [0, -1.02, 6.82]
-        root.addChild(radome)
-
-        let nozzle = cylinder(
-            length: 0.70,
-            radius: 0.66,
-            color: UIColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1),
-            metallic: true,
-            axisAlongZ: true
-        )
-        nozzle.name = nozzleName
-        nozzle.position = [0, -1.14, -7.13]
-        root.addChild(nozzle)
-
-        let nozzleCore = cylinder(
-            length: 0.80,
-            radius: 0.42,
-            color: UIColor(red: 0.022, green: 0.022, blue: 0.025, alpha: 1),
-            metallic: false,
-            axisAlongZ: true
-        )
-        nozzleCore.position = [0, -1.14, -7.31]
-        root.addChild(nozzleCore)
-
-        let afterburner = ellipsoid(
-            radii: [0.40, 0.40, 1.65],
-            color: UIColor(red: 1.0, green: 0.38, blue: 0.055, alpha: 0.72),
-            metallic: false
-        )
-        afterburner.name = afterburnerName
-        afterburner.position = [0, -1.14, -8.45]
-        afterburner.isEnabled = false
-        root.addChild(afterburner)
-
-        addNavigationLight(
-            to: root,
-            name: "FA.aircraft.nav.left",
-            position: [-5.03, -1.34, -2.35],
-            color: UIColor(red: 0.98, green: 0.08, blue: 0.08, alpha: 1)
-        )
-        addNavigationLight(
-            to: root,
-            name: "FA.aircraft.nav.right",
-            position: [5.03, -1.34, -2.35],
-            color: UIColor(red: 0.08, green: 0.96, blue: 0.24, alpha: 1)
-        )
-        addNavigationLight(
-            to: root,
-            name: "FA.aircraft.nav.tail",
-            position: [0, -0.40, -7.25],
-            color: UIColor(white: 0.98, alpha: 1)
-        )
-    }
-
     private static func addAnimatedSurfaces(
         to root: Entity,
         geometry: F16MeshSet,
@@ -164,25 +123,7 @@ enum PrototypeAircraftFactory {
         addSourceMeshSurface(to: root, name: rightElevatorName, movingMesh: geometry.rightStabilator, material: airframeMaterial)
         addSourceMeshSurface(to: root, name: rudderName, movingMesh: geometry.rudder, material: airframeMaterial)
 
-        // The source mesh does not contain clean separable four-petal speedbrakes,
-        // so retain only this small procedural system panel for now.
-        let panelColor = UIColor(red: 0.335, green: 0.35, blue: 0.36, alpha: 1)
-        let speedbrake = Entity()
-        speedbrake.name = speedbrakeName
-        speedbrake.position = [0, -0.28, -4.00]
-        if let leftMesh = makeHorizontalSurfaceMesh(
-            outline: [[-1.10, 0.00], [-0.18, 0.00], [-0.22, -0.78], [-0.98, -0.62]],
-            thickness: 0.026
-        ) {
-            speedbrake.addChild(ModelEntity(mesh: leftMesh, materials: [SimpleMaterial(color: panelColor, isMetallic: false)]))
-        }
-        if let rightMesh = makeHorizontalSurfaceMesh(
-            outline: [[0.18, 0.00], [1.10, 0.00], [0.98, -0.62], [0.22, -0.78]],
-            thickness: 0.026
-        ) {
-            speedbrake.addChild(ModelEntity(mesh: rightMesh, materials: [SimpleMaterial(color: panelColor, isMetallic: false)]))
-        }
-        root.addChild(speedbrake)
+        // No procedural speedbrake geometry: keep the stock mesh silhouette clean.
     }
 
     private static func addSourceMeshSurface(
@@ -424,17 +365,21 @@ enum PrototypeAircraftFactory {
         return entity
     }
 
-    // FlightGear's mature F-16 model exposes these hinge-axis directions.
-    // Use the geometry as engineering reference only; no GPL mesh/code is copied.
-    // Moving triangles remain from Full Authority's MIT-licensed R4 OBJ.
-    static let leftAileronVisualAxis = simd_normalize(SIMD3<Float>(2.5165, 0.096955, 0.39329))
-    static let rightAileronVisualAxis = simd_normalize(SIMD3<Float>(2.5165, 0.096955, -0.39329))
-    static let leftStabilatorVisualAxis = simd_normalize(SIMD3<Float>(0.981645, 0.190720, 0))
+    // FlightGear's mature F-16 model is used only as hinge-direction
+    // engineering reference. Convert its model axes (+X forward, +Y right,
+    // +Z up) into the R4 / Full Authority mesh axes (+Z forward, +X right,
+    // +Y up). Left/right vectors are exact mirrors by construction.
+    static let leftAileronVisualAxis = simd_normalize(SIMD3<Float>(2.5165, 0.096955, -0.39329))
+    static let rightAileronVisualAxis = simd_normalize(SIMD3<Float>(-2.5165, 0.096955, -0.39329))
+    static let leftStabilatorVisualAxis = simd_normalize(SIMD3<Float>(-0.981645, -0.190720, 0))
     static let rightStabilatorVisualAxis = simd_normalize(SIMD3<Float>(0.981645, -0.190720, 0))
-    static let rudderVisualAxis = simd_normalize(SIMD3<Float>(0, 0.836890, -0.547371))
+    static let rudderVisualAxis = simd_normalize(SIMD3<Float>(0, 0.836890, 0.547371))
 
     private enum F16MeshPart: Hashable {
         case airframe
+        case canopy
+        case radome
+        case exhaust
         case leftAileron
         case rightAileron
         case leftStabilator
@@ -467,6 +412,9 @@ enum PrototypeAircraftFactory {
 
     private struct F16MeshSet {
         let airframe: MeshResource
+        let canopy: MeshResource?
+        let radome: MeshResource?
+        let exhaust: MeshResource?
         let leftAileron: F16MovingMesh?
         let rightAileron: F16MovingMesh?
         let leftStabilator: F16MovingMesh?
@@ -542,8 +490,7 @@ enum PrototypeAircraftFactory {
             guard face.count >= 3 else { continue }
             for index in 1..<(face.count - 1) {
                 let a = face[0], b = face[index], c = face[index + 1]
-                let centroid = (a.position + b.position + c.position) / 3
-                let part = classifyF16Triangle(centroid)
+                let part = classifyF16Triangle(a.position, b.position, c.position)
                 var builder = builders[part] ?? RawMeshBuilder()
                 builder.appendTriangle(a, b, c)
                 builders[part] = builder
@@ -556,6 +503,9 @@ enum PrototypeAircraftFactory {
         let airframe = try makeMeshResource(from: airframeBuilder, name: "F-16A static shell", subtracting: .zero)
         return F16MeshSet(
             airframe: airframe,
+            canopy: try makeStaticMesh(builders[.canopy], name: "F-16 canopy stock faces"),
+            radome: try makeStaticMesh(builders[.radome], name: "F-16 radome stock faces"),
+            exhaust: try makeStaticMesh(builders[.exhaust], name: "F-16 exhaust stock faces"),
             leftAileron: try makeMovingMesh(builders[.leftAileron], part: .leftAileron),
             rightAileron: try makeMovingMesh(builders[.rightAileron], part: .rightAileron),
             leftStabilator: try makeMovingMesh(builders[.leftStabilator], part: .leftStabilator),
@@ -564,23 +514,96 @@ enum PrototypeAircraftFactory {
         )
     }
 
-    private static func classifyF16Triangle(_ point: SIMD3<Float>) -> F16MeshPart {
-        let x = point.x, y = point.y, z = point.z
-        if y > -1.60, y < -0.90 {
-            let right: [SIMD2<Float>] = [[1.05,-2.48],[3.60,-2.88],[3.62,-3.58],[1.35,-3.58]]
-            let left: [SIMD2<Float>] = [[-1.05,-2.48],[-3.60,-2.88],[-3.62,-3.58],[-1.35,-3.58]]
-            if pointInPolygon(SIMD2<Float>(x,z), polygon: left) { return .leftAileron }
-            if pointInPolygon(SIMD2<Float>(x,z), polygon: right) { return .rightAileron }
+    private static let rightFlaperonPlanform: [SIMD2<Float>] = [
+        [1.05, -2.48],
+        [3.60, -2.88],
+        [3.62, -3.58],
+        [1.35, -3.58]
+    ]
+
+    private static let rightStabilatorPlanform: [SIMD2<Float>] = [
+        [0.92, -4.52],
+        [1.48, -4.50],
+        [3.06, -6.02],
+        [3.06, -6.92],
+        [0.92, -6.86]
+    ]
+
+    private static func classifyF16Triangle(
+        _ a: SIMD3<Float>,
+        _ b: SIMD3<Float>,
+        _ c: SIMD3<Float>
+    ) -> F16MeshPart {
+        let vertices = [a, b, c]
+        let centroid = (a + b + c) / 3
+
+        if let side = mirroredSurfaceSide(
+            vertices,
+            yRange: -1.42 ... -0.82,
+            canonicalRightPlanform: rightFlaperonPlanform
+        ) {
+            return side < 0 ? .leftAileron : .rightAileron
         }
-        if y < -0.35, z < -4.0, z > -7.12 {
-            if x < -0.65, x > -3.35 { return .leftStabilator }
-            if x > 0.65, x < 3.35 { return .rightStabilator }
+
+        if let side = mirroredSurfaceSide(
+            vertices,
+            yRange: -1.32 ... -0.55,
+            canonicalRightPlanform: rightStabilatorPlanform
+        ) {
+            return side < 0 ? .leftStabilator : .rightStabilator
         }
-        if abs(x) < 0.50, y > 0, y < 2.40, z > -7.45 {
-            let hingeZ = -5.50 - 0.654 * y
-            if z < hingeZ { return .rudder }
+
+        let rudderTriangle = vertices.allSatisfy { vertex in
+            guard abs(vertex.x) < 0.34,
+                  vertex.y > 0.18,
+                  vertex.y < 2.38,
+                  vertex.z > -7.35 else {
+                return false
+            }
+            let hingeZ = -5.50 - 0.654 * vertex.y
+            return vertex.z < hingeZ - 0.015
         }
+        if rudderTriangle {
+            return .rudder
+        }
+
+        if centroid.z > 2.18,
+           centroid.z < 4.55,
+           centroid.y > -0.52,
+           abs(centroid.x) < 0.95 {
+            return .canopy
+        }
+
+        if centroid.z > 6.05 {
+            return .radome
+        }
+
+        if centroid.z < -6.45,
+           abs(centroid.x) < 0.95,
+           centroid.y < -0.55 {
+            return .exhaust
+        }
+
         return .airframe
+    }
+
+    private static func mirroredSurfaceSide(
+        _ vertices: [SIMD3<Float>],
+        yRange: ClosedRange<Float>,
+        canonicalRightPlanform: [SIMD2<Float>]
+    ) -> Float? {
+        guard vertices.count == 3 else { return nil }
+        let centroidX = vertices.reduce(Float(0)) { $0 + $1.x } / Float(vertices.count)
+        let side: Float = centroidX < 0 ? -1 : 1
+
+        guard vertices.allSatisfy({
+            ($0.x * side) > 0.72 &&
+            yRange.contains($0.y) &&
+            pointInPolygon(SIMD2<Float>(abs($0.x), $0.z), polygon: canonicalRightPlanform)
+        }) else {
+            return nil
+        }
+        return side
     }
 
     private static func pointInPolygon(_ point: SIMD2<Float>, polygon: [SIMD2<Float>]) -> Bool {
@@ -601,6 +624,11 @@ enum PrototypeAircraftFactory {
         return inside
     }
 
+    private static func makeStaticMesh(_ builder: RawMeshBuilder?, name: String) throws -> MeshResource? {
+        guard let builder, builder.indices.count >= 3 else { return nil }
+        return try makeMeshResource(from: builder, name: name, subtracting: .zero)
+    }
+
     private static func makeMovingMesh(_ builder: RawMeshBuilder?, part: F16MeshPart) throws -> F16MovingMesh? {
         guard let builder, builder.indices.count >= 3 else { return nil }
         let pivot = movingSurfacePivot(part: part, positions: builder.positions)
@@ -608,15 +636,17 @@ enum PrototypeAircraftFactory {
     }
 
     private static func movingSurfacePivot(part: F16MeshPart, positions: [SIMD3<Float>]) -> SIMD3<Float> {
+        _ = positions
         switch part {
-        case .leftAileron: return [-2.325, meanSurfaceY(positions, nearZ: -2.68), -2.68]
-        case .rightAileron: return [2.325, meanSurfaceY(positions, nearZ: -2.68), -2.68]
-        case .leftStabilator: return [-1.965, meanSurfaceY(positions, nearZ: -5.30), -5.30]
-        case .rightStabilator: return [1.965, meanSurfaceY(positions, nearZ: -5.30), -5.30]
+        case .leftAileron: return [-2.325, -1.12, -2.68]
+        case .rightAileron: return [2.325, -1.12, -2.68]
+        case .leftStabilator: return [-1.965, -0.94, -5.30]
+        case .rightStabilator: return [1.965, -0.94, -5.30]
         case .rudder:
             let pivotY: Float = 1.15
             return [0, pivotY, -5.50 - 0.654 * pivotY]
-        case .airframe: return .zero
+        case .airframe, .canopy, .radome, .exhaust:
+            return .zero
         }
     }
 

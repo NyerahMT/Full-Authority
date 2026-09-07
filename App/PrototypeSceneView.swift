@@ -435,16 +435,15 @@ struct PrototypeSceneView: View {
             right.orientation = simd_quatf(angle: state.rightAileronRadians, axis: PrototypeAircraftFactory.rightAileronVisualAxis)
         }
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftElevatorName) {
-            // JSBSim's differential-tail left/right outputs use mirrored local
-            // surface conventions. Our two visual hinges share +X, so the left
-            // tail must invert its angle to represent the same physical motion.
-            left.orientation = simd_quatf(angle: -state.leftStabilatorRadians, axis: PrototypeAircraftFactory.leftStabilatorVisualAxis)
+            // JSBSim's dht-left/dht-right outputs already carry mirrored local
+            // signs. With mirror-correct hinge axes, use those angles verbatim.
+            left.orientation = simd_quatf(angle: state.leftStabilatorRadians, axis: PrototypeAircraftFactory.leftStabilatorVisualAxis)
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightElevatorName) {
             right.orientation = simd_quatf(angle: state.rightStabilatorRadians, axis: PrototypeAircraftFactory.rightStabilatorVisualAxis)
         }
         if let rudder = aircraft.findEntity(named: PrototypeAircraftFactory.rudderName) {
-            rudder.orientation = simd_quatf(angle: -state.rudderRadians, axis: PrototypeAircraftFactory.rudderVisualAxis)
+            rudder.orientation = simd_quatf(angle: state.rudderRadians, axis: PrototypeAircraftFactory.rudderVisualAxis)
         }
 
         updateGear(aircraft, position: state.gearPosition)
