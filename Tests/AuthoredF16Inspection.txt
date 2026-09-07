@@ -1,0 +1,51 @@
+# vazgriz/FlightSim_F16 authored asset inspection
+
+## F16.fbx
+file=/tmp/FlightSim_F16/Assets/Models/F16.fbx
+
+OBJECT Armature type=ARMATURE parent=-
+  location=(0.000000, 0.000000, 0.000000) rotation=(0.000000, -0.000000, 0.000000) scale=(1.000000, 1.000000, 1.000000)
+  armature bones=19
+  BONE Root parent=- head=(0.000000, 0.000000, 0.000000) tail=(0.000000, 0.000000, 4.921078)
+  BONE RightFlaperon parent=Root head=(2.437146, -2.113479, 0.000000) tail=(2.437146, -2.113479, 1.000000)
+  BONE RightFlaperon_end parent=RightFlaperon head=(2.437146, -2.113479, 1.000000) tail=(2.437146, -2.113479, 2.000000)
+  BONE LeftFlaperon parent=Root head=(-2.437150, -2.113479, 0.000000) tail=(-2.437150, -2.113479, 1.000000)
+  BONE LeftFlaperon_end parent=LeftFlaperon head=(-2.437150, -2.113479, 1.000000) tail=(-2.437150, -2.113479, 2.000000)
+  BONE RightStabliator parent=Root head=(1.103107, -5.102214, 0.000000) tail=(1.103107, -5.102214, 1.000000)
+  BONE RightStabliator_end parent=RightStabliator head=(1.103107, -5.102214, 1.000000) tail=(1.103107, -5.102214, 2.000000)
+  BONE LeftStabliator parent=Root head=(-1.103110, -5.102210, 0.000000) tail=(-1.103110, -5.102214, 1.000000)
+  BONE LeftStabliator_end parent=LeftStabliator head=(-1.103110, -5.102214, 1.000000) tail=(-1.103110, -5.102218, 2.000000)
+  BONE Rudder parent=Root head=(0.000000, -5.737493, 2.250000) tail=(0.000000, -6.275077, 3.093210)
+  BONE Rudder_end parent=Rudder head=(0.000000, -6.275077, 3.093210) tail=(0.000000, -6.812662, 3.936420)
+  BONE Airbrake_R_U parent=Root head=(0.926553, -5.227214, 0.000000) tail=(0.926553, -5.227214, 1.000000)
+  BONE Airbrake_R_U_end parent=Airbrake_R_U head=(0.926553, -5.227214, 1.000000) tail=(0.926553, -5.227214, 2.000000)
+  BONE Airbrake_R_L parent=Root head=(0.926553, -5.227214, 0.000000) tail=(0.926553, -5.227214, -1.000000)
+  BONE Airbrake_R_L_end parent=Airbrake_R_L head=(0.926553, -5.227214, -1.000000) tail=(0.926553, -5.227214, -2.000000)
+  BONE Airbrake_L_U parent=Root head=(-0.926553, -5.227214, 0.000000) tail=(-0.926553, -5.227214, 1.000000)
+  BONE Airbrake_L_U_end parent=Airbrake_L_U head=(-0.926553, -5.227214, 1.000000) tail=(-0.926553, -5.227214, 2.000000)
+  BONE Airbrake_L_L parent=Root head=(-0.926553, -5.227214, 0.000000) tail=(-0.926554, -5.227214, -1.000000)
+  BONE Airbrake_L_L_end parent=Airbrake_L_L head=(-0.926554, -5.227214, -1.000000) tail=(-0.926554, -5.227214, -2.000000)
+OBJECT F16 type=MESH parent=Armature
+  location=(0.000000, 0.000000, 0.000000) rotation=(0.000000, -0.000000, 0.000000) scale=(1.000000, 1.000000, 1.000000)
+  mesh vertices=366 polygons=399 materials=['Material.001']
+  VG Airbrake_L_L vertices=8 weight_sum=8.000
+  VG Airbrake_L_U vertices=8 weight_sum=8.000
+  VG Airbrake_R_L vertices=8 weight_sum=8.000
+  VG Airbrake_R_U vertices=8 weight_sum=8.000
+  VG LeftFlaperon vertices=10 weight_sum=10.000
+  VG LeftStabliator vertices=18 weight_sum=18.000
+  VG RightFlaperon vertices=10 weight_sum=10.000
+  VG RightStabliator vertices=18 weight_sum=18.000
+  VG Root vertices=272 weight_sum=272.000
+  VG Rudder vertices=6 weight_sum=6.000
+  world_bounds min=(-4.816638,-7.018744,-0.976267) max=(4.816810,8.101089,3.499999)
+ACTIONS Armature|Armature|ArmatureAction
+
+## afterburner.fbx
+file=/tmp/FlightSim_F16/Assets/Models/afterburner.fbx
+
+OBJECT Circle type=MESH parent=-
+  location=(0.000000, 0.000000, 0.000000) rotation=(1.570797, -0.000000, 0.000000) scale=(1.000000, 1.000000, 1.000000)
+  mesh vertices=32 polygons=24 materials=[]
+  world_bounds min=(-0.500000,-4.000000,-0.500001) max=(0.500000,0.000000,0.500000)
+ACTIONS Armature|Armature|ArmatureAction
