@@ -12,16 +12,18 @@ enum Stage2FlightEffects {
     private static let rightWingVaporName = "FA.effects.vapor.right"
     private static let transonicCloudPrefix = "FA.effects.transonic"
 
-    // 96 samples at 0.10 s gives just under ten seconds of persistent plume
-    // history without creating an unbounded RealityKit entity count.
-    private static let trailCount = 96
+    // Bounded mobile pool: about twenty seconds of spatial history at 0.11 s sampling.
+    private static let trailCount = 180
 
+    @MainActor
     final class Runtime {
         fileprivate var coreSegments: [ModelEntity] = []
         fileprivate var hazeSegments: [ModelEntity] = []
         fileprivate var birthTimes = Array(repeating: -10_000.0, count: trailCount)
         fileprivate var lengths = Array(repeating: Float(1), count: trailCount)
         fileprivate var strengths = Array(repeating: Float(0), count: trailCount)
+        fileprivate var persistences = Array(repeating: Float(0), count: trailCount)
+        fileprivate var driftVelocities = Array(repeating: SIMD3<Float>.zero, count: trailCount)
         fileprivate var cursor = 0
         fileprivate var lastTrailSampleTime = -10_000.0
         fileprivate var previousExhaustPoint: SIMD3<Float>?
@@ -44,6 +46,8 @@ enum Stage2FlightEffects {
             birthTimes = Array(repeating: -10_000.0, count: Stage2FlightEffects.trailCount)
             lengths = Array(repeating: 1, count: Stage2FlightEffects.trailCount)
             strengths = Array(repeating: 0, count: Stage2FlightEffects.trailCount)
+            persistences = Array(repeating: 0, count: Stage2FlightEffects.trailCount)
+            driftVelocities = Array(repeating: .zero, count: Stage2FlightEffects.trailCount)
             cursor = 0
             lastTrailSampleTime = -10_000
             previousExhaustPoint = nil
@@ -91,15 +95,28 @@ enum Stage2FlightEffects {
     static func makeTrailPool() -> Entity {
         let root = Entity()
         root.name = trailRootName
-        guard let segmentMesh = makePlumeSegmentMesh() else { return root }
+
+        let coreVariants = (0..<4).compactMap {
+            makePlumeSegmentMesh(phase: Float($0) * 1.37, haze: false)
+        }
+        let hazeVariants = (0..<4).compactMap {
+            makePlumeSegmentMesh(phase: Float($0) * 1.37 + 0.71, haze: true)
+        }
+        guard coreVariants.count == 4, hazeVariants.count == 4 else { return root }
 
         for index in 0..<trailCount {
-            let core = ModelEntity(mesh: segmentMesh, materials: [effectMaterial(alpha: 0.0)])
+            let core = ModelEntity(
+                mesh: coreVariants[index % coreVariants.count],
+                materials: [effectMaterial(alpha: 0.0)]
+            )
             core.name = "FA.effects.contrail.core.\(index)"
             core.isEnabled = false
             root.addChild(core)
 
-            let haze = ModelEntity(mesh: segmentMesh, materials: [effectMaterial(alpha: 0.0)])
+            let haze = ModelEntity(
+                mesh: hazeVariants[index % hazeVariants.count],
+                materials: [effectMaterial(alpha: 0.0)]
+            )
             haze.name = "FA.effects.contrail.haze.\(index)"
             haze.isEnabled = false
             root.addChild(haze)
@@ -141,25 +158,41 @@ enum Stage2FlightEffects {
         if simulationTime + 0.001 < runtime.lastSimulationTime {
             runtime.clear()
         }
+
+        let frameDelta = Float(max(0, min(simulationTime - runtime.lastSimulationTime, 0.10)))
         runtime.lastSimulationTime = simulationTime
 
-        // Schmidt-Appleman formation depends on temperature, humidity and engine
-        // exhaust. Stage 2 does not have a weather humidity field yet, so use ISA
-        // temperature as a conservative formation proxy. This can be replaced by
-        // live RH/temperature later without changing the plume renderer.
-        let ambientTemperatureC = isaTemperatureC(altitudeFeet: state.altitudeFeetMSL)
-        let coldFactor = clamp((-36.0 - ambientTemperatureC) / 14.0, 0, 1)
-        let altitudeFactor = clamp((state.altitudeFeetMSL - 23_000) / 9_000, 0, 1)
-        let speedFactor = clamp((state.calibratedAirspeedKnots - 210) / 170, 0, 1)
-        let formationStrength = coldFactor * max(0.32, altitudeFactor) * speedFactor
-        let persistentContrail = formationStrength > 0.10 && state.altitudeFeetMSL > 23_000
+        if frameDelta > 0 {
+            for index in 0..<trailCount where runtime.birthTimes[index] > -9_000 {
+                let drift = runtime.driftVelocities[index] * frameDelta
+                runtime.coreSegments[index].position += drift
+                runtime.hazeSegments[index].position += drift
+            }
+        }
 
-        if persistentContrail && simulationTime - runtime.lastTrailSampleTime >= 0.10 {
-            // F-16A is single-engine. Emit the persistent plume from the F100
-            // nozzle instead of incorrectly drawing permanent wingtip trails.
-            // This point is in the aircraft CG/root frame; the visual airframe has
-            // its own vertical offset.
-            let exhaust = worldPoint(local: [0, -0.20, -7.75], state: state)
+        let iceRH = iceRelativeHumidity(
+            positionMeters: state.positionMeters,
+            altitudeFeet: state.altitudeFeetMSL
+        )
+        let criticalTemperatureC = schmidtApplemanCriticalTemperatureC(
+            pressurePSF: state.ambientPressurePSF
+        )
+        let temperatureMargin = criticalTemperatureC - state.ambientTemperatureC
+        let temperatureFactor = clamp((temperatureMargin + 1.0) / 8.0, 0, 1)
+        let humidityFormationFactor = clamp((iceRH - 0.70) / 0.30, 0, 1)
+        let fuelFlow = state.engineFuelFlowPoundsPerSecond
+        let exhaustWaterFactor = clamp((fuelFlow - 0.015) / 0.65, 0, 1)
+        let formationStrength = temperatureFactor
+            * humidityFormationFactor
+            * (0.30 + 0.70 * exhaustWaterFactor)
+        let persistence = clamp((iceRH - 0.96) / 0.20, 0, 1)
+        let formsContrail = temperatureMargin > -0.5
+            && iceRH > 0.70
+            && fuelFlow > 0.012
+            && formationStrength > 0.025
+
+        if formsContrail && simulationTime - runtime.lastTrailSampleTime >= 0.11 {
+            let exhaust = worldPoint(local: [0, -0.21, -7.95], state: state)
 
             if let previous = runtime.previousExhaustPoint {
                 let index = runtime.cursor
@@ -175,20 +208,24 @@ enum Stage2FlightEffects {
                 )
                 runtime.birthTimes[index] = simulationTime
                 runtime.strengths[index] = formationStrength
+                runtime.persistences[index] = persistence
+                let wakeDescent = 0.10 + 0.12 * (1 - persistence)
+                runtime.driftVelocities[index] = state.windMetersPerSecond + SIMD3<Float>(0, -wakeDescent, 0)
                 runtime.cursor = (runtime.cursor + 1) % trailCount
             }
 
             runtime.previousExhaustPoint = exhaust
             runtime.lastTrailSampleTime = simulationTime
-        } else if !persistentContrail {
+        } else if !formsContrail {
             runtime.previousExhaustPoint = nil
         }
 
-        let lifetime: Double = 9.4
         for index in 0..<trailCount {
             let age = simulationTime - runtime.birthTimes[index]
             let core = runtime.coreSegments[index]
             let haze = runtime.hazeSegments[index]
+            let persistence = runtime.persistences[index]
+            let lifetime = 2.4 + 17.4 * Double(persistence)
 
             guard age >= 0, age < lifetime else {
                 core.isEnabled = false
@@ -196,25 +233,28 @@ enum Stage2FlightEffects {
                 continue
             }
 
-            let t = Float(age / lifetime)
-            let strength = runtime.strengths[index]
-
-            // Young exhaust is narrow and bright. Wake mixing then broadens the
-            // plume and shifts opacity from its core into a diffuse outer haze.
             let ageF = Float(age)
-            let wakeVariation = 1 + 0.075 * sin(Float(index) * 1.71 + ageF * 0.52)
-            let coreRadius = (0.12 + 0.095 * ageF + 0.014 * ageF * ageF) * wakeVariation
-            let hazeRadius = (0.28 + 0.19 * ageF + 0.022 * ageF * ageF) * (2 - wakeVariation)
-            let coreFade = pow(max(0, 1 - t), 1.45)
-            let hazeEnvelope = sin(.pi * min(1, t * 1.10)) * pow(max(0, 1 - t), 0.78)
+            let normalizedAge = Float(age / lifetime)
+            let strength = runtime.strengths[index]
+            let variation = 1
+                + 0.10 * sin(Float(index) * 1.71 + ageF * 0.43)
+                + 0.04 * sin(Float(index) * 0.37 - ageF * 0.81)
+            let coreRadius = (0.11 + 0.075 * ageF + 0.010 * ageF * ageF) * variation
+            let hazeRadius = (0.32 + 0.19 * ageF + 0.026 * ageF * ageF) * (2 - variation)
+            let coreFade = exp(-ageF / 4.2) * pow(max(0, 1 - normalizedAge), 0.65)
+            let hazeBuild = clamp(ageF / 2.0, 0, 1)
+            let hazeFade = pow(max(0, 1 - normalizedAge), 0.45)
 
             core.isEnabled = true
             haze.isEnabled = true
             core.scale = [coreRadius, coreRadius, runtime.lengths[index]]
             haze.scale = [hazeRadius, hazeRadius, runtime.lengths[index]]
 
-            setEffectAlpha(core, alpha: 0.17 * strength * coreFade)
-            setEffectAlpha(haze, alpha: 0.075 * strength * hazeEnvelope)
+            setEffectAlpha(core, alpha: 0.21 * strength * coreFade)
+            setEffectAlpha(
+                haze,
+                alpha: 0.105 * strength * hazeBuild * hazeFade * (0.40 + 0.60 * persistence)
+            )
         }
     }
 
@@ -225,11 +265,16 @@ enum Stage2FlightEffects {
         state: AircraftState,
         simulationTime: TimeInterval
     ) {
-        let gIntensity = clamp((abs(state.loadFactorG) - 2.7) / 4.8, 0, 1)
-        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 13.0, 0, 1)
-        let qbarIntensity = clamp((state.dynamicPressurePSF - 120) / 520.0, 0, 1)
-        let vaporIntensity = max(gIntensity, alphaIntensity) * qbarIntensity
-        let vaporEnabled = vaporIntensity > 0.055 && state.calibratedAirspeedKnots > 170
+        let iceRH = iceRelativeHumidity(
+            positionMeters: state.positionMeters,
+            altitudeFeet: state.altitudeFeetMSL
+        )
+        let moisture = clamp((iceRH - 0.62) / 0.38, 0, 1)
+        let gIntensity = clamp((abs(state.loadFactorG) - 2.4) / 4.8, 0, 1)
+        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 6.8) / 13.5, 0, 1)
+        let qbarIntensity = clamp((state.dynamicPressurePSF - 115) / 560.0, 0, 1)
+        let vaporIntensity = max(gIntensity, alphaIntensity) * qbarIntensity * moisture
+        let vaporEnabled = vaporIntensity > 0.065 && state.calibratedAirspeedKnots > 165
 
         let alpha = state.angleOfAttackDegrees * .pi / 180
         let beta = state.sideslipDegrees * .pi / 180
@@ -240,25 +285,17 @@ enum Stage2FlightEffects {
         if let left = root.findEntity(named: leftWingVaporName) as? ModelEntity {
             left.isEnabled = vaporEnabled
             left.orientation = flowOrientation
-            left.position = [-3.55, 0.02 + 0.010 * sin(Float(simulationTime) * 24.0), -1.60]
-            left.scale = [
-                0.76 + vaporIntensity * 0.48,
-                0.72 + vaporIntensity * 0.32,
-                0.90 + vaporIntensity * 1.25
-            ]
-            setEffectAlpha(left, alpha: 0.025 + vaporIntensity * 0.16)
+            left.position = [-3.62, -0.08 + 0.008 * sin(Float(simulationTime) * 24.0), -1.72]
+            left.scale = [0.68 + vaporIntensity * 0.52, 0.62 + vaporIntensity * 0.34, 0.72 + vaporIntensity * 1.18]
+            setEffectAlpha(left, alpha: 0.020 + vaporIntensity * 0.155)
         }
 
         if let right = root.findEntity(named: rightWingVaporName) as? ModelEntity {
             right.isEnabled = vaporEnabled
             right.orientation = flowOrientation
-            right.position = [3.55, 0.02 + 0.010 * sin(Float(simulationTime) * 25.0 + 0.8), -1.60]
-            right.scale = [
-                0.76 + vaporIntensity * 0.48,
-                0.72 + vaporIntensity * 0.32,
-                0.90 + vaporIntensity * 1.25
-            ]
-            setEffectAlpha(right, alpha: 0.025 + vaporIntensity * 0.16)
+            right.position = [3.62, -0.08 + 0.008 * sin(Float(simulationTime) * 25.0 + 0.8), -1.72]
+            right.scale = [0.68 + vaporIntensity * 0.52, 0.62 + vaporIntensity * 0.34, 0.72 + vaporIntensity * 1.18]
+            setEffectAlpha(right, alpha: 0.020 + vaporIntensity * 0.155)
         }
     }
 
@@ -267,15 +304,16 @@ enum Stage2FlightEffects {
         state: AircraftState,
         simulationTime: TimeInterval
     ) {
-        // The pressure wave itself is not a white cone. The visible phenomenon is
-        // a short-lived condensation cloud when local pressure/temperature drop
-        // enough in humid air. Keep the visual tightly centered around Mach 1.
+        let iceRH = iceRelativeHumidity(
+            positionMeters: state.positionMeters,
+            altitudeFeet: state.altitudeFeetMSL
+        )
+        let moisture = clamp((iceRH - 0.64) / 0.40, 0, 1)
         let mach = state.mach
         let transonicPeak = exp(-pow((mach - 1.005) / 0.038, 2))
         let qbarFactor = clamp((state.dynamicPressurePSF - 180) / 650.0, 0, 1)
-        let altitudeMoistureProxy = 1 - 0.55 * clamp((state.altitudeFeetMSL - 18_000) / 22_000, 0, 1)
         let alphaPenalty = 1 - 0.45 * clamp(abs(state.angleOfAttackDegrees) / 18.0, 0, 1)
-        let intensity = transonicPeak * qbarFactor * altitudeMoistureProxy * alphaPenalty
+        let intensity = transonicPeak * qbarFactor * moisture * alphaPenalty
         let visible = mach > 0.955 && mach < 1.085 && intensity > 0.025
 
         for layer in 0..<3 {
@@ -291,7 +329,7 @@ enum Stage2FlightEffects {
                 layerScale * (0.94 + 0.02 * sin(Float(simulationTime) * 13 + phase)),
                 0.94 + intensity * 0.22
             ]
-            cloud.position.y = 0.05 + 0.05 * sin(Float(simulationTime) * 11 + phase)
+            cloud.position.y = -0.02 + 0.04 * sin(Float(simulationTime) * 11 + phase)
             setEffectAlpha(cloud, alpha: (0.050 - Float(layer) * 0.010) * intensity)
         }
     }
@@ -386,29 +424,40 @@ enum Stage2FlightEffects {
         return try? MeshResource.generate(from: [descriptor])
     }
 
-    private static func makePlumeSegmentMesh() -> MeshResource? {
+    private static func makePlumeSegmentMesh(phase: Float, haze: Bool) -> MeshResource? {
+        let sheets = haze ? 5 : 4
+        let axialStations = 6
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
-        // Three intersecting ribbon planes approximate a soft volumetric plume
-        // from arbitrary viewing angles with far fewer entities than particles.
-        for sheet in 0..<3 {
-            let angle = Float(sheet) * (.pi / 3)
+        for sheet in 0..<sheets {
+            let base = UInt32(positions.count)
+            let angle = Float(sheet) / Float(sheets) * .pi
             let c = cos(angle)
             let s = sin(angle)
-            let base = UInt32(positions.count)
-            let points: [SIMD2<Float>] = [
-                [-0.5, 0], [0.5, 0], [-0.5, 0], [0.5, 0]
-            ]
-            let z: [Float] = [-0.5, -0.5, 0.5, 0.5]
-            for i in 0..<4 {
-                let p = points[i]
-                positions.append([p.x * c - p.y * s, p.x * s + p.y * c, z[i]])
+
+            for station in 0..<axialStations {
+                let t = Float(station) / Float(axialStations - 1)
+                let z = t - 0.5
+                let envelope = 0.80 + 0.20 * sin(.pi * t)
+                let ragged = 1
+                    + 0.12 * sin(t * 12.0 + phase + Float(sheet) * 0.91)
+                    + 0.05 * sin(t * 27.0 - phase * 0.7)
+                let width = (haze ? 1.0 : 0.72) * envelope * ragged
+                let offset = (haze ? 0.13 : 0.07) * sin(t * 18.0 + phase * 1.3 + Float(sheet))
+                let a = SIMD2<Float>(-width, offset)
+                let b = SIMD2<Float>(width, -offset * 0.72)
+                positions.append([a.x * c - a.y * s, a.x * s + a.y * c, z])
+                positions.append([b.x * c - b.y * s, b.x * s + b.y * c, z])
             }
-            appendDoubleSidedQuad(&indices, base, base + 1, base + 2, base + 3)
+
+            for station in 0..<(axialStations - 1) {
+                let i0 = base + UInt32(station * 2)
+                appendDoubleSidedQuad(&indices, i0, i0 + 1, i0 + 2, i0 + 3)
+            }
         }
 
-        var descriptor = MeshDescriptor(name: "Contrail plume segment")
+        var descriptor = MeshDescriptor(name: haze ? "Contrail diffuse ice" : "Contrail ice core")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
@@ -449,12 +498,36 @@ enum Stage2FlightEffects {
         return length
     }
 
-    private static func isaTemperatureC(altitudeFeet: Float) -> Float {
-        let altitudeMeters = max(0, altitudeFeet * 0.3048)
-        if altitudeMeters <= 11_000 {
-            return 15.0 - 0.0065 * altitudeMeters
-        }
-        return -56.5
+    private static func schmidtApplemanCriticalTemperatureC(pressurePSF: Float) -> Float {
+        let pressurePa = max(1_000.0, Double(pressurePSF) * 47.88025898)
+        let cp = 1_004.0
+        let epsilon = 0.622
+        let waterEmissionIndex = 1.25
+        let fuelHeat = 43_000_000.0
+        let propulsionEfficiency = 0.30
+        let g = (pressurePa * cp / epsilon)
+            * (waterEmissionIndex / ((1 - propulsionEfficiency) * fuelHeat))
+        let argument = max(g - 0.053, 0.001)
+        let logarithm = log(argument)
+        return Float(-46.46 + 9.43 * logarithm + 0.72 * logarithm * logarithm)
+    }
+
+    private static func iceRelativeHumidity(
+        positionMeters: SIMD3<Float>,
+        altitudeFeet: Float
+    ) -> Float {
+        // Standard JSBSim atmosphere has no humidity field, so Stage 2 supplies a
+        // deterministic world-space moisture layer. It creates coherent ISSR-like
+        // pockets without coupling the visual effect back into aircraft dynamics.
+        let x = positionMeters.x
+        let z = positionMeters.z
+        let h = altitudeFeet
+        let upperTroposphereBand = 0.24 * exp(-pow((h - 34_000) / 9_000, 2))
+        let synopticWave = 0.11 * sin(x / 7_400)
+            + 0.09 * cos(z / 8_900)
+            + 0.07 * sin((x + z) / 5_100)
+        let verticalWave = 0.06 * sin(h / 4_300 + x / 18_000)
+        return clamp(0.72 + upperTroposphereBand + synopticWave + verticalWave, 0.42, 1.32)
     }
 
     private static func worldPoint(local: SIMD3<Float>, state: AircraftState) -> SIMD3<Float> {

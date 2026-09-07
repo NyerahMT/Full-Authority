@@ -31,6 +31,14 @@ struct AircraftState: Equatable, Sendable {
     var loadFactorG: Float = 1
     var dynamicPressurePSF: Float = 0
 
+    /// Atmospheric/propulsion telemetry used by weather-dependent visual effects.
+    /// JSBSim remains authoritative for aircraft forces; these values only drive rendering.
+    var ambientTemperatureC: Float = 15
+    var ambientPressurePSF: Float = 2_116.22
+    var airDensitySlugsPerCubicFoot: Float = 0.0023769
+    var engineFuelFlowPoundsPerSecond: Float = 0
+    var windMetersPerSecond: SIMD3<Float> = .zero
+
     /// Actual system state read back from JSBSim rather than inferred from UI commands.
     var gearPosition: Float = 0
     var speedbrakePosition: Float = 0
