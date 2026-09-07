@@ -4,101 +4,77 @@ import UIKit
 @MainActor
 enum PrototypeAircraftFactory {
     static let aircraftName = "FA.aircraft"
-    static let mainRotorName = "FA.mainRotor"
-    static let tailRotorName = "FA.tailRotor"
 
     static func make() -> Entity {
         let root = Entity()
         root.name = aircraftName
 
-        let olive = UIColor(red: 0.24, green: 0.28, blue: 0.20, alpha: 1)
-        let oliveLight = UIColor(red: 0.32, green: 0.36, blue: 0.25, alpha: 1)
-        let dark = UIColor(red: 0.045, green: 0.05, blue: 0.05, alpha: 1)
-        let glass = UIColor(red: 0.035, green: 0.11, blue: 0.15, alpha: 1)
+        let bodyColor = UIColor(red: 0.42, green: 0.45, blue: 0.47, alpha: 1)
+        let bodyLight = UIColor(red: 0.52, green: 0.55, blue: 0.57, alpha: 1)
+        let bodyDark = UIColor(red: 0.19, green: 0.21, blue: 0.22, alpha: 1)
+        let glass = UIColor(red: 0.05, green: 0.14, blue: 0.19, alpha: 1)
 
-        // Long, narrow tandem-cockpit silhouette so the calibration mule reads
-        // more like a Cobra and less like a crate with a rotor on it.
-        let centerBody = block(size: [0.82, 0.82, 2.45], color: olive)
-        centerBody.position = [0, 0.02, 0.20]
-        root.addChild(centerBody)
+        // A deliberately simple F-15-ish calibration silhouette. This is not a
+        // production aircraft asset; its job is to make pitch, roll, yaw, and
+        // closure rate visually obvious while the FDM/render bridge is tuned.
+        let fuselage = block(size: [1.20, 0.82, 5.30], color: bodyColor)
+        fuselage.position = [0, 0, 0.15]
+        root.addChild(fuselage)
 
-        let nose = block(size: [0.68, 0.55, 0.92], color: oliveLight)
-        nose.position = [0, -0.08, 1.65]
+        let nose = block(size: [0.78, 0.58, 2.00], color: bodyLight)
+        nose.position = [0, -0.05, 3.55]
         root.addChild(nose)
 
-        let frontCanopy = block(size: [0.58, 0.48, 0.66], color: glass, metallic: true)
-        frontCanopy.position = [0, 0.28, 1.12]
-        root.addChild(frontCanopy)
+        let canopy = block(size: [0.76, 0.43, 1.45], color: glass, metallic: true)
+        canopy.position = [0, 0.55, 2.15]
+        root.addChild(canopy)
 
-        let rearCanopy = block(size: [0.62, 0.55, 0.72], color: glass, metallic: true)
-        rearCanopy.position = [0, 0.42, 0.45]
-        root.addChild(rearCanopy)
+        // Twin engine nacelles help the aircraft read immediately as a jet from
+        // the chase camera, even at phone-screen scale.
+        for x: Float in [-0.66, 0.66] {
+            let nacelle = block(size: [0.72, 0.72, 3.25], color: bodyDark, metallic: true)
+            nacelle.position = [x, -0.20, -1.55]
+            root.addChild(nacelle)
 
-        let engineDeck = block(size: [0.86, 0.42, 1.15], color: oliveLight)
-        engineDeck.position = [0, 0.38, -0.58]
-        root.addChild(engineDeck)
+            let exhaust = block(size: [0.55, 0.55, 0.28], color: .black, metallic: true)
+            exhaust.position = [x, -0.20, -3.30]
+            root.addChild(exhaust)
+        }
 
-        let tailBoom = block(size: [0.30, 0.30, 3.35], color: olive)
-        tailBoom.position = [0, 0.20, -2.15]
-        root.addChild(tailBoom)
-
-        let verticalTail = block(size: [0.12, 1.05, 0.72], color: oliveLight)
-        verticalTail.position = [0, 0.62, -3.85]
-        root.addChild(verticalTail)
-
-        let leftWing = block(size: [1.35, 0.12, 0.58], color: oliveLight)
-        leftWing.position = [-0.82, -0.05, -0.20]
-        leftWing.orientation = .init(angle: 0.08, axis: [0, 0, 1])
+        let leftWing = block(size: [4.10, 0.12, 1.55], color: bodyColor)
+        leftWing.position = [-2.05, -0.03, -0.30]
+        leftWing.orientation = .init(angle: 0.16, axis: [0, 1, 0])
         root.addChild(leftWing)
 
-        let rightWing = block(size: [1.35, 0.12, 0.58], color: oliveLight)
-        rightWing.position = [0.82, -0.05, -0.20]
-        rightWing.orientation = .init(angle: -0.08, axis: [0, 0, 1])
+        let rightWing = block(size: [4.10, 0.12, 1.55], color: bodyColor)
+        rightWing.position = [2.05, -0.03, -0.30]
+        rightWing.orientation = .init(angle: -0.16, axis: [0, 1, 0])
         root.addChild(rightWing)
 
-        let mast = ModelEntity(
-            mesh: .generateCylinder(height: 0.52, radius: 0.055),
-            materials: [SimpleMaterial(color: dark, isMetallic: true)]
-        )
-        mast.position = [0, 0.86, -0.25]
-        root.addChild(mast)
+        let leftTailplane = block(size: [2.15, 0.10, 0.78], color: bodyLight)
+        leftTailplane.position = [-1.30, 0.02, -3.10]
+        leftTailplane.orientation = .init(angle: 0.10, axis: [0, 1, 0])
+        root.addChild(leftTailplane)
 
-        let mainRotor = Entity()
-        mainRotor.name = mainRotorName
-        mainRotor.position = [0, 1.12, -0.25]
+        let rightTailplane = block(size: [2.15, 0.10, 0.78], color: bodyLight)
+        rightTailplane.position = [1.30, 0.02, -3.10]
+        rightTailplane.orientation = .init(angle: -0.10, axis: [0, 1, 0])
+        root.addChild(rightTailplane)
 
-        let rotorHub = ModelEntity(
-            mesh: .generateCylinder(height: 0.08, radius: 0.12),
-            materials: [SimpleMaterial(color: dark, isMetallic: true)]
-        )
-        mainRotor.addChild(rotorHub)
-
-        // AH-1 family: visually use the distinctive two-blade main rotor.
-        mainRotor.addChild(block(size: [6.15, 0.04, 0.14], color: dark))
-        root.addChild(mainRotor)
-
-        let tailRotor = Entity()
-        tailRotor.name = tailRotorName
-        tailRotor.position = [0.22, 0.55, -4.02]
-        tailRotor.addChild(block(size: [0.04, 1.16, 0.10], color: dark))
-        tailRotor.addChild(block(size: [0.04, 0.10, 1.16], color: dark))
-        root.addChild(tailRotor)
-
-        let skidLeft = block(size: [0.07, 0.07, 2.45], color: dark, metallic: true)
-        skidLeft.position = [-0.52, -0.65, 0.0]
-        root.addChild(skidLeft)
-
-        let skidRight = block(size: [0.07, 0.07, 2.45], color: dark, metallic: true)
-        skidRight.position = [0.52, -0.65, 0.0]
-        root.addChild(skidRight)
-
-        for x: Float in [-0.52, 0.52] {
-            for z: Float in [-0.78, 0.78] {
-                let strut = block(size: [0.055, 0.55, 0.055], color: dark, metallic: true)
-                strut.position = [x, -0.42, z]
-                root.addChild(strut)
-            }
+        for x: Float in [-0.70, 0.70] {
+            let tail = block(size: [0.14, 1.65, 1.08], color: bodyColor)
+            tail.position = [x, 0.88, -2.90]
+            tail.orientation = .init(angle: x < 0 ? -0.08 : 0.08, axis: [0, 0, 1])
+            root.addChild(tail)
         }
+
+        // A bright belly stripe gives a strong orientation cue during rolls.
+        let bellyStripe = block(
+            size: [0.18, 0.04, 4.70],
+            color: UIColor(red: 0.88, green: 0.56, blue: 0.16, alpha: 1)
+        )
+        bellyStripe.position = [0, -0.44, 0.05]
+        root.addChild(bellyStripe)
 
         return root
     }

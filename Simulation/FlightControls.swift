@@ -1,24 +1,23 @@
 import Foundation
 
 struct FlightControls: Equatable, Sendable {
-    /// Lateral cyclic. -1 = full left, +1 = full right.
-    var cyclicRoll: Float = 0
+    /// Lateral stick. -1 = full left, +1 = full right.
+    var roll: Float = 0
 
-    /// Longitudinal cyclic. -1 = full aft, +1 = full forward.
-    var cyclicPitch: Float = 0
+    /// Longitudinal stick. -1 = full nose-down, +1 = full nose-up.
+    var pitch: Float = 0
 
-    /// Collective. 0 = minimum, 1 = maximum. Start at a low powered setting
-    /// so the calibration aircraft can spool without immediately trying to lift.
-    var collective: Float = 0.35
+    /// Engine throttle. 0 = idle, 1 = maximum command.
+    var throttle: Float = 0.72
 
-    /// Anti-torque pedals. -1 = left, +1 = right.
-    var pedals: Float = 0
+    /// Rudder. -1 = full left, +1 = full right.
+    var rudder: Float = 0
 
     mutating func clampToValidRange() {
-        cyclicRoll = cyclicRoll.clamped(to: -1...1)
-        cyclicPitch = cyclicPitch.clamped(to: -1...1)
-        collective = collective.clamped(to: 0...1)
-        pedals = pedals.clamped(to: -1...1)
+        roll = roll.clamped(to: -1...1)
+        pitch = pitch.clamped(to: -1...1)
+        throttle = throttle.clamped(to: 0...1)
+        rudder = rudder.clamped(to: -1...1)
     }
 }
 
