@@ -38,8 +38,27 @@ struct ContentView: View {
                 .allowsHitTesting(false)
 
             VStack {
-                HStack {
+                HStack(spacing: 8) {
+                    flightSystemButton(
+                        simulation.controls.gearDown ? "GEAR DN" : "GEAR UP",
+                        active: simulation.controls.gearDown
+                    ) {
+                        var controls = simulation.controls
+                        controls.gearDown.toggle()
+                        simulation.controls = controls
+                    }
+
+                    flightSystemButton(
+                        simulation.controls.speedbrakeExtended ? "BRK OUT" : "SPD BRK",
+                        active: simulation.controls.speedbrakeExtended
+                    ) {
+                        var controls = simulation.controls
+                        controls.speedbrakeExtended.toggle()
+                        simulation.controls = controls
+                    }
+
                     Spacer()
+
                     Button(action: pauseFlight) {
                         Image(systemName: "pause.fill")
                             .font(.system(size: 13, weight: .bold))
@@ -193,6 +212,30 @@ struct ContentView: View {
         }
     }
 
+    private func flightSystemButton(
+        _ title: String,
+        active: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .tracking(0.4)
+                .foregroundStyle(active ? Color.black : Color.white.opacity(0.78))
+                .padding(.horizontal, 11)
+                .frame(height: 38)
+                .background(
+                    active ? AnyShapeStyle(Color.white.opacity(0.92)) : AnyShapeStyle(Color.black.opacity(0.32)),
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(.white.opacity(active ? 0.05 : 0.12), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func statusChip(_ top: String, _ bottom: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(top)
@@ -285,6 +328,9 @@ private struct FlightHUD: View {
 
     var body: some View {
         ZStack {
+            GForceVignette(loadFactorG: state.loadFactorG)
+                .ignoresSafeArea()
+
             VStack(spacing: 6) {
                 headingRibbon
                 Spacer()
@@ -414,6 +460,26 @@ private struct FlightHUD: View {
                     .padding(.bottom, 112)
             }
         }
+    }
+}
+
+private struct GForceVignette: View {
+    let loadFactorG: Float
+
+    var body: some View {
+        let magnitude = abs(loadFactorG)
+        let intensity = max(0, min(1, (magnitude - 5.4) / 3.6))
+        RadialGradient(
+            colors: [
+                .clear,
+                .black.opacity(Double(intensity) * 0.08),
+                .black.opacity(Double(intensity) * 0.42)
+            ],
+            center: .center,
+            startRadius: 90,
+            endRadius: 520
+        )
+        .opacity(intensity > 0 ? 1 : 0)
     }
 }
 
