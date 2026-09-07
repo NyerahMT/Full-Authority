@@ -13,7 +13,7 @@ struct ContentView: View {
                 HStack(alignment: .top, spacing: 10) {
                     statusPanel
                     Spacer(minLength: 8)
-                    rotorPanel
+                    enginePanel
                     telemetryPanel
                 }
                 .safeAreaPadding(.horizontal, 18)
@@ -22,30 +22,30 @@ struct ContentView: View {
                 Spacer()
 
                 HStack(alignment: .bottom, spacing: 18) {
-                    CollectiveControl(value: simulation.controls.collective) { newValue in
+                    ThrottleControl(value: simulation.controls.throttle) { newValue in
                         var controls = simulation.controls
-                        controls.collective = newValue
+                        controls.throttle = newValue
                         simulation.controls = controls
                     }
 
                     Spacer(minLength: 10)
 
-                    PedalControl(value: simulation.controls.pedals) { newValue in
+                    RudderControl(value: simulation.controls.rudder) { newValue in
                         var controls = simulation.controls
-                        controls.pedals = newValue
+                        controls.rudder = newValue
                         simulation.controls = controls
                     }
                     .padding(.bottom, 4)
 
                     Spacer(minLength: 10)
 
-                    CyclicControl(
-                        roll: simulation.controls.cyclicRoll,
-                        pitch: simulation.controls.cyclicPitch
+                    StickControl(
+                        roll: simulation.controls.roll,
+                        pitch: simulation.controls.pitch
                     ) { roll, pitch in
                         var controls = simulation.controls
-                        controls.cyclicRoll = roll
-                        controls.cyclicPitch = pitch
+                        controls.roll = roll
+                        controls.pitch = pitch
                         simulation.controls = controls
                     }
                 }
@@ -60,7 +60,7 @@ struct ContentView: View {
             Text("FULL AUTHORITY")
                 .font(.system(size: 17, weight: .black, design: .rounded))
 
-            Text("CALIBRATION 004 · AH-1S")
+            Text("CALIBRATION 005 · F-15")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(.secondary)
 
@@ -74,16 +74,11 @@ struct ContentView: View {
         .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
     }
 
-    private var rotorPanel: some View {
-        let nominalMainRotorRPM: Float = 324
-        let nrPercent = nominalMainRotorRPM > 0
-            ? simulation.state.mainRotorRPM / nominalMainRotorRPM * 100
-            : 0
-
-        return HStack(spacing: 12) {
-            telemetryItem("NR", String(format: "%.0f%%", nrPercent))
-            telemetryItem("RPM", String(format: "%.0f", simulation.state.mainRotorRPM))
-            telemetryItem("SAS", "ON")
+    private var enginePanel: some View {
+        HStack(spacing: 12) {
+            telemetryItem("THR", String(format: "%.0f%%", simulation.controls.throttle * 100))
+            telemetryItem("FDM", "F-15")
+            telemetryItem("MODE", "CHASE")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -128,14 +123,14 @@ struct ContentView: View {
     }
 }
 
-private struct CollectiveControl: View {
+private struct ThrottleControl: View {
     let value: Float
     let onChange: (Float) -> Void
 
     var body: some View {
         VStack(spacing: 7) {
             HStack(spacing: 5) {
-                Text("COLLECTIVE")
+                Text("THROTTLE")
                 Text(String(format: "%02.0f%%", value * 100))
                     .foregroundStyle(.white)
             }
@@ -159,16 +154,16 @@ private struct CollectiveControl: View {
                         .padding(.bottom, knobDiameter * 0.5)
 
                     VStack {
-                        Text("100")
+                        Text("MAX")
                         Spacer()
-                        Text("50")
+                        Text("MIL")
                         Spacer()
-                        Text("0")
+                        Text("IDLE")
                     }
                     .font(.system(size: 7, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.52))
                     .frame(maxHeight: .infinity)
-                    .offset(x: 28)
+                    .offset(x: 31)
 
                     Circle()
                         .fill(.white)
@@ -195,18 +190,18 @@ private struct CollectiveControl: View {
     }
 }
 
-private struct PedalControl: View {
+private struct RudderControl: View {
     let value: Float
     let onChange: (Float) -> Void
 
     var body: some View {
         VStack(spacing: 6) {
             HStack {
-                Text("L PEDAL")
+                Text("L RUDDER")
                 Spacer()
                 Text(String(format: "%+.0f%%", value * 100))
                 Spacer()
-                Text("R PEDAL")
+                Text("R RUDDER")
             }
             .font(.system(size: 8, weight: .bold, design: .monospaced))
             .foregroundStyle(.secondary)
@@ -224,17 +219,6 @@ private struct PedalControl: View {
                     Rectangle()
                         .fill(.white.opacity(0.32))
                         .frame(width: 2, height: 34)
-
-                    HStack {
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(.white.opacity(0.18))
-                            .frame(width: 64, height: 24)
-                        Spacer()
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(.white.opacity(0.18))
-                            .frame(width: 64, height: 24)
-                    }
-                    .padding(.horizontal, 5)
 
                     Circle()
                         .fill(.white)
@@ -262,7 +246,7 @@ private struct PedalControl: View {
     }
 }
 
-private struct CyclicControl: View {
+private struct StickControl: View {
     let roll: Float
     let pitch: Float
     let onChange: (Float, Float) -> Void
@@ -270,9 +254,9 @@ private struct CyclicControl: View {
     var body: some View {
         VStack(spacing: 7) {
             HStack {
-                Text("CYCLIC")
+                Text("STICK")
                 Spacer()
-                Text(String(format: "X%+.0f Y%+.0f", roll * 100, pitch * 100))
+                Text(String(format: "R%+.0f P%+.0f", roll * 100, pitch * 100))
             }
             .font(.system(size: 9, weight: .bold, design: .monospaced))
             .foregroundStyle(.secondary)
@@ -306,7 +290,7 @@ private struct CyclicControl: View {
                         .shadow(radius: 4)
                         .offset(
                             x: CGFloat(roll) * radius,
-                            y: -CGFloat(pitch) * radius
+                            y: CGFloat(pitch) * radius
                         )
                 }
                 .contentShape(Circle())
@@ -325,7 +309,9 @@ private struct CyclicControl: View {
                             }
 
                             var normalizedRoll = Float(dx / radius)
-                            var normalizedPitch = Float(-dy / radius)
+                            // Pulling the touch stick down is nose-up, matching a
+                            // conventional aircraft stick rather than a screen axis.
+                            var normalizedPitch = Float(dy / radius)
                             if abs(normalizedRoll) < 0.04 { normalizedRoll = 0 }
                             if abs(normalizedPitch) < 0.04 { normalizedPitch = 0 }
                             onChange(normalizedRoll, normalizedPitch)
