@@ -14,6 +14,7 @@ final class FlightSimulation: ObservableObject {
     @Published private(set) var state = AircraftState.parked
     @Published private(set) var backendStatus: BackendStatus
     @Published private(set) var simulationTime: TimeInterval = 0
+    @Published private(set) var isPaused = true
 
     let fixedStep: TimeInterval = 1.0 / 120.0
 
@@ -39,6 +40,23 @@ final class FlightSimulation: ObservableObject {
         backendStatus = .bridgeReady(version: bridge.version)
 
         _ = loadModel(named: "f16")
+        isPaused = true
+    }
+
+    func pause() {
+        isPaused = true
+    }
+
+    func resume() {
+        guard bridge.isModelLoaded else { return }
+        isPaused = false
+    }
+
+    @discardableResult
+    func resetFlight() -> Bool {
+        isPaused = true
+        controls = FlightControls()
+        return loadModel(named: activeModel ?? "f16")
     }
 
     func loadModel(named modelName: String) -> Bool {
@@ -80,7 +98,7 @@ final class FlightSimulation: ObservableObject {
 
     /// Advances JSBSim at a fixed 120 Hz regardless of rendering frame rate.
     func advance(realDelta: TimeInterval) {
-        guard bridge.isModelLoaded else { return }
+        guard bridge.isModelLoaded, !isPaused else { return }
 
         accumulator += min(max(realDelta, 0), 0.20)
 
@@ -93,6 +111,7 @@ final class FlightSimulation: ObservableObject {
             } catch {
                 backendStatus = .failed(message: error.localizedDescription)
                 accumulator = 0
+                isPaused = true
                 return
             }
 
@@ -189,6 +208,8 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/rudder-cmd-norm", value: rudder)
         bridge.setProperty("fcs/throttle-cmd-norm", value: throttle)
         bridge.setProperty("fcs/throttle-cmd-norm[0]", value: throttle)
+        bridge.setProperty("gear/gear-cmd-norm", value: controls.gearDown ? 1 : 0)
+        bridge.setProperty("fcs/speedbrake-cmd-norm", value: controls.speedbrakeExtended ? 1 : 0)
     }
 
     private func readStateFromJSBSim() {
@@ -228,6 +249,13 @@ final class FlightSimulation: ObservableObject {
         let wrappedHeading = rawHeading.truncatingRemainder(dividingBy: 360)
         state.headingDegrees = wrappedHeading >= 0 ? wrappedHeading : wrappedHeading + 360
 
+        state.rollDegrees = roll * radiansToDegrees
+        state.pitchDegrees = pitch * radiansToDegrees
+        state.mach = finiteFloat("velocities/mach", fallback: 0)
+        state.angleOfAttackDegrees = finiteFloat("aero/alpha-deg", fallback: 0)
+        state.sideslipDegrees = finiteFloat("aero/beta-deg", fallback: 0)
+        state.loadFactorG = finiteFloat("accelerations/n-pilot-z-norm", fallback: 1)
+
         state.mainRotorRPM = 0
         state.tailRotorRPM = 0
         state.mainRotorPhaseRadians = 0
@@ -247,6 +275,11 @@ final class FlightSimulation: ObservableObject {
 
         state.positionMeters.x = Float(eastMeters)
         state.positionMeters.z = Float(northMeters)
+    }
+
+    private func finiteFloat(_ property: String, fallback: Float) -> Float {
+        let value = Float(bridge.value(forProperty: property))
+        return value.isFinite ? value : fallback
     }
 
     private func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {

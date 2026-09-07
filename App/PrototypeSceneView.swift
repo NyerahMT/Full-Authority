@@ -12,7 +12,7 @@ struct PrototypeSceneView: View {
                 content.camera = .virtual
                 content.environment = .default
 
-                let world = CalibrationWorldFactory.make()
+                let world = FreeFlightWorldFactory.make()
                 content.add(world)
 
                 let aircraft = PrototypeAircraftFactory.make()
@@ -23,35 +23,32 @@ struct PrototypeSceneView: View {
                 let camera = Entity()
                 camera.name = "FA.camera"
                 camera.components.set(PerspectiveCameraComponent(
-                    near: 0.15,
-                    far: 24_000,
-                    fieldOfViewInDegrees: 62
+                    near: 0.10,
+                    far: 45_000,
+                    fieldOfViewInDegrees: 59
                 ))
-
-                let initialTarget = simulation.state.positionMeters
-                camera.look(
-                    at: initialTarget + SIMD3<Float>(0, 0.8, 22),
-                    from: initialTarget + SIMD3<Float>(3.2, 4.8, -16),
-                    relativeTo: nil
-                )
+                positionFixedChaseCamera(camera)
                 content.add(camera)
 
                 let sun = Entity()
                 sun.name = "FA.sun"
                 sun.components.set([
-                    DirectionalLightComponent(color: .white, intensity: 20_000),
+                    DirectionalLightComponent(
+                        color: UIColor(red: 1.0, green: 0.94, blue: 0.82, alpha: 1),
+                        intensity: 24_000
+                    ),
                     DirectionalLightComponent.Shadow()
                 ])
-                sun.look(at: .zero, from: [-3_800, 6_500, 2_200], relativeTo: nil)
+                sun.look(at: .zero, from: [-4_800, 7_500, -2_400], relativeTo: nil)
                 content.add(sun)
 
                 let fill = Entity()
                 fill.name = "FA.fill"
                 fill.components.set(DirectionalLightComponent(
-                    color: UIColor(red: 0.74, green: 0.83, blue: 1.0, alpha: 1),
-                    intensity: 3_500
+                    color: UIColor(red: 0.63, green: 0.76, blue: 0.96, alpha: 1),
+                    intensity: 4_200
                 ))
-                fill.look(at: .zero, from: [4_000, 2_500, -3_000], relativeTo: nil)
+                fill.look(at: .zero, from: [5_000, 3_000, 3_500], relativeTo: nil)
                 content.add(fill)
             } update: { content in
                 guard let aircraft = content.entities.first(where: { $0.name == PrototypeAircraftFactory.aircraftName }) else {
@@ -61,8 +58,10 @@ struct PrototypeSceneView: View {
                 aircraft.position = simulation.state.positionMeters
                 aircraft.orientation = simulation.state.orientation
 
+                updateAircraftEffects(aircraft)
+
                 if let camera = content.entities.first(where: { $0.name == "FA.camera" }) {
-                    updateFollowCamera(camera)
+                    positionFixedChaseCamera(camera)
                 }
             }
             .onChange(of: timeline.date) { oldDate, newDate in
@@ -71,11 +70,11 @@ struct PrototypeSceneView: View {
         }
         .background(
             LinearGradient(
-                colors: [
-                    Color(red: 0.20, green: 0.43, blue: 0.70),
-                    Color(red: 0.42, green: 0.61, blue: 0.78),
-                    Color(red: 0.70, green: 0.76, blue: 0.77),
-                    Color(red: 0.78, green: 0.72, blue: 0.58)
+                stops: [
+                    .init(color: Color(red: 0.10, green: 0.30, blue: 0.58), location: 0.00),
+                    .init(color: Color(red: 0.27, green: 0.52, blue: 0.75), location: 0.48),
+                    .init(color: Color(red: 0.69, green: 0.75, blue: 0.75), location: 0.72),
+                    .init(color: Color(red: 0.83, green: 0.75, blue: 0.60), location: 1.00)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -84,156 +83,301 @@ struct PrototypeSceneView: View {
     }
 
     @MainActor
-    private func updateFollowCamera(_ camera: Entity) {
+    private func positionFixedChaseCamera(_ camera: Entity) {
         let aircraftPosition = simulation.state.positionMeters
-        let fullForward = simd_act(simulation.state.orientation, SIMD3<Float>(0, 0, 1))
-        let horizontalForwardVector = SIMD3<Float>(fullForward.x, 0, fullForward.z)
+        let attitude = simulation.state.orientation
 
-        let horizontalForward: SIMD3<Float>
-        if simd_length_squared(horizontalForwardVector) > 0.0001 {
-            horizontalForward = simd_normalize(horizontalForwardVector)
-        } else {
-            horizontalForward = SIMD3<Float>(0, 0, 1)
+        // This is intentionally aircraft-relative, not horizon-relative. When the
+        // F-16 rolls or pitches, the camera rolls and pitches with it like a rigid
+        // chase mount. No speed pullback and no world-up horizon correction.
+        let localCameraOffset = SIMD3<Float>(0, 2.85, -13.2)
+        let localLookPoint = SIMD3<Float>(0, -0.15, 5.4)
+        let desiredPosition = aircraftPosition + simd_act(attitude, localCameraOffset)
+        let lookTarget = aircraftPosition + simd_act(attitude, localLookPoint)
+        let aircraftUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
+
+        camera.look(
+            at: lookTarget,
+            from: desiredPosition,
+            upVector: aircraftUp,
+            relativeTo: nil
+        )
+    }
+
+    @MainActor
+    private func updateAircraftEffects(_ aircraft: Entity) {
+        guard let afterburner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerName) else {
+            return
         }
 
-        let worldUp = SIMD3<Float>(0, 1, 0)
-        let right = simd_normalize(simd_cross(worldUp, horizontalForward))
-
-        let speed = simd_length(simulation.state.velocityMetersPerSecond)
-        let speedPullback = min(max((speed - 90) * 0.025, 0), 3.5)
-        let speedLookAhead = min(speed * 0.07, 13.0)
-
-        // Significantly tighter than Stage 005. The camera remains horizon-stable
-        // so pitch and bank are readable, but the aircraft now owns the frame.
-        let desiredPosition = aircraftPosition
-            - horizontalForward * (13.5 + speedPullback)
-            + right * 0.8
-            + worldUp * 4.8
-
-        let lookTarget = aircraftPosition
-            + fullForward * (9.0 + speedLookAhead)
-            + worldUp * 0.75
-
-        let smoothing: Float = speed > 90 ? 0.11 : 0.14
-        let smoothedPosition = camera.position + (desiredPosition - camera.position) * smoothing
-        camera.look(at: lookTarget, from: smoothedPosition, relativeTo: nil)
+        let intensity = max(0, min(1, (simulation.controls.throttle - 0.78) / 0.22))
+        afterburner.isEnabled = intensity > 0.02
+        afterburner.scale = [
+            0.28 + intensity * 0.18,
+            0.28 + intensity * 0.18,
+            0.75 + intensity * 1.55
+        ]
     }
 }
 
 @MainActor
-private enum CalibrationWorldFactory {
+private enum FreeFlightWorldFactory {
     static func make() -> Entity {
         let root = Entity()
         root.name = "FA.world"
 
-        let grass = UIColor(red: 0.25, green: 0.34, blue: 0.20, alpha: 1)
-        let grassLight = UIColor(red: 0.31, green: 0.39, blue: 0.23, alpha: 1)
-        let grassDry = UIColor(red: 0.43, green: 0.42, blue: 0.25, alpha: 1)
-        let asphalt = UIColor(red: 0.105, green: 0.115, blue: 0.12, alpha: 1)
-        let roadColor = UIColor(red: 0.18, green: 0.19, blue: 0.18, alpha: 1)
+        let grass = UIColor(red: 0.235, green: 0.31, blue: 0.17, alpha: 1)
+        let fieldPalette: [UIColor] = [
+            UIColor(red: 0.27, green: 0.35, blue: 0.18, alpha: 1),
+            UIColor(red: 0.34, green: 0.39, blue: 0.20, alpha: 1),
+            UIColor(red: 0.39, green: 0.39, blue: 0.20, alpha: 1),
+            UIColor(red: 0.30, green: 0.33, blue: 0.16, alpha: 1),
+            UIColor(red: 0.43, green: 0.41, blue: 0.23, alpha: 1)
+        ]
+        let asphalt = UIColor(red: 0.085, green: 0.092, blue: 0.098, alpha: 1)
+        let roadColor = UIColor(red: 0.15, green: 0.155, blue: 0.15, alpha: 1)
         let concrete = UIColor(red: 0.43, green: 0.44, blue: 0.42, alpha: 1)
-        let marking = UIColor(white: 0.91, alpha: 1)
-        let treeTrunk = UIColor(red: 0.22, green: 0.14, blue: 0.07, alpha: 1)
-        let treeGreen = UIColor(red: 0.12, green: 0.25, blue: 0.09, alpha: 1)
-        let treeLight = UIColor(red: 0.17, green: 0.31, blue: 0.11, alpha: 1)
+        let marking = UIColor(white: 0.90, alpha: 1)
+        let water = UIColor(red: 0.10, green: 0.29, blue: 0.37, alpha: 0.92)
 
-        let ground = block(size: [16_000, 0.14, 16_000], color: grass, cornerRadius: 0)
-        ground.position = [0, -0.08, 1_400]
+        let ground = block(size: [36_000, 0.12, 36_000], color: grass, cornerRadius: 0)
+        ground.position = [0, -0.08, 2_000]
         root.addChild(ground)
 
-        // Large, rounded landforms replace the calibration mesas. They are visual
-        // terrain for now; JSBSim still uses a flat collision/elevation plane.
-        let hills: [(SIMD3<Float>, SIMD3<Float>, UIColor)] = [
-            ([-1_150, -115, 1_100], [780, 195, 880], grassLight),
-            ([1_450, -150, 1_900], [1_050, 260, 1_180], grassDry),
-            ([-2_150, -240, 3_050], [1_500, 390, 1_300], grassLight),
-            ([2_500, -310, 3_700], [1_850, 500, 1_650], grassDry),
-            ([-3_400, -390, 5_450], [2_250, 650, 1_800], grassLight),
-            ([3_900, -450, 6_200], [2_650, 760, 2_150], grassDry),
-            ([0, -560, 7_500], [3_100, 920, 1_850], UIColor(red: 0.35, green: 0.35, blue: 0.28, alpha: 1))
+        addFields(to: root, palette: fieldPalette)
+        addAirbase(to: root, asphalt: asphalt, concrete: concrete, marking: marking)
+        addRoadNetwork(to: root, roadColor: roadColor)
+        addRiver(to: root, water: water)
+        addTown(to: root)
+        addTreeBelts(to: root)
+        addDistantRelief(to: root)
+        addCloudLayer(to: root)
+
+        return root
+    }
+
+    private static func addFields(to root: Entity, palette: [UIColor]) {
+        for xIndex in -6...6 {
+            for zIndex in -5...7 {
+                let selector = abs(xIndex * 11 + zIndex * 7)
+                let color = palette[selector % palette.count]
+                let xJitter = Float((zIndex * 37 + xIndex * 19) % 120)
+                let zJitter = Float((xIndex * 29 - zIndex * 13) % 110)
+                let width = Float(720 + selector % 190)
+                let depth = Float(700 + (selector * 3) % 210)
+
+                let patch = block(size: [width, 0.025, depth], color: color, cornerRadius: 1)
+                patch.position = [
+                    Float(xIndex) * 920 + xJitter,
+                    0.012,
+                    Float(zIndex) * 900 + zJitter + 1_500
+                ]
+                patch.orientation = simd_quatf(
+                    angle: Float((selector % 7) - 3) * 0.008,
+                    axis: [0, 1, 0]
+                )
+                root.addChild(patch)
+            }
+        }
+    }
+
+    private static func addAirbase(
+        to root: Entity,
+        asphalt: UIColor,
+        concrete: UIColor,
+        marking: UIColor
+    ) {
+        let runway = block(size: [64, 0.08, 4_600], color: asphalt, cornerRadius: 1)
+        runway.position = [0, 0.075, 850]
+        root.addChild(runway)
+
+        for z in stride(from: -1_350, through: 3_050, by: 120) {
+            let dash = block(size: [1.35, 0.025, 42], color: marking, cornerRadius: 0.08)
+            dash.position = [0, 0.13, Float(z)]
+            root.addChild(dash)
+        }
+
+        for x: Float in [-30.2, 30.2] {
+            let edge = block(size: [0.7, 0.02, 4_540], color: marking, cornerRadius: 0.05)
+            edge.position = [x, 0.13, 850]
+            root.addChild(edge)
+        }
+
+        for endZ: Float in [-1_390, 3_090] {
+            for stripe in -3...3 {
+                let threshold = block(size: [5.0, 0.022, 26], color: marking, cornerRadius: 0)
+                threshold.position = [Float(stripe) * 7.1, 0.132, endZ]
+                root.addChild(threshold)
+            }
+        }
+
+        let taxiway = block(size: [390, 0.06, 32], color: asphalt, cornerRadius: 2)
+        taxiway.position = [205, 0.055, 560]
+        root.addChild(taxiway)
+
+        let parallelTaxiway = block(size: [28, 0.055, 2_400], color: asphalt, cornerRadius: 2)
+        parallelTaxiway.position = [305, 0.05, 1_100]
+        root.addChild(parallelTaxiway)
+
+        let apron = block(size: [360, 0.065, 310], color: concrete, cornerRadius: 3)
+        apron.position = [470, 0.05, 560]
+        root.addChild(apron)
+
+        for row in 0..<2 {
+            for column in 0..<4 {
+                let x = 365 + Float(column) * 88
+                let z = 470 + Float(row) * 125
+                addHangar(to: root, position: [x, 0, z])
+            }
+        }
+
+        let towerShaft = block(
+            size: [18, 46, 18],
+            color: UIColor(red: 0.53, green: 0.52, blue: 0.47, alpha: 1),
+            cornerRadius: 1
+        )
+        towerShaft.position = [675, 23, 720]
+        root.addChild(towerShaft)
+
+        let towerCab = block(
+            size: [30, 10, 30],
+            color: UIColor(red: 0.09, green: 0.17, blue: 0.20, alpha: 1),
+            cornerRadius: 2
+        )
+        towerCab.position = [675, 49, 720]
+        root.addChild(towerCab)
+    }
+
+    private static func addHangar(to root: Entity, position: SIMD3<Float>) {
+        let body = block(
+            size: [68, 17, 52],
+            color: UIColor(red: 0.37, green: 0.38, blue: 0.36, alpha: 1),
+            cornerRadius: 2
+        )
+        body.position = [position.x, 8.5, position.z]
+        root.addChild(body)
+
+        let door = block(
+            size: [48, 11, 0.8],
+            color: UIColor(red: 0.17, green: 0.18, blue: 0.18, alpha: 1),
+            cornerRadius: 0.5
+        )
+        door.position = [position.x, 5.8, position.z - 26.2]
+        root.addChild(door)
+    }
+
+    private static func addRoadNetwork(to root: Entity, roadColor: UIColor) {
+        addRoad(to: root, size: [5_500, 0.032, 18], position: [1_350, 0.03, -620], yaw: 0.055, color: roadColor)
+        addRoad(to: root, size: [18, 0.032, 6_200], position: [-1_100, 0.03, 2_050], yaw: -0.12, color: roadColor)
+        addRoad(to: root, size: [5_100, 0.032, 16], position: [-1_000, 0.03, 3_650], yaw: -0.19, color: roadColor)
+        addRoad(to: root, size: [3_800, 0.032, 15], position: [2_300, 0.03, 2_050], yaw: 0.31, color: roadColor)
+        addRoad(to: root, size: [16, 0.032, 4_100], position: [2_650, 0.03, 2_850], yaw: 0.08, color: roadColor)
+    }
+
+    private static func addRiver(to root: Entity, water: UIColor) {
+        for index in 0..<18 {
+            let z = -3_000 + Float(index) * 650
+            let x = -3_500 + sin(Float(index) * 0.62) * 520
+            let segment = block(size: [165, 0.02, 720], color: water, cornerRadius: 45)
+            segment.position = [x, 0.018, z]
+            segment.orientation = simd_quatf(
+                angle: cos(Float(index) * 0.58) * 0.18,
+                axis: [0, 1, 0]
+            )
+            root.addChild(segment)
+        }
+    }
+
+    private static func addTown(to root: Entity) {
+        let wallColors: [UIColor] = [
+            UIColor(red: 0.48, green: 0.46, blue: 0.40, alpha: 1),
+            UIColor(red: 0.38, green: 0.40, blue: 0.41, alpha: 1),
+            UIColor(red: 0.53, green: 0.50, blue: 0.43, alpha: 1),
+            UIColor(red: 0.43, green: 0.42, blue: 0.39, alpha: 1)
         ]
 
-        for (position, radii, color) in hills {
+        for row in 0..<5 {
+            for column in 0..<7 {
+                let selector = row * 7 + column
+                let height = Float(18 + (selector * 13) % 54)
+                let width = Float(34 + (selector * 7) % 28)
+                let depth = Float(32 + (selector * 11) % 30)
+                let building = block(
+                    size: [width, height, depth],
+                    color: wallColors[selector % wallColors.count],
+                    cornerRadius: 1.2
+                )
+                building.position = [
+                    2_250 + Float(column) * 115,
+                    height * 0.5,
+                    2_450 + Float(row) * 125
+                ]
+                root.addChild(building)
+
+                let roof = block(
+                    size: [width + 2, 1.4, depth + 2],
+                    color: UIColor(red: 0.19, green: 0.20, blue: 0.20, alpha: 1),
+                    cornerRadius: 0.4
+                )
+                roof.position = [building.position.x, height + 0.7, building.position.z]
+                root.addChild(roof)
+            }
+        }
+    }
+
+    private static func addTreeBelts(to root: Entity) {
+        let trunk = UIColor(red: 0.19, green: 0.12, blue: 0.065, alpha: 1)
+        let greens: [UIColor] = [
+            UIColor(red: 0.09, green: 0.22, blue: 0.075, alpha: 1),
+            UIColor(red: 0.13, green: 0.27, blue: 0.09, alpha: 1),
+            UIColor(red: 0.17, green: 0.30, blue: 0.10, alpha: 1)
+        ]
+
+        for belt in 0..<9 {
+            let baseX = Float(-4_000 + belt * 900)
+            let baseZ = Float(700 + (belt % 3) * 1_450)
+            for treeIndex in 0..<8 {
+                let height = Float(13 + ((belt * 17 + treeIndex * 7) % 10))
+                addTree(
+                    to: root,
+                    position: [
+                        baseX + Float(treeIndex) * 62,
+                        0,
+                        baseZ + sin(Float(treeIndex) * 0.9) * 95
+                    ],
+                    height: height,
+                    trunkColor: trunk,
+                    canopyColor: greens[(belt + treeIndex) % greens.count]
+                )
+            }
+        }
+    }
+
+    private static func addDistantRelief(to root: Entity) {
+        let relief: [(SIMD3<Float>, SIMD3<Float>, UIColor)] = [
+            ([-7_200, -310, 7_000], [2_900, 650, 2_300], UIColor(red: 0.29, green: 0.31, blue: 0.22, alpha: 1)),
+            ([7_800, -360, 8_600], [3_200, 760, 2_800], UIColor(red: 0.34, green: 0.33, blue: 0.23, alpha: 1)),
+            ([-9_500, -520, 12_000], [4_200, 1_050, 3_300], UIColor(red: 0.30, green: 0.30, blue: 0.27, alpha: 1)),
+            ([9_800, -580, 13_500], [4_600, 1_180, 3_800], UIColor(red: 0.32, green: 0.31, blue: 0.27, alpha: 1)),
+            ([0, -820, 16_000], [6_500, 1_550, 3_600], UIColor(red: 0.30, green: 0.30, blue: 0.29, alpha: 1))
+        ]
+
+        for (position, radii, color) in relief {
             let hill = ellipsoid(radii: radii, color: color)
             hill.position = position
             root.addChild(hill)
         }
+    }
 
-        // A real runway/airfield cluster provides human scale and a strong sense
-        // of speed during low passes.
-        let runway = block(size: [62, 0.07, 4_200], color: asphalt, cornerRadius: 1.5)
-        runway.position = [0, 0.035, 850]
-        root.addChild(runway)
-
-        for z in stride(from: -1_150, through: 2_850, by: 120) {
-            let dash = block(size: [1.3, 0.025, 42], color: marking, cornerRadius: 0.1)
-            dash.position = [0, 0.085, Float(z)]
-            root.addChild(dash)
-        }
-
-        for x: Float in [-29.2, 29.2] {
-            let edge = block(size: [0.7, 0.022, 4_160], color: marking, cornerRadius: 0.05)
-            edge.position = [x, 0.084, 850]
-            root.addChild(edge)
-        }
-
-        let taxiway = block(size: [290, 0.055, 30], color: asphalt, cornerRadius: 2)
-        taxiway.position = [160, 0.03, 520]
-        root.addChild(taxiway)
-
-        let apron = block(size: [270, 0.06, 230], color: concrete, cornerRadius: 3)
-        apron.position = [330, 0.03, 520]
-        root.addChild(apron)
-
-        for index in 0..<6 {
-            let row = index / 3
-            let column = index % 3
-            let hangar = block(size: [62, 16, 45], color: UIColor(red: 0.36, green: 0.38, blue: 0.37, alpha: 1), cornerRadius: 2)
-            hangar.position = [250 + Float(column) * 78, 8, 445 + Float(row) * 105]
-            root.addChild(hangar)
-
-            let roof = block(size: [66, 2.2, 49], color: UIColor(red: 0.28, green: 0.29, blue: 0.29, alpha: 1), cornerRadius: 1)
-            roof.position = [hangar.position.x, 16.1, hangar.position.z]
-            root.addChild(roof)
-        }
-
-        // Roads break up the field color and make lateral motion obvious.
-        addRoad(to: root, size: [2_900, 0.03, 18], position: [1_150, 0.02, -350], yaw: 0.07, color: roadColor)
-        addRoad(to: root, size: [18, 0.03, 3_500], position: [-680, 0.02, 1_850], yaw: -0.18, color: roadColor)
-        addRoad(to: root, size: [2_400, 0.03, 15], position: [-1_250, 0.02, 2_650], yaw: -0.28, color: roadColor)
-
-        // Tree groups use a small number of simple primitives. They are dense
-        // enough for optic flow without becoming a draw-call disaster on iPhone.
-        let treePositions: [SIMD3<Float>] = [
-            [-420, 0, -650], [-330, 0, -530], [-500, 0, -420], [-260, 0, -300],
-            [620, 0, -550], [760, 0, -420], [910, 0, -250], [1_050, 0, -90],
-            [-820, 0, 350], [-940, 0, 520], [-1_020, 0, 680], [-780, 0, 850],
-            [720, 0, 1_050], [850, 0, 1_220], [980, 0, 1_400], [1_120, 0, 1_560],
-            [-1_200, 0, 1_550], [-1_350, 0, 1_700], [-1_470, 0, 1_880], [-1_100, 0, 2_050],
-            [1_450, 0, 2_200], [1_620, 0, 2_350], [1_760, 0, 2_530], [1_900, 0, 2_700],
-            [-1_900, 0, 2_450], [-2_050, 0, 2_620], [-2_200, 0, 2_800], [-2_350, 0, 2_980]
-        ]
-
-        for (index, position) in treePositions.enumerated() {
-            let height: Float = 16 + Float(index % 5) * 2.1
-            addTree(
-                to: root,
-                position: position,
-                height: height,
-                trunkColor: treeTrunk,
-                canopyColor: index.isMultiple(of: 3) ? treeLight : treeGreen
-            )
-        }
-
-        // Low-detail cloud banks add another depth layer above the terrain. The
-        // alpha is intentionally restrained so they do not hide the horizon.
-        let cloudColor = UIColor(red: 0.92, green: 0.94, blue: 0.95, alpha: 0.34)
+    private static func addCloudLayer(to root: Entity) {
+        let cloudColor = UIColor(red: 0.92, green: 0.94, blue: 0.96, alpha: 0.32)
         let clouds: [(SIMD3<Float>, SIMD3<Float>)] = [
-            ([-1_000, 650, 1_900], [260, 58, 150]),
-            ([900, 720, 2_700], [330, 72, 180]),
-            ([-2_100, 820, 4_200], [420, 90, 220]),
-            ([2_400, 900, 4_700], [500, 105, 260]),
-            ([0, 1_050, 6_000], [620, 120, 300])
+            ([-2_100, 1_150, 1_500], [420, 95, 235]),
+            ([1_700, 1_300, 2_400], [520, 110, 280]),
+            ([-4_200, 1_550, 5_200], [680, 135, 330]),
+            ([4_100, 1_700, 6_500], [720, 145, 360]),
+            ([-1_200, 2_000, 9_000], [920, 175, 430]),
+            ([3_400, 2_150, 10_800], [1_050, 190, 500])
         ]
 
         for (position, radii) in clouds {
@@ -241,8 +385,6 @@ private enum CalibrationWorldFactory {
             cloud.position = position
             root.addChild(cloud)
         }
-
-        return root
     }
 
     private static func addRoad(
@@ -267,17 +409,17 @@ private enum CalibrationWorldFactory {
     ) {
         let trunkHeight = height * 0.38
         let trunk = ModelEntity(
-            mesh: .generateCylinder(height: trunkHeight, radius: height * 0.055),
+            mesh: .generateCylinder(height: trunkHeight, radius: height * 0.05),
             materials: [SimpleMaterial(color: trunkColor, isMetallic: false)]
         )
         trunk.position = [position.x, trunkHeight * 0.5, position.z]
         root.addChild(trunk)
 
         let canopy = ellipsoid(
-            radii: [height * 0.28, height * 0.33, height * 0.28],
+            radii: [height * 0.25, height * 0.31, height * 0.25],
             color: canopyColor
         )
-        canopy.position = [position.x, trunkHeight + height * 0.24, position.z]
+        canopy.position = [position.x, trunkHeight + height * 0.23, position.z]
         root.addChild(canopy)
     }
 

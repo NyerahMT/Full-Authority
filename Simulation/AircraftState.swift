@@ -16,6 +16,15 @@ struct AircraftState: Equatable, Sendable {
     var verticalSpeedMetersPerSecond: Float = 0
     var headingDegrees: Float = 0
 
+    /// Additional raw JSBSim telemetry used by the in-game HUD.
+    var rollDegrees: Float = 0
+    var pitchDegrees: Float = 0
+    var mach: Float = 0
+    var angleOfAttackDegrees: Float = 0
+    var sideslipDegrees: Float = 0
+    var loadFactorG: Float = 1
+
+    // Retained for the helicopter path when Full Authority returns to rotary wing.
     var mainRotorRPM: Float = 0
     var tailRotorRPM: Float = 0
     var mainRotorPhaseRadians: Float = 0
