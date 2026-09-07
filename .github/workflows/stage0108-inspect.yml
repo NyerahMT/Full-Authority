@@ -21,7 +21,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y git-lfs blender
+          sudo apt-get install -y git-lfs blender python3-numpy
           git lfs install
       - name: Clone authored MIT F-16 project
         run: |
@@ -29,8 +29,6 @@ jobs:
           cd /tmp/FlightSim_F16
           git lfs pull --include="Assets/Models/F16.fbx,Assets/Models/afterburner.fbx,Assets/Textures/f16.png,Assets/Textures/afterburner.png"
           ls -lh Assets/Models/F16.fbx Assets/Models/afterburner.fbx Assets/Textures/f16.png Assets/Textures/afterburner.png
-          test -f Assets/Models/F16.fbx
-          test -f Assets/Models/afterburner.fbx
       - name: Inspect FBX hierarchy
         run: |
           blender -b --python Scripts/inspect_authored_f16.py -- \
