@@ -32,25 +32,28 @@ final class FlightSimulation: ObservableObject {
         bridge.setDeltaTime(fixedStep)
         backendStatus = .bridgeReady(version: bridge.version)
 
-        // The AH-1S is an upstream JSBSim calibration aircraft. It is staged into
-        // CI-built app bundles from the pinned JSBSim submodule and is not our
-        // eventual shipping Full Authority aircraft model.
-        _ = loadModel(named: "ah1s")
+        // Stage 005 uses the upstream F-15 as a simple fixed-wing calibration
+        // aircraft. It keeps the renderer, controls, and coordinate mapping easy
+        // to reason about before Full Authority gets its own aircraft models.
+        _ = loadModel(named: "f15")
     }
 
     func loadModel(named modelName: String) -> Bool {
         do {
             try bridge.loadModel(modelName)
+            activeModel = modelName
             configureInitialConditions(for: modelName)
             configureModelSystems(for: modelName)
             applyControls()
             try bridge.runInitialConditions()
+            configureModelSystems(for: modelName)
+            applyControls()
         } catch {
+            activeModel = nil
             backendStatus = .failed(message: error.localizedDescription)
             return false
         }
 
-        activeModel = modelName
         state = .parked
         accumulator = 0
         simulationTime = 0
@@ -80,7 +83,6 @@ final class FlightSimulation: ObservableObject {
             }
 
             readStateFromJSBSim()
-            integrateRotorPhases(deltaTime: fixedStep)
             simulationTime += fixedStep
             accumulator -= fixedStep
         }
@@ -88,44 +90,43 @@ final class FlightSimulation: ObservableObject {
 
     private func configureInitialConditions(for modelName: String) {
         bridge.setProperty("ic/terrain-elevation-ft", value: 0)
-        bridge.setProperty("ic/h-agl-ft", value: modelName == "ah1s" ? 6.3 : 3.6)
-        bridge.setProperty("ic/vg-fps", value: 0)
         bridge.setProperty("ic/phi-deg", value: 0)
-        bridge.setProperty("ic/theta-deg", value: 0)
         bridge.setProperty("ic/psi-true-deg", value: 0)
+
+        if modelName == "f15" {
+            // Start already established in low-level flight. This removes taxi,
+            // engine-start, and takeoff variables while we validate handling,
+            // camera behavior, and visual depth cues.
+            bridge.setProperty("ic/h-agl-ft", value: 1_500)
+            bridge.setProperty("ic/vg-fps", value: 500)
+            bridge.setProperty("ic/theta-deg", value: 2)
+            bridge.setProperty("ic/gamma-deg", value: 0)
+        } else {
+            bridge.setProperty("ic/h-agl-ft", value: 1_000)
+            bridge.setProperty("ic/vg-fps", value: 350)
+            bridge.setProperty("ic/theta-deg", value: 0)
+        }
     }
 
     private func configureModelSystems(for modelName: String) {
-        guard modelName == "ah1s" else { return }
+        guard modelName == "f15" else { return }
 
-        // Match the upstream AH-1S interactive setup rather than bypassing its
-        // helicopter-specific control and rotor systems.
-        bridge.setProperty("aero/setup/downwash-enable", value: 1)
-        bridge.setProperty("aero/setup/Nr_limiter", value: 0.05)
-        bridge.setProperty("fcs/adj/collective-profile", value: 1)
-        bridge.setProperty("fcs/adj/center-sensitivity", value: 1.65)
-
-        // Use the upstream RPM governor and a moderate amount of its AFCS/SAS.
-        // Pilot commands still feed the rotor-control system directly.
-        bridge.setProperty("fcs/rpm-governor-active-norm", value: 1)
-        bridge.setProperty("ap/afcs/pitch-channel-active-norm", value: 0.45)
-        bridge.setProperty("ap/afcs/roll-channel-active-norm", value: 0.45)
-        bridge.setProperty("ap/afcs/yaw-channel-active-norm", value: 0.55)
+        // JSBSim's turbine helper accepts -1 as "set every engine running".
+        // Gear/flaps are kept clean for an airborne handling calibration.
+        bridge.setProperty("propulsion/set-running", value: -1)
+        bridge.setProperty("gear/gear-cmd-norm", value: 0)
+        bridge.setProperty("fcs/flap-cmd-norm", value: 0)
+        bridge.setProperty("fcs/speedbrake-cmd-norm", value: 0)
     }
 
     private func applyControls() {
-        bridge.setProperty("fcs/aileron-cmd-norm", value: Double(controls.cyclicRoll))
-        bridge.setProperty("fcs/elevator-cmd-norm", value: Double(controls.cyclicPitch))
-        bridge.setProperty("fcs/collective-cmd-norm", value: Double(controls.collective))
-        bridge.setProperty("fcs/rudder-cmd-norm", value: Double(controls.pedals))
+        bridge.setProperty("fcs/aileron-cmd-norm", value: Double(controls.roll))
+        bridge.setProperty("fcs/elevator-cmd-norm", value: Double(controls.pitch))
+        bridge.setProperty("fcs/rudder-cmd-norm", value: Double(controls.rudder))
 
-        if activeModel == "ah1s" {
-            bridge.setProperty("fcs/rpm-governor-active-norm", value: 1)
-        } else {
-            bridge.setProperty("fcs/throttle-cmd-norm", value: 1)
-            bridge.setProperty("fcs/throttle-cmd-norm[0]", value: 1)
-            bridge.setProperty("fcs/throttle-cmd-norm[1]", value: 1)
-        }
+        bridge.setProperty("fcs/throttle-cmd-norm", value: Double(controls.throttle))
+        bridge.setProperty("fcs/throttle-cmd-norm[0]", value: Double(controls.throttle))
+        bridge.setProperty("fcs/throttle-cmd-norm[1]", value: Double(controls.throttle))
     }
 
     private func readStateFromJSBSim() {
@@ -138,7 +139,6 @@ final class FlightSimulation: ObservableObject {
 
         // JSBSim: NED, +X forward, +Y right, +Z down.
         // Full Authority: +Z forward/north, +X right/east, +Y up.
-        // Heading is clockwise from north, which is +yaw around RealityKit Y.
         let yawQ = simd_quatf(angle: yaw, axis: SIMD3<Float>(0, 1, 0))
         let pitchQ = simd_quatf(angle: -pitch, axis: SIMD3<Float>(1, 0, 0))
         let rollQ = simd_quatf(angle: -roll, axis: SIMD3<Float>(0, 0, 1))
@@ -166,9 +166,12 @@ final class FlightSimulation: ObservableObject {
         let wrappedHeading = rawHeading.truncatingRemainder(dividingBy: 360)
         state.headingDegrees = wrappedHeading >= 0 ? wrappedHeading : wrappedHeading + 360
 
-        state.mainRotorRPM = max(0, Float(bridge.value(forProperty: "propulsion/engine/rotor-rpm")))
-        let reportedTailRPM = max(0, Float(bridge.value(forProperty: "propulsion/engine[1]/rotor-rpm")))
-        state.tailRotorRPM = reportedTailRPM > 1 ? reportedTailRPM : state.mainRotorRPM * 6.33
+        // Rotor fields remain in AircraftState because helicopters are still on
+        // the roadmap, but a fixed-wing calibration aircraft reports none.
+        state.mainRotorRPM = 0
+        state.tailRotorRPM = 0
+        state.mainRotorPhaseRadians = 0
+        state.tailRotorPhaseRadians = 0
     }
 
     private func updateLocalPositionFromGeodetic() {
@@ -184,21 +187,5 @@ final class FlightSimulation: ObservableObject {
 
         state.positionMeters.x = Float(eastMeters)
         state.positionMeters.z = Float(northMeters)
-    }
-
-    private func integrateRotorPhases(deltaTime: TimeInterval) {
-        let seconds = Float(deltaTime)
-        let revolutionsToRadians = Float.pi * 2 / 60
-
-        state.mainRotorPhaseRadians = wrapAngle(
-            state.mainRotorPhaseRadians + state.mainRotorRPM * revolutionsToRadians * seconds
-        )
-        state.tailRotorPhaseRadians = wrapAngle(
-            state.tailRotorPhaseRadians + state.tailRotorRPM * revolutionsToRadians * seconds
-        )
-    }
-
-    private func wrapAngle(_ angle: Float) -> Float {
-        angle.truncatingRemainder(dividingBy: .pi * 2)
     }
 }
