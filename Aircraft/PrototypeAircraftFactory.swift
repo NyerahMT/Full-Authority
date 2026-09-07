@@ -175,113 +175,6 @@ enum PrototypeAircraftFactory {
         ))
     }
 
-    private static func horizontalHingedSurface(
-        name: String,
-        hingePosition: SIMD3<Float>,
-        outline: [SIMD2<Float>],
-        color: UIColor
-    ) -> Entity {
-        let hinge = Entity()
-        hinge.name = name
-        hinge.position = hingePosition
-        if let mesh = makeHorizontalSurfaceMesh(outline: outline, thickness: 0.034) {
-            let panel = ModelEntity(
-                mesh: mesh,
-                materials: [SimpleMaterial(color: color, isMetallic: false)]
-            )
-            hinge.addChild(panel)
-        }
-        return hinge
-    }
-
-    private static func verticalHingedSurface(
-        name: String,
-        hingePosition: SIMD3<Float>,
-        outline: [SIMD2<Float>],
-        color: UIColor
-    ) -> Entity {
-        let hinge = Entity()
-        hinge.name = name
-        hinge.position = hingePosition
-        if let mesh = makeVerticalSurfaceMesh(outline: outline, thickness: 0.034) {
-            let panel = ModelEntity(
-                mesh: mesh,
-                materials: [SimpleMaterial(color: color, isMetallic: false)]
-            )
-            hinge.addChild(panel)
-        }
-        return hinge
-    }
-
-    /// Outline coordinates are (spanwise X, chordwise Z), with Z=0 on the hinge
-    /// and negative Z extending aft. Two faces give the panel visible thickness
-    /// without relying on RealityKit primitive boxes.
-    private static func makeHorizontalSurfaceMesh(
-        outline: [SIMD2<Float>],
-        thickness: Float
-    ) -> MeshResource? {
-        guard outline.count >= 3 else { return nil }
-        let half = thickness * 0.5
-        var positions: [SIMD3<Float>] = []
-        var normals: [SIMD3<Float>] = []
-        var indices: [UInt32] = []
-
-        for point in outline {
-            positions.append([point.x, half, point.y])
-            normals.append([0, 1, 0])
-        }
-        for point in outline {
-            positions.append([point.x, -half, point.y])
-            normals.append([0, -1, 0])
-        }
-
-        let count = UInt32(outline.count)
-        for index in 1..<(outline.count - 1) {
-            indices.append(contentsOf: [0, UInt32(index), UInt32(index + 1)])
-            indices.append(contentsOf: [count, count + UInt32(index + 1), count + UInt32(index)])
-        }
-
-        var descriptor = MeshDescriptor(name: "F-16 horizontal control surface")
-        descriptor.positions = MeshBuffers.Positions(positions)
-        descriptor.normals = MeshBuffers.Normals(normals)
-        descriptor.primitives = .triangles(indices)
-        return try? MeshResource.generate(from: [descriptor])
-    }
-
-    /// Outline coordinates are (vertical Y, chordwise Z), with Z=0 on the
-    /// vertical hinge. Faces are duplicated on either side of the fin plane.
-    private static func makeVerticalSurfaceMesh(
-        outline: [SIMD2<Float>],
-        thickness: Float
-    ) -> MeshResource? {
-        guard outline.count >= 3 else { return nil }
-        let half = thickness * 0.5
-        var positions: [SIMD3<Float>] = []
-        var normals: [SIMD3<Float>] = []
-        var indices: [UInt32] = []
-
-        for point in outline {
-            positions.append([half, point.x, point.y])
-            normals.append([1, 0, 0])
-        }
-        for point in outline {
-            positions.append([-half, point.x, point.y])
-            normals.append([-1, 0, 0])
-        }
-
-        let count = UInt32(outline.count)
-        for index in 1..<(outline.count - 1) {
-            indices.append(contentsOf: [0, UInt32(index), UInt32(index + 1)])
-            indices.append(contentsOf: [count, count + UInt32(index + 1), count + UInt32(index)])
-        }
-
-        var descriptor = MeshDescriptor(name: "F-16 vertical control surface")
-        descriptor.positions = MeshBuffers.Positions(positions)
-        descriptor.normals = MeshBuffers.Normals(normals)
-        descriptor.primitives = .triangles(indices)
-        return try? MeshResource.generate(from: [descriptor])
-    }
-
     private static func gearAssembly(
         name: String,
         rootPosition: SIMD3<Float>,
@@ -318,51 +211,6 @@ enum PrototypeAircraftFactory {
         assembly.addChild(wheel)
 
         return assembly
-    }
-
-    private static func addNavigationLight(
-        to root: Entity,
-        name: String,
-        position: SIMD3<Float>,
-        color: UIColor
-    ) {
-        let light = ModelEntity(
-            mesh: .generateSphere(radius: 0.085),
-            materials: [SimpleMaterial(color: color, isMetallic: false)]
-        )
-        light.name = name
-        light.position = position
-        root.addChild(light)
-    }
-
-    private static func ellipsoid(
-        radii: SIMD3<Float>,
-        color: UIColor,
-        metallic: Bool
-    ) -> ModelEntity {
-        let entity = ModelEntity(
-            mesh: .generateSphere(radius: 1),
-            materials: [SimpleMaterial(color: color, isMetallic: metallic)]
-        )
-        entity.scale = radii
-        return entity
-    }
-
-    private static func cylinder(
-        length: Float,
-        radius: Float,
-        color: UIColor,
-        metallic: Bool,
-        axisAlongZ: Bool
-    ) -> ModelEntity {
-        let entity = ModelEntity(
-            mesh: .generateCylinder(height: length, radius: radius),
-            materials: [SimpleMaterial(color: color, isMetallic: metallic)]
-        )
-        if axisAlongZ {
-            entity.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
-        }
-        return entity
     }
 
     // FlightGear's mature F-16 model is used only as hinge-direction
@@ -648,13 +496,6 @@ enum PrototypeAircraftFactory {
         case .airframe, .canopy, .radome, .exhaust:
             return .zero
         }
-    }
-
-    private static func meanSurfaceY(_ positions: [SIMD3<Float>], nearZ targetZ: Float) -> Float {
-        let close = positions.filter { abs($0.z - targetZ) < 0.42 }
-        let sample = close.isEmpty ? positions : close
-        guard !sample.isEmpty else { return -1.20 }
-        return sample.reduce(Float(0)) { $0 + $1.y } / Float(sample.count)
     }
 
     private static func makeMeshResource(from builder: RawMeshBuilder, name: String, subtracting pivot: SIMD3<Float>) throws -> MeshResource {

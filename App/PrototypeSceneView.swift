@@ -405,31 +405,12 @@ struct PrototypeSceneView: View {
     private func updateAircraftPresentation(_ aircraft: Entity) {
         let state = simulation.state
 
-        if let afterburner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerName) {
-            // Stage2FlightEffects owns visible condensation/shock effects. Keep
-            // the legacy primitive exhaust subtle until the dedicated engine FX pass.
-            let intensity = max(0, min(1, (simulation.controls.throttle - 0.84) / 0.16))
-            afterburner.isEnabled = intensity > 0.04
-            afterburner.scale = [
-                0.24 + intensity * 0.08,
-                0.24 + intensity * 0.08,
-                0.48 + intensity * 1.15
-            ]
-        }
-
-        if let nozzle = aircraft.findEntity(named: PrototypeAircraftFactory.nozzleName) {
-            let dryToAB = max(0, min(1, (simulation.controls.throttle - 0.78) / 0.22))
-            let radialScale = 1.0 + dryToAB * 0.11
-            nozzle.scale = [radialScale, radialScale, 1]
-        }
-
-        if let speedbrake = aircraft.findEntity(named: PrototypeAircraftFactory.speedbrakeName) {
-            speedbrake.orientation = simd_quatf(angle: -state.speedbrakePosition * 0.88, axis: [1, 0, 0])
-        }
 
         // Drive each visual hinge from the actual JSBSim FCS surface angle.
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftAileronName) {
-            left.orientation = simd_quatf(angle: state.leftAileronRadians, axis: PrototypeAircraftFactory.leftAileronVisualAxis)
+            // Match the mature F-16 visual convention: the left JSBSim aileron
+            // sign is mirrored before rotation about the mirrored hinge axis.
+            left.orientation = simd_quatf(angle: -state.leftAileronRadians, axis: PrototypeAircraftFactory.leftAileronVisualAxis)
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightAileronName) {
             right.orientation = simd_quatf(angle: state.rightAileronRadians, axis: PrototypeAircraftFactory.rightAileronVisualAxis)
