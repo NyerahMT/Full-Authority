@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import RealityKit
 import SwiftUI
@@ -12,6 +13,7 @@ private final class Stage2SceneRuntime: ObservableObject {
     var lastAirspeed: Float?
     var chasePullbackMeters: Float = 0
     let effects = Stage2FlightEffects.Runtime()
+    let jetAudio = Stage0108JetAudio()
 }
 
 struct PrototypeSceneView: View {
@@ -93,6 +95,7 @@ struct PrototypeSceneView: View {
                     aircraft.orientation = simulation.state.orientation
                     aircraft.isEnabled = cameraMode != .cockpit
                     updateAircraftPresentation(aircraft)
+                    runtime.jetAudio.update(state: simulation.state, isPaused: simulation.isPaused)
 
                     if let trailRoot = content.entities.first(where: { $0.name == Stage2FlightEffects.trailRootName }) {
                         Stage2FlightEffects.updateWorldTrails(
@@ -406,33 +409,89 @@ struct PrototypeSceneView: View {
         let state = simulation.state
 
 
-        // Drive each visual hinge from the actual JSBSim FCS surface angle.
+        // The replacement F-16 is an authored rig. These sign conversions are
+        // renderer-boundary conversions between JSBSim's left/right local
+        // surface conventions and the source FBX animation convention.
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftAileronName) {
-            // Match the mature F-16 visual convention: the left JSBSim aileron
-            // sign is mirrored before rotation about the mirrored hinge axis.
-            left.orientation = simd_quatf(angle: -state.leftAileronRadians, axis: PrototypeAircraftFactory.leftAileronVisualAxis)
+            left.orientation = simd_quatf(
+                angle: -state.leftAileronRadians,
+                axis: PrototypeAircraftFactory.leftAileronVisualAxis
+            )
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightAileronName) {
-            right.orientation = simd_quatf(angle: state.rightAileronRadians, axis: PrototypeAircraftFactory.rightAileronVisualAxis)
+            right.orientation = simd_quatf(
+                angle: -state.rightAileronRadians,
+                axis: PrototypeAircraftFactory.rightAileronVisualAxis
+            )
         }
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftElevatorName) {
-            // JSBSim's dht-left/dht-right outputs already carry mirrored local
-            // signs. With mirror-correct hinge axes, use those angles verbatim.
-            left.orientation = simd_quatf(angle: state.leftStabilatorRadians, axis: PrototypeAircraftFactory.leftStabilatorVisualAxis)
+            // JSBSim defines left differential-tail angle with the opposite local
+            // sign to the right tail. The authored FBX uses the same +X hinge
+            // direction on both stabilators, hence the left-side sign conversion.
+            left.orientation = simd_quatf(
+                angle: -state.leftStabilatorRadians,
+                axis: PrototypeAircraftFactory.leftStabilatorVisualAxis
+            )
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightElevatorName) {
-            right.orientation = simd_quatf(angle: state.rightStabilatorRadians, axis: PrototypeAircraftFactory.rightStabilatorVisualAxis)
+            right.orientation = simd_quatf(
+                angle: state.rightStabilatorRadians,
+                axis: PrototypeAircraftFactory.rightStabilatorVisualAxis
+            )
         }
         if let rudder = aircraft.findEntity(named: PrototypeAircraftFactory.rudderName) {
-            rudder.orientation = simd_quatf(angle: state.rudderRadians, axis: PrototypeAircraftFactory.rudderVisualAxis)
+            // vazgriz's authored Rudder channel uses -rudder influence.
+            rudder.orientation = simd_quatf(
+                angle: -state.rudderRadians,
+                axis: PrototypeAircraftFactory.rudderVisualAxis
+            )
         }
 
+        let speedbrakeAngle = clamp(state.speedbrakePosition, 0, 1) * PrototypeAircraftFactory.authoredSpeedbrakeLimitRadians
+        for name in [PrototypeAircraftFactory.speedbrakeLeftUpperName, PrototypeAircraftFactory.speedbrakeRightUpperName] {
+            aircraft.findEntity(named: name)?.orientation = simd_quatf(
+                angle: speedbrakeAngle,
+                axis: PrototypeAircraftFactory.speedbrakeUpperVisualAxis
+            )
+        }
+        for name in [PrototypeAircraftFactory.speedbrakeLeftLowerName, PrototypeAircraftFactory.speedbrakeRightLowerName] {
+            aircraft.findEntity(named: name)?.orientation = simd_quatf(
+                angle: speedbrakeAngle,
+                axis: PrototypeAircraftFactory.speedbrakeLowerVisualAxis
+            )
+        }
+
+        updateAfterburner(aircraft, state: state)
         updateGear(aircraft, position: state.gearPosition)
         Stage2FlightEffects.updateAttachedEffects(
             aircraft: aircraft,
             state: state,
             simulationTime: simulation.simulationTime
         )
+    }
+
+    @MainActor
+    private func updateAfterburner(_ aircraft: Entity, state: AircraftState) {
+        let n2 = clamp((state.engineN2Percent - 97.0) / 3.5, 0, 1)
+        let fuel = clamp((state.engineFuelFlowPoundsPerSecond - 0.35) / 1.25, 0, 1)
+        let intensity = state.afterburnerActive ? clamp(0.50 + 0.38 * n2 + 0.12 * fuel, 0, 1) : 0
+
+        if let plume = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerName) {
+            plume.isEnabled = intensity > 0.01
+            if plume.isEnabled {
+                let pulse = 1.0 + 0.035 * sin(Float(simulation.simulationTime) * 43.0)
+                plume.scale = [
+                    0.82 + 0.18 * intensity,
+                    0.82 + 0.18 * intensity,
+                    (0.64 + 0.52 * intensity) * pulse
+                ]
+            }
+        }
+        if let glow = aircraft.findEntity(named: PrototypeAircraftFactory.nozzleGlowName) {
+            let hot = clamp((state.engineN2Percent - 72) / 28, 0, 1)
+            glow.isEnabled = hot > 0.02
+            glow.scale = [0.68 + 0.32 * hot, 0.68 + 0.32 * hot, 0.16 + 0.20 * hot]
+        }
     }
 
     @MainActor
@@ -498,5 +557,130 @@ private struct CockpitBowShape: Shape {
             control2: CGPoint(x: rect.maxX - rect.width * 0.18, y: rect.height * 0.55)
         )
         return path
+    }
+}
+
+
+@MainActor
+private final class Stage0108JetAudio {
+    private let engine = AVAudioEngine()
+    private let core = AVAudioPlayerNode()
+    private let whine = AVAudioPlayerNode()
+    private let exhaust = AVAudioPlayerNode()
+    private let afterburner = AVAudioPlayerNode()
+    private let wind = AVAudioPlayerNode()
+    private let coreRate = AVAudioUnitVarispeed()
+    private let whineRate = AVAudioUnitVarispeed()
+    private var started = false
+
+    init() {
+        engine.attach(core)
+        engine.attach(whine)
+        engine.attach(exhaust)
+        engine.attach(afterburner)
+        engine.attach(wind)
+        engine.attach(coreRate)
+        engine.attach(whineRate)
+    }
+
+    func update(state: AircraftState, isPaused: Bool) {
+        startIfNeeded()
+        guard started else { return }
+
+        let n1 = clamp(state.engineN1Percent / 100, 0, 1.15)
+        let n2 = clamp(state.engineN2Percent / 100, 0, 1.15)
+        let speed = clamp(state.airspeedMetersPerSecond / 340, 0, 1.7)
+        let fuel = clamp(state.engineFuelFlowPoundsPerSecond / 1.8, 0, 1.2)
+        let live: Float = isPaused ? 0 : 1
+
+        coreRate.rate = 0.68 + 0.58 * n1
+        whineRate.rate = 0.64 + 1.18 * n2
+        core.volume = live * (0.06 + 0.19 * n1)
+        whine.volume = live * (0.018 + 0.105 * n2 * n2)
+        exhaust.volume = live * (0.025 + 0.22 * max(n1, fuel))
+        afterburner.volume = live * (state.afterburnerActive ? 0.34 + 0.22 * n2 : 0)
+        wind.volume = live * 0.18 * min(speed * speed, 1.0)
+    }
+
+    private func startIfNeeded() {
+        guard !started else { return }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+
+            let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+            engine.connect(core, to: coreRate, format: format)
+            engine.connect(coreRate, to: engine.mainMixerNode, format: format)
+            engine.connect(whine, to: whineRate, format: format)
+            engine.connect(whineRate, to: engine.mainMixerNode, format: format)
+            engine.connect(exhaust, to: engine.mainMixerNode, format: format)
+            engine.connect(afterburner, to: engine.mainMixerNode, format: format)
+            engine.connect(wind, to: engine.mainMixerNode, format: format)
+
+            schedule(core, buffer: makeToneBuffer(format: format, seconds: 2.0, frequencies: [54, 82, 109], gains: [0.58, 0.28, 0.14]))
+            schedule(whine, buffer: makeToneBuffer(format: format, seconds: 2.0, frequencies: [215, 430, 645], gains: [0.62, 0.27, 0.11]))
+            schedule(exhaust, buffer: makeNoiseBuffer(format: format, seconds: 3.0, smoothing: 0.76, crackle: 0.015))
+            schedule(afterburner, buffer: makeNoiseBuffer(format: format, seconds: 3.0, smoothing: 0.46, crackle: 0.095))
+            schedule(wind, buffer: makeNoiseBuffer(format: format, seconds: 3.0, smoothing: 0.90, crackle: 0.0))
+
+            try engine.start()
+            [core, whine, exhaust, afterburner, wind].forEach { $0.play() }
+            started = true
+        } catch {
+            started = false
+        }
+    }
+
+    private func schedule(_ node: AVAudioPlayerNode, buffer: AVAudioPCMBuffer) {
+        node.scheduleBuffer(buffer, at: nil, options: [.loops])
+    }
+
+    private func makeToneBuffer(
+        format: AVAudioFormat,
+        seconds: Double,
+        frequencies: [Float],
+        gains: [Float]
+    ) -> AVAudioPCMBuffer {
+        let count = AVAudioFrameCount(format.sampleRate * seconds)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count)!
+        buffer.frameLength = count
+        let data = buffer.floatChannelData![0]
+        let rate = Float(format.sampleRate)
+        for i in 0..<Int(count) {
+            let t = Float(i) / rate
+            var sample: Float = 0
+            for (f, g) in zip(frequencies, gains) {
+                sample += sin(2 * .pi * f * t) * g
+            }
+            data[i] = sample * 0.42
+        }
+        return buffer
+    }
+
+    private func makeNoiseBuffer(
+        format: AVAudioFormat,
+        seconds: Double,
+        smoothing: Float,
+        crackle: Float
+    ) -> AVAudioPCMBuffer {
+        let count = AVAudioFrameCount(format.sampleRate * seconds)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count)!
+        buffer.frameLength = count
+        let data = buffer.floatChannelData![0]
+        var seed: UInt32 = 0xA17F_16C3
+        var filtered: Float = 0
+        for i in 0..<Int(count) {
+            seed = 1_664_525 &* seed &+ 1_013_904_223
+            let raw = Float(Int32(bitPattern: seed)) / Float(Int32.max)
+            filtered = smoothing * filtered + (1 - smoothing) * raw
+            let transient: Float = abs(raw) > 0.985 ? raw * crackle * 5.5 : 0
+            data[i] = max(-1, min(1, filtered * 0.72 + transient))
+        }
+        return buffer
+    }
+
+    private func clamp(_ value: Float, _ low: Float, _ high: Float) -> Float {
+        Swift.min(Swift.max(value, low), high)
     }
 }

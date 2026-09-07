@@ -9,11 +9,6 @@ fi
 APP_PATH="$1"
 SOURCE_ROOT="${GITHUB_WORKSPACE:-$PWD}/ThirdParty/jsbsim"
 RESOURCE_ROOT="$APP_PATH/JSBSim"
-MODEL_ROOT="$APP_PATH/Models"
-
-F16_VISUAL_COMMIT="e0757b1473736d5b2a64351cba4be46a20abf53e"
-F16_VISUAL_BASE="https://raw.githubusercontent.com/srdanrasic/R4/${F16_VISUAL_COMMIT}"
-F16_VISUAL_PATH="demo/R4%20iOS%20Demo/Resources/Meshes/f16.obj"
 
 [[ -d "$APP_PATH" ]] || { echo "app bundle not found: $APP_PATH" >&2; exit 1; }
 [[ -f "$SOURCE_ROOT/aircraft/f16/f16.xml" ]] || { echo "JSBSim F-16 source is missing" >&2; exit 1; }
@@ -21,7 +16,7 @@ F16_VISUAL_PATH="demo/R4%20iOS%20Demo/Resources/Meshes/f16.obj"
 [[ -f "$SOURCE_ROOT/engine/direct.xml" ]] || { echo "JSBSim direct thruster source is missing" >&2; exit 1; }
 
 rm -rf "$RESOURCE_ROOT/aircraft/f16"
-mkdir -p "$RESOURCE_ROOT/aircraft" "$RESOURCE_ROOT/engine" "$RESOURCE_ROOT/licenses" "$MODEL_ROOT"
+mkdir -p "$RESOURCE_ROOT/aircraft" "$RESOURCE_ROOT/engine" "$RESOURCE_ROOT/licenses"
 
 # Preserve the complete upstream aircraft directory. This deliberately restores
 # the stock JSBSim F-16 yaw-rate / lateral-load controller. Full Authority does
@@ -53,14 +48,8 @@ grep -q 'stock JSBSim yaw controller + stronger pedal feed-forward' "$RESOURCE_R
 grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q '<gain>0.28</gain>' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
-# JSBSim intentionally does not ship render art. Stage a pinned, MIT-licensed
-# F-16 OBJ rather than fabricating an aircraft from RealityKit primitives.
-curl --fail --location --retry 3 --silent --show-error \
-  "$F16_VISUAL_BASE/$F16_VISUAL_PATH" \
-  -o "$MODEL_ROOT/f16.obj"
-curl --fail --location --retry 3 --silent --show-error \
-  "$F16_VISUAL_BASE/LICENSE" \
-  -o "$RESOURCE_ROOT/licenses/R4-F16-MIT-LICENSE.txt"
+# Render art is now bundled from the authored, MIT-licensed vazgriz/FlightSim_F16
+# import under JSBSim/visuals/f16. Do not download or stage the retired R4 OBJ here.
 
 # Generate a deterministic terrain albedo directly into the app bundle. It is
 # intentionally low-frequency and earthy: RealityKit supplies lighting while
@@ -119,12 +108,8 @@ for required in \
   "$RESOURCE_ROOT/aircraft/f16/f16.xml" \
   "$RESOURCE_ROOT/engine/F100-PW-229.xml" \
   "$RESOURCE_ROOT/engine/direct.xml" \
-  "$MODEL_ROOT/f16.obj" \
   "$APP_PATH/terrain_albedo.png"; do
   test -s "$required"
 done
 
-grep -q '^o f16' "$MODEL_ROOT/f16.obj"
-grep -q '^f ' "$MODEL_ROOT/f16.obj"
-
-echo "Staged JSBSim F-16 with upstream yaw damping, stronger pedal feed-forward, terrain texture and pinned F-16 render mesh"
+echo "Staged JSBSim F-16 calibration data, yaw damping, pedal feed-forward and terrain texture"

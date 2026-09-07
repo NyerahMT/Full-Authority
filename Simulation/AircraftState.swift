@@ -37,6 +37,9 @@ struct AircraftState: Equatable, Sendable {
     var ambientPressurePSF: Float = 2_116.22
     var airDensitySlugsPerCubicFoot: Float = 0.0023769
     var engineFuelFlowPoundsPerSecond: Float = 0
+    var engineN1Percent: Float = 0
+    var engineN2Percent: Float = 0
+    var afterburnerActive = false
     var aircraftMassKg: Float = 9_500
     var windMetersPerSecond: SIMD3<Float> = .zero
 
