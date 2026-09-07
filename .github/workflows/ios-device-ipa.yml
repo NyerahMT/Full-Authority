@@ -82,15 +82,17 @@ jobs:
             DEVELOPMENT_TEAM='' \
             build
 
-      - name: Stage F-15 calibration data
+      - name: Stage F-16 calibration data and mesh
         run: |
           set -euo pipefail
           APP_PATH="$PWD/build/device/Build/Products/Release-iphoneos/FullAuthority.app"
-          chmod +x scripts/stage-f15-calibration.sh
-          scripts/stage-f15-calibration.sh "$APP_PATH"
-          test -s "$APP_PATH/JSBSim/aircraft/f15/f15.xml"
+          chmod +x scripts/stage-f16-calibration.sh
+          scripts/stage-f16-calibration.sh "$APP_PATH"
+          test -s "$APP_PATH/JSBSim/aircraft/f16/f16.xml"
+          test -s "$APP_PATH/JSBSim/aircraft/f16/Systems/hook.xml"
           test -s "$APP_PATH/JSBSim/engine/F100-PW-229.xml"
           test -s "$APP_PATH/JSBSim/engine/direct.xml"
+          test -s "$APP_PATH/Models/f16.obj"
 
       - name: Package unsigned IPA
         run: |
@@ -105,7 +107,7 @@ jobs:
           cd "$PWD/package"
           zip -qry "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" Payload
           test -s "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa"
-          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | grep -E 'Payload/FullAuthority.app/(JSBSim/aircraft/f15/f15.xml|JSBSim/engine/F100-PW-229.xml|JSBSim/engine/direct.xml|FullAuthority)' | head -20
+          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | grep -E 'Payload/FullAuthority.app/(JSBSim/aircraft/f16/f16.xml|JSBSim/engine/F100-PW-229.xml|JSBSim/engine/direct.xml|Models/f16.obj|FullAuthority)' | head -20
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
