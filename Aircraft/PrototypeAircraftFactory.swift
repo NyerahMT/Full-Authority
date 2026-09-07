@@ -150,55 +150,60 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addAnimatedSurfaces(to root: Entity) {
-        let panelColor = UIColor(red: 0.32, green: 0.34, blue: 0.35, alpha: 1)
+        // These are visual overlays because the source OBJ is one welded mesh.
+        // Stage 010.2 anchors every overlay at its hinge instead of rotating a
+        // floating box around its center. Neutral positions sit on the trailing
+        // edges of the source F-16 silhouette and deflect aft of the hinge.
+        let panelColor = UIColor(red: 0.355, green: 0.37, blue: 0.38, alpha: 1)
 
         let speedbrake = ModelEntity(
-            mesh: .generateBox(size: [1.12, 0.055, 1.25], cornerRadius: 0.06),
+            mesh: .generateBox(size: [0.92, 0.035, 0.90], cornerRadius: 0.035),
             materials: [SimpleMaterial(color: panelColor, isMetallic: false)]
         )
         speedbrake.name = speedbrakeName
-        speedbrake.position = [0, 0.08, -2.38]
+        speedbrake.position = [0, 0.02, -2.62]
         root.addChild(speedbrake)
 
-        let leftAileron = surfacePanel(
+        root.addChild(hingedSurface(
             name: leftAileronName,
-            size: [1.85, 0.05, 0.52],
-            position: [-3.55, -1.02, -2.55],
+            hingePosition: [-3.48, -1.00, -2.18],
+            size: [1.52, 0.035, 0.46],
+            childOffset: [0, 0, -0.23],
             color: panelColor
-        )
-        root.addChild(leftAileron)
-
-        let rightAileron = surfacePanel(
+        ))
+        root.addChild(hingedSurface(
             name: rightAileronName,
-            size: [1.85, 0.05, 0.52],
-            position: [3.55, -1.02, -2.55],
+            hingePosition: [3.48, -1.00, -2.18],
+            size: [1.52, 0.035, 0.46],
+            childOffset: [0, 0, -0.23],
             color: panelColor
-        )
-        root.addChild(rightAileron)
+        ))
 
-        let leftElevator = surfacePanel(
+        root.addChild(hingedSurface(
             name: leftElevatorName,
-            size: [1.95, 0.055, 0.72],
-            position: [-1.72, -0.88, -5.02],
+            hingePosition: [-1.72, -0.82, -4.58],
+            size: [1.92, 0.040, 1.02],
+            childOffset: [0, 0, -0.51],
             color: panelColor
-        )
-        root.addChild(leftElevator)
-
-        let rightElevator = surfacePanel(
+        ))
+        root.addChild(hingedSurface(
             name: rightElevatorName,
-            size: [1.95, 0.055, 0.72],
-            position: [1.72, -0.88, -5.02],
+            hingePosition: [1.72, -0.82, -4.58],
+            size: [1.92, 0.040, 1.02],
+            childOffset: [0, 0, -0.51],
             color: panelColor
-        )
-        root.addChild(rightElevator)
+        ))
 
-        let rudder = ModelEntity(
-            mesh: .generateBox(size: [0.07, 1.45, 0.78], cornerRadius: 0.04),
-            materials: [SimpleMaterial(color: panelColor, isMetallic: false)]
-        )
-        rudder.name = rudderName
-        rudder.position = [0, 0.12, -5.45]
-        root.addChild(rudder)
+        // Rudder hinge runs vertically through the aft fin. The visible panel is
+        // offset aft/up from that axis so yaw deflection no longer swings a box
+        // through the center of the tail.
+        root.addChild(hingedSurface(
+            name: rudderName,
+            hingePosition: [0, 0.08, -5.08],
+            size: [0.055, 1.34, 0.78],
+            childOffset: [0, 0.67, -0.39],
+            color: panelColor
+        ))
     }
 
     private static func addLandingGear(to root: Entity) {
@@ -265,19 +270,24 @@ enum PrototypeAircraftFactory {
         root.addChild(rightContrail)
     }
 
-    private static func surfacePanel(
+    private static func hingedSurface(
         name: String,
+        hingePosition: SIMD3<Float>,
         size: SIMD3<Float>,
-        position: SIMD3<Float>,
+        childOffset: SIMD3<Float>,
         color: UIColor
-    ) -> ModelEntity {
+    ) -> Entity {
+        let hinge = Entity()
+        hinge.name = name
+        hinge.position = hingePosition
+
         let panel = ModelEntity(
-            mesh: .generateBox(size: size, cornerRadius: 0.04),
+            mesh: .generateBox(size: size, cornerRadius: 0.025),
             materials: [SimpleMaterial(color: color, isMetallic: false)]
         )
-        panel.name = name
-        panel.position = position
-        return panel
+        panel.position = childOffset
+        hinge.addChild(panel)
+        return hinge
     }
 
     private static func gearAssembly(
