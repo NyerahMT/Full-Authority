@@ -208,6 +208,8 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/rudder-cmd-norm", value: rudder)
         bridge.setProperty("fcs/throttle-cmd-norm", value: throttle)
         bridge.setProperty("fcs/throttle-cmd-norm[0]", value: throttle)
+        bridge.setProperty("gear/gear-cmd-norm", value: controls.gearDown ? 1 : 0)
+        bridge.setProperty("fcs/speedbrake-cmd-norm", value: controls.speedbrakeExtended ? 1 : 0)
     }
 
     private func readStateFromJSBSim() {
