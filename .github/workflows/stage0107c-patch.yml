@@ -1,0 +1,33 @@
+name: Stage 010.7c patch
+
+on:
+  push:
+    branches: [stage-010-7-orbit-mesh-contrails]
+    paths:
+      - 'tools/stage0107c_cleanup.py'
+      - '.github/workflows/stage0107c-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage-010-7-orbit-mesh-contrails
+          fetch-depth: 0
+      - name: Apply source cleanup
+        run: |
+          set -euo pipefail
+          python3 tools/stage0107c_cleanup.py
+          rm -f tools/stage0107c_cleanup.py
+          rm -f .github/workflows/stage0107c-patch.yml
+      - name: Commit patched source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Stage 010.7c: remove decorative primitives and fix aileron sign'
+          git push origin HEAD:stage-010-7-orbit-mesh-contrails
