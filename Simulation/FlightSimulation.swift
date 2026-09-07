@@ -2,6 +2,51 @@ import Combine
 import Foundation
 import simd
 
+enum Stage2TerrainProfile {
+    static func heightMeters(east: Float, north: Float) -> Float {
+        let e = Double(east)
+        let n = Double(north)
+
+        var base =
+            55.0 * sin(n / 2800.0) * cos(e / 3600.0) +
+            38.0 * sin((e + n) / 1900.0) +
+            28.0 * cos((e - 0.45 * n) / 2400.0)
+
+        let ridge1East = (e + 6500.0) / 2500.0
+        let ridge1North = (n - 9000.0) / 3500.0
+        base += 145.0 * exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North))
+
+        let ridge2East = (e - 7200.0) / 2800.0
+        let ridge2North = (n - 6500.0) / 3000.0
+        base += 105.0 * exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North))
+
+        let dx = max(abs(e) - 1000.0, 0.0)
+        let dz = max(abs(n - 2000.0) - 3600.0, 0.0)
+        let distanceOutsideAirfield = hypot(dx, dz)
+        let terrainBlend = smoothStep(distanceOutsideAirfield / 1800.0)
+
+        return Float(base * terrainBlend)
+    }
+
+    static func normal(east: Float, north: Float) -> SIMD3<Float> {
+        let sample: Float = 20
+        let dhde = (
+            heightMeters(east: east + sample, north: north) -
+            heightMeters(east: east - sample, north: north)
+        ) / (2 * sample)
+        let dhdn = (
+            heightMeters(east: east, north: north + sample) -
+            heightMeters(east: east, north: north - sample)
+        ) / (2 * sample)
+        return simd_normalize(SIMD3<Float>(-dhde, 1, -dhdn))
+    }
+
+    private static func smoothStep(_ value: Double) -> Double {
+        let t = min(max(value, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+}
+
 @MainActor
 final class FlightSimulation: ObservableObject {
     enum BackendStatus: Equatable {
@@ -10,11 +55,19 @@ final class FlightSimulation: ObservableObject {
         case failed(message: String)
     }
 
+    enum FlightCondition: Equatable {
+        case ready
+        case airborne
+        case landed(touchdownFPM: Float)
+        case crashed(reason: String)
+    }
+
     @Published var controls = FlightControls()
     @Published private(set) var state = AircraftState.parked
     @Published private(set) var backendStatus: BackendStatus
     @Published private(set) var simulationTime: TimeInterval = 0
     @Published private(set) var isPaused = true
+    @Published private(set) var flightCondition: FlightCondition = .ready
 
     let fixedStep: TimeInterval = 1.0 / 120.0
 
@@ -23,9 +76,11 @@ final class FlightSimulation: ObservableObject {
     private var activeModel: String?
     private var originLatitudeRadians: Double?
     private var originLongitudeRadians: Double?
+    private var previousWeightOnWheels = false
+    private var hasBeenAirborne = false
 
-    // JSBSim's trim solution becomes the neutral stick position. Player input is
-    // layered on top of these values rather than replacing the trimmed state.
+    // The F-16 ground sortie begins with neutral pilot commands. We still keep
+    // the trim-command fields because other fixed-wing models can use an air trim.
     private var trimAileronCommand: Double = 0
     private var trimElevatorCommand: Double = 0
     private var trimRudderCommand: Double = 0
@@ -49,13 +104,18 @@ final class FlightSimulation: ObservableObject {
 
     func resume() {
         guard bridge.isModelLoaded else { return }
-        isPaused = false
+        guard case .crashed = flightCondition else {
+            isPaused = false
+            return
+        }
     }
 
     @discardableResult
     func resetFlight() -> Bool {
         isPaused = true
         controls = FlightControls()
+        flightCondition = .ready
+        hasBeenAirborne = false
         return loadModel(named: activeModel ?? "f16")
     }
 
@@ -70,15 +130,21 @@ final class FlightSimulation: ObservableObject {
             try bridge.runInitialConditions()
             configureModelSystems(for: modelName)
 
-            // Ask JSBSim itself to find a steady 6-DOF solution. A failed trim is
-            // non-fatal: the real FDM still runs, but neutral begins untrimmed.
-            do {
-                try bridge.trimFull()
-                captureTrimCommands()
-            } catch {
+            if modelName == "f16" {
+                // Stage 2 is a runway sortie. Let JSBSim settle the real F-16
+                // landing gear and struts against the terrain callback.
+                _ = try? bridge.trimGround()
                 resetTrimCommands()
+            } else {
+                do {
+                    try bridge.trimFull()
+                    captureTrimCommands()
+                } catch {
+                    resetTrimCommands()
+                }
             }
 
+            configureModelSystems(for: modelName)
             applyControls()
         } catch {
             activeModel = nil
@@ -93,6 +159,9 @@ final class FlightSimulation: ObservableObject {
         originLongitudeRadians = bridge.value(forProperty: "position/long-gc-rad")
         backendStatus = .running(model: modelName)
         readStateFromJSBSim()
+        previousWeightOnWheels = state.weightOnWheels
+        hasBeenAirborne = false
+        flightCondition = .ready
         return true
     }
 
@@ -106,6 +175,9 @@ final class FlightSimulation: ObservableObject {
             controls.clampToValidRange()
             applyControls()
 
+            let wasOnWheels = state.weightOnWheels
+            let verticalSpeedBeforeStep = state.verticalSpeedMetersPerSecond
+
             do {
                 try bridge.step()
             } catch {
@@ -116,24 +188,33 @@ final class FlightSimulation: ObservableObject {
             }
 
             readStateFromJSBSim()
+            evaluateFlightCondition(
+                wasOnWheels: wasOnWheels,
+                verticalSpeedBeforeStep: verticalSpeedBeforeStep
+            )
+            previousWeightOnWheels = state.weightOnWheels
             simulationTime += fixedStep
             accumulator -= fixedStep
+
+            if isPaused { break }
         }
     }
 
     private func configureInitialConditions(for modelName: String) {
-        bridge.setProperty("ic/terrain-elevation-ft", value: 0)
+        bridge.setProperty("ic/lat-geod-deg", value: 0)
+        bridge.setProperty("ic/long-gc-deg", value: 0)
         bridge.setProperty("ic/phi-deg", value: 0)
+        bridge.setProperty("ic/theta-deg", value: 0)
         bridge.setProperty("ic/psi-true-deg", value: 0)
         bridge.setProperty("ic/beta-deg", value: 0)
         bridge.setProperty("ic/gamma-deg", value: 0)
 
         if modelName == "f16" {
-            // A normal low-altitude cruise condition gives the F-16 flight-control
-            // system plenty of dynamic pressure while keeping terrain motion clear.
-            bridge.setProperty("ic/h-agl-ft", value: 1_500)
-            bridge.setProperty("ic/vc-kts", value: 350)
-            bridge.setProperty("ic/alpha-deg", value: 2)
+            // CG height is close to the F-16 gear geometry defined by the model.
+            // Ground trim performs the final strut/contact settling.
+            bridge.setProperty("ic/h-agl-ft", value: 5.8)
+            bridge.setProperty("ic/vc-kts", value: 0)
+            bridge.setProperty("ic/alpha-deg", value: 0)
         } else {
             bridge.setProperty("ic/h-agl-ft", value: 1_000)
             bridge.setProperty("ic/vc-kts", value: 250)
@@ -144,14 +225,15 @@ final class FlightSimulation: ObservableObject {
     private func configureModelSystems(for modelName: String) {
         guard modelName == "f16" else { return }
 
-        // Let the aircraft XML own aerodynamics, control laws, gear friction and propulsion.
-        // These are pilot/system commands only; Full Authority synthesizes no forces here.
+        // The XML continues to own propulsion, FCS, aerodynamics, tire friction,
+        // strut forces and gear contact. These are only pilot/system commands.
         bridge.setProperty("propulsion/set-running", value: -1)
-        bridge.setProperty("gear/gear-cmd-norm", value: 0)
-        bridge.setProperty("fcs/speedbrake-cmd-norm", value: 0)
-        bridge.setProperty("fcs/left-brake-cmd-norm", value: 0)
-        bridge.setProperty("fcs/right-brake-cmd-norm", value: 0)
-        bridge.setProperty("fcs/center-brake-cmd-norm", value: 0)
+        bridge.setProperty("gear/gear-cmd-norm", value: controls.gearDown ? 1 : 0)
+        bridge.setProperty("gear/gear-pos-norm", value: controls.gearDown ? 1 : 0)
+        bridge.setProperty("fcs/speedbrake-cmd-norm", value: controls.speedbrakeExtended ? 1 : 0)
+        bridge.setProperty("fcs/left-brake-cmd-norm", value: Double(controls.wheelBrake))
+        bridge.setProperty("fcs/right-brake-cmd-norm", value: Double(controls.wheelBrake))
+        bridge.setProperty("fcs/center-brake-cmd-norm", value: Double(controls.wheelBrake))
         bridge.setProperty("fcs/steer-cmd-norm", value: 0)
         bridge.setProperty("fcs/fbw-override", value: 0)
         bridge.setProperty("fcs/pitch-trim-cmd-norm", value: 0)
@@ -165,28 +247,16 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/rudder-cmd-norm", value: 0)
         bridge.setProperty("fcs/throttle-cmd-norm", value: Double(controls.throttle))
         bridge.setProperty("fcs/throttle-cmd-norm[0]", value: Double(controls.throttle))
-        bridge.setProperty("fcs/left-brake-cmd-norm", value: 0)
-        bridge.setProperty("fcs/right-brake-cmd-norm", value: 0)
-        bridge.setProperty("fcs/center-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/left-brake-cmd-norm", value: Double(controls.wheelBrake))
+        bridge.setProperty("fcs/right-brake-cmd-norm", value: Double(controls.wheelBrake))
+        bridge.setProperty("fcs/center-brake-cmd-norm", value: Double(controls.wheelBrake))
         bridge.setProperty("fcs/steer-cmd-norm", value: 0)
     }
 
     private func captureTrimCommands() {
-        trimAileronCommand = clamp(
-            bridge.value(forProperty: "fcs/aileron-cmd-norm"),
-            min: -1,
-            max: 1
-        )
-        trimElevatorCommand = clamp(
-            bridge.value(forProperty: "fcs/elevator-cmd-norm"),
-            min: -1,
-            max: 0.44
-        )
-        trimRudderCommand = clamp(
-            bridge.value(forProperty: "fcs/rudder-cmd-norm"),
-            min: -1,
-            max: 1
-        )
+        trimAileronCommand = clamp(bridge.value(forProperty: "fcs/aileron-cmd-norm"), min: -1, max: 1)
+        trimElevatorCommand = clamp(bridge.value(forProperty: "fcs/elevator-cmd-norm"), min: -1, max: 0.44)
+        trimRudderCommand = clamp(bridge.value(forProperty: "fcs/rudder-cmd-norm"), min: -1, max: 1)
 
         let trimmedThrottle = bridge.value(forProperty: "fcs/throttle-cmd-norm[0]")
         if trimmedThrottle.isFinite, trimmedThrottle >= 0, trimmedThrottle <= 1 {
@@ -203,9 +273,6 @@ final class FlightSimulation: ObservableObject {
     }
 
     private func applyControls() {
-        // Full Authority's UI convention is right = right roll and pull = nose up.
-        // The sign conversion is only an input-coordinate translation; the F-16
-        // XML performs the actual roll-rate and G-command flight-control laws.
         let aileron = clamp(trimAileronCommand - Double(controls.roll), min: -1, max: 1)
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
         let rudder = clamp(trimRudderCommand + Double(controls.rudder), min: -1, max: 1)
@@ -219,9 +286,6 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/throttle-cmd-norm[0]", value: throttle)
         bridge.setProperty("gear/gear-cmd-norm", value: controls.gearDown ? 1 : 0)
         bridge.setProperty("fcs/speedbrake-cmd-norm", value: controls.speedbrakeExtended ? 1 : 0)
-
-        // JSBSim's F-16 bogeys already define the tire friction coefficients and brake groups.
-        // Supplying brake and steering commands here lets that native ground-reaction model work.
         bridge.setProperty("fcs/left-brake-cmd-norm", value: brake)
         bridge.setProperty("fcs/right-brake-cmd-norm", value: brake)
         bridge.setProperty("fcs/center-brake-cmd-norm", value: brake)
@@ -240,8 +304,6 @@ final class FlightSimulation: ObservableObject {
         let pitch = Float(bridge.value(forProperty: "attitude/theta-rad"))
         let yaw = Float(bridge.value(forProperty: "attitude/psi-rad"))
 
-        // JSBSim: NED, +X forward, +Y right, +Z down.
-        // Full Authority: +Z forward/north, +X right/east, +Y up.
         let yawQ = simd_quatf(angle: yaw, axis: SIMD3<Float>(0, 1, 0))
         let pitchQ = simd_quatf(angle: -pitch, axis: SIMD3<Float>(1, 0, 0))
         let rollQ = simd_quatf(angle: -roll, axis: SIMD3<Float>(0, 0, 1))
@@ -259,9 +321,10 @@ final class FlightSimulation: ObservableObject {
         )
 
         state.altitudeMeters = max(0, Float(bridge.value(forProperty: "position/h-agl-ft")) * feetToMeters)
+        state.terrainElevationMeters = finiteFloat("position/terrain-elevation-asl-ft", fallback: 0) * feetToMeters
         state.altitudeFeetMSL = finiteFloat("position/h-sl-ft", fallback: state.altitudeMeters * 3.28084)
         updateLocalPositionFromGeodetic()
-        state.positionMeters.y = max(0.05, state.altitudeMeters)
+        state.positionMeters.y = state.altitudeFeetMSL * feetToMeters
 
         state.airspeedMetersPerSecond = max(0, Float(bridge.value(forProperty: "velocities/vtrue-fps")) * feetToMeters)
         state.calibratedAirspeedKnots = max(
@@ -287,11 +350,52 @@ final class FlightSimulation: ObservableObject {
         state.gearPosition = clampFloat(finiteFloat("gear/gear-pos-norm", fallback: 0), min: 0, max: 1)
         state.speedbrakePosition = clampFloat(finiteFloat("fcs/speedbrake-pos-norm", fallback: 0), min: 0, max: 1)
         state.weightOnWheels = finiteFloat("gear/wow", fallback: 0) > 0.5
+        state.leftAileronPosition = clampFloat(finiteFloat("fcs/left-aileron-pos-norm", fallback: 0), min: -1, max: 1)
+        state.rightAileronPosition = clampFloat(finiteFloat("fcs/right-aileron-pos-norm", fallback: 0), min: -1, max: 1)
+        state.elevatorPosition = clampFloat(finiteFloat("fcs/elevator-pos-norm", fallback: 0), min: -1, max: 1)
+        state.rudderPosition = clampFloat(finiteFloat("fcs/rudder-pos-norm", fallback: 0), min: -1, max: 1)
 
         state.mainRotorRPM = 0
         state.tailRotorRPM = 0
         state.mainRotorPhaseRadians = 0
         state.tailRotorPhaseRadians = 0
+    }
+
+    private func evaluateFlightCondition(wasOnWheels: Bool, verticalSpeedBeforeStep: Float) {
+        if !state.weightOnWheels && state.altitudeMeters > 8 {
+            hasBeenAirborne = true
+            flightCondition = .airborne
+        }
+
+        if hasBeenAirborne && !wasOnWheels && state.weightOnWheels {
+            let touchdownFPM = max(0, -verticalSpeedBeforeStep * 196.8504)
+            let badAttitude = abs(state.rollDegrees) > 24 || abs(state.pitchDegrees) > 22
+            let gearUnsafe = state.gearPosition < 0.72
+
+            if gearUnsafe {
+                crash("GEAR-UP GROUND CONTACT")
+            } else if touchdownFPM > 1_800 || badAttitude {
+                crash(String(format: "HARD IMPACT · %.0f FPM", touchdownFPM))
+            } else {
+                flightCondition = .landed(touchdownFPM: touchdownFPM)
+            }
+        }
+
+        if hasBeenAirborne,
+           state.altitudeMeters < 1.2,
+           state.gearPosition < 0.25,
+           state.groundSpeedKnots > 70 {
+            crash("AIRFRAME GROUND CONTACT")
+        }
+    }
+
+    private func crash(_ reason: String) {
+        flightCondition = .crashed(reason: reason)
+        var stoppedControls = controls
+        stoppedControls.throttle = 0
+        stoppedControls.wheelBrake = 1
+        controls = stoppedControls
+        isPaused = true
     }
 
     private func updateLocalPositionFromGeodetic() {
