@@ -83,14 +83,15 @@ jobs:
             OBJROOT="$PWD/build/obj" \
             build
 
-      - name: Stage AH-1S calibration data
+      - name: Stage F-15 calibration data
         run: |
           set -euo pipefail
           APP_PATH="$PWD/build/Debug-iphonesimulator/FullAuthority.app"
-          chmod +x scripts/stage-ah1-calibration.sh
-          scripts/stage-ah1-calibration.sh "$APP_PATH"
-          test -s "$APP_PATH/JSBSim/aircraft/ah1s/ah1s.xml"
-          test -s "$APP_PATH/JSBSim/systems/afcs.xml"
+          chmod +x scripts/stage-f15-calibration.sh
+          scripts/stage-f15-calibration.sh "$APP_PATH"
+          test -s "$APP_PATH/JSBSim/aircraft/f15/f15.xml"
+          test -s "$APP_PATH/JSBSim/engine/F100-PW-229.xml"
+          test -s "$APP_PATH/JSBSim/engine/direct.xml"
 
       - name: Package simulator app
         run: |
