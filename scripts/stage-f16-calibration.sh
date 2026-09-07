@@ -49,8 +49,9 @@ text = text.replace(needle, replacement, 1)
 path.write_text(text, encoding="utf-8")
 PY
 
-grep -q 'stock JSBSim yaw controller + modest pedal feed-forward' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'stock JSBSim yaw controller + stronger pedal feed-forward' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q '<gain>0.28</gain>' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
 # JSBSim intentionally does not ship render art. Stage a pinned, MIT-licensed
 # F-16 OBJ rather than fabricating an aircraft from RealityKit primitives.
