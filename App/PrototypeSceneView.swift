@@ -37,19 +37,19 @@ struct PrototypeSceneView: View {
                     let camera = Entity()
                     camera.name = "FA.camera"
                     camera.components.set(PerspectiveCameraComponent(
-                        near: 0.035,
+                        near: 0.08,
                         far: 62_000,
-                        fieldOfViewInDegrees: 60
+                        fieldOfViewInDegrees: 62
                     ))
-                    positionCamera(camera)
+                    positionCamera(camera, snap: true)
                     content.add(camera)
 
                     let sun = Entity()
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.94, blue: 0.83, alpha: 1),
-                            intensity: 25_000
+                            color: UIColor(red: 1.0, green: 0.94, blue: 0.84, alpha: 1),
+                            intensity: 16_500
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
@@ -60,7 +60,7 @@ struct PrototypeSceneView: View {
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
                         color: UIColor(red: 0.61, green: 0.74, blue: 0.94, alpha: 1),
-                        intensity: 3_600
+                        intensity: 2_100
                     ))
                     fill.look(at: .zero, from: [6_000, 4_500, 5_500], relativeTo: nil)
                     content.add(fill)
@@ -75,7 +75,7 @@ struct PrototypeSceneView: View {
                     updateAircraftPresentation(aircraft)
 
                     if let camera = content.entities.first(where: { $0.name == "FA.camera" }) {
-                        positionCamera(camera)
+                        positionCamera(camera, snap: cameraMode == .cockpit)
                     }
                 }
                 .onChange(of: timeline.date) { oldDate, newDate in
@@ -117,23 +117,23 @@ struct PrototypeSceneView: View {
                 Button {
                     cameraMode = cameraMode.next
                 } label: {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 6) {
                         Image(systemName: cameraMode == .cockpit ? "viewfinder" : "camera.fill")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                         Text(cameraMode.rawValue)
                             .font(.system(size: 9, weight: .black, design: .monospaced))
-                            .tracking(0.6)
+                            .tracking(0.45)
                     }
-                    .foregroundStyle(.white.opacity(0.90))
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 9))
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.11), lineWidth: 1))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.09), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
-            .safeAreaPadding(.trailing, 16)
-            .padding(.top, 49)
+            .safeAreaPadding(.trailing, 18)
+            .padding(.top, 50)
             Spacer()
         }
     }
@@ -151,7 +151,7 @@ struct PrototypeSceneView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 34)
                     .background(.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 9))
-                    .padding(.bottom, 190)
+                    .padding(.bottom, 155)
             }
             .allowsHitTesting(false)
 
@@ -191,7 +191,7 @@ struct PrototypeSceneView: View {
     }
 
     @MainActor
-    private func positionCamera(_ camera: Entity) {
+    private func positionCamera(_ camera: Entity, snap: Bool) {
         let aircraftPosition = simulation.state.positionMeters
         let attitude = simulation.state.orientation
 
@@ -201,17 +201,20 @@ struct PrototypeSceneView: View {
 
         switch cameraMode {
         case .chase:
-            localCameraOffset = [0, 2.75, -13.0]
-            localLookPoint = [0, -0.10, 5.2]
-            fieldOfView = 59
+            // Enough distance/height to read the aircraft attitude and the world
+            // together. Still aircraft-relative, but no longer sitting in the nozzle.
+            localCameraOffset = [0, 3.85, -16.8]
+            localLookPoint = [0, 0.55, 2.8]
+            fieldOfView = 62
         case .close:
-            localCameraOffset = [0, 1.75, -8.15]
-            localLookPoint = [0, -0.12, 5.8]
-            fieldOfView = 63
+            localCameraOffset = [0, 2.55, -10.7]
+            localLookPoint = [0, 0.42, 3.6]
+            fieldOfView = 64
         case .cockpit:
-            localCameraOffset = [0, 0.10, 2.72]
-            localLookPoint = [0, 0.06, 80]
-            fieldOfView = 70
+            // JSBSim F-16 EYEPOINT relative to CG: ~3.64 m forward, 0.88 m up.
+            localCameraOffset = [0, 0.88, 3.64]
+            localLookPoint = [0, 0.88, 85]
+            fieldOfView = 72
         }
 
         camera.components.set(PerspectiveCameraComponent(
@@ -224,11 +227,17 @@ struct PrototypeSceneView: View {
         let lookTarget = aircraftPosition + simd_act(attitude, localLookPoint)
         let aircraftUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
 
-        // All three cameras are aircraft-relative. There is deliberately no
-        // horizon-holding correction anywhere in Stage 2.
+        let currentPosition = camera.position
+        let distance = simd_distance(currentPosition, desiredPosition)
+        let shouldSnap = snap || distance > 90
+        let blend: Float = shouldSnap ? 1.0 : (cameraMode == .close ? 0.24 : 0.18)
+        let cameraPosition = currentPosition + (desiredPosition - currentPosition) * blend
+
+        // The up vector still comes from the aircraft, so there is no horizon hold.
+        // The spring is only positional and gives the aircraft a little visual mass.
         camera.look(
             at: lookTarget,
-            from: desiredPosition,
+            from: cameraPosition,
             upVector: aircraftUp,
             relativeTo: nil
         )
@@ -255,12 +264,8 @@ struct PrototypeSceneView: View {
         }
 
         if let speedbrake = aircraft.findEntity(named: PrototypeAircraftFactory.speedbrakeName) {
-            speedbrake.orientation = simd_quatf(
-                angle: -state.speedbrakePosition * 0.88,
-                axis: [1, 0, 0]
-            )
+            speedbrake.orientation = simd_quatf(angle: -state.speedbrakePosition * 0.88, axis: [1, 0, 0])
         }
-
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftAileronName) {
             left.orientation = simd_quatf(angle: state.leftAileronPosition * 0.38, axis: [1, 0, 0])
         }
@@ -399,13 +404,7 @@ private enum Stage2WorldFactory {
             for tileZ in -4..<4 {
                 let centerX = (Float(tileX) + 0.5) * tileSize
                 let centerZ = (Float(tileZ) + 0.5) * tileSize
-                guard let mesh = makeTerrainTile(
-                    centerX: centerX,
-                    centerZ: centerZ,
-                    size: tileSize,
-                    resolution: resolution
-                ) else { continue }
-
+                guard let mesh = makeTerrainTile(centerX: centerX, centerZ: centerZ, size: tileSize, resolution: resolution) else { continue }
                 let selector = abs(tileX * 13 + tileZ * 7)
                 let terrain = ModelEntity(
                     mesh: mesh,
@@ -428,22 +427,19 @@ private enum Stage2WorldFactory {
         var positions: [SIMD3<Float>] = []
         var normals: [SIMD3<Float>] = []
         var indices: [UInt32] = []
-
         positions.reserveCapacity(resolution * resolution)
         normals.reserveCapacity(resolution * resolution)
         indices.reserveCapacity((resolution - 1) * (resolution - 1) * 6)
 
         let half = size * 0.5
         let step = size / Float(resolution - 1)
-
         for zIndex in 0..<resolution {
             for xIndex in 0..<resolution {
                 let localX = -half + Float(xIndex) * step
                 let localZ = -half + Float(zIndex) * step
                 let globalX = centerX + localX
                 let globalZ = centerZ + localZ
-                let height = Stage2TerrainProfile.heightMeters(east: globalX, north: globalZ)
-                positions.append([localX, height, localZ])
+                positions.append([localX, Stage2TerrainProfile.heightMeters(east: globalX, north: globalZ), localZ])
                 normals.append(Stage2TerrainProfile.normal(east: globalX, north: globalZ))
             }
         }
@@ -480,13 +476,11 @@ private enum Stage2WorldFactory {
             dash.position = [0, 0.12, Float(z)]
             root.addChild(dash)
         }
-
         for x: Float in [-30.5, 30.5] {
             let edge = block(size: [0.7, 0.022, 4_720], color: marking, cornerRadius: 0.05)
             edge.position = [x, 0.12, 2_000]
             root.addChild(edge)
         }
-
         for endZ: Float in [-360, 4_360] {
             for stripe in -3...3 {
                 let threshold = block(size: [5.0, 0.025, 28], color: marking, cornerRadius: 0)
@@ -494,27 +488,15 @@ private enum Stage2WorldFactory {
                 root.addChild(threshold)
             }
         }
-
-        // Edge/approach lights provide powerful closure-rate and flare cues at night-like distances.
         for z in stride(from: -350, through: 4_350, by: 120) {
             addRunwayLight(to: root, position: [-33.5, 0.24, Float(z)], color: .white)
             addRunwayLight(to: root, position: [33.5, 0.24, Float(z)], color: .white)
         }
-
         for index in 0..<8 {
-            addRunwayLight(
-                to: root,
-                position: [0, 0.24, -450 - Float(index) * 55],
-                color: .white
-            )
+            addRunwayLight(to: root, position: [0, 0.24, -450 - Float(index) * 55], color: .white)
         }
-
         for index in 0..<4 {
-            addRunwayLight(
-                to: root,
-                position: [-55 + Float(index) * 5.5, 0.30, 420],
-                color: index < 2 ? .white : .red
-            )
+            addRunwayLight(to: root, position: [-55 + Float(index) * 5.5, 0.30, 420], color: index < 2 ? .white : .red)
         }
 
         let parallelTaxiway = block(size: [30, 0.07, 3_050], color: asphalt, cornerRadius: 2)
@@ -537,53 +519,32 @@ private enum Stage2WorldFactory {
 
         for row in 0..<2 {
             for column in 0..<4 {
-                addHangar(
-                    to: root,
-                    position: [390 + Float(column) * 94, 0, 610 + Float(row) * 135]
-                )
+                addHangar(to: root, position: [390 + Float(column) * 94, 0, 610 + Float(row) * 135])
             }
         }
 
-        let towerShaft = block(
-            size: [18, 48, 18],
-            color: UIColor(red: 0.50, green: 0.50, blue: 0.46, alpha: 1),
-            cornerRadius: 1
-        )
+        let towerShaft = block(size: [18, 48, 18], color: UIColor(red: 0.50, green: 0.50, blue: 0.46, alpha: 1), cornerRadius: 1)
         towerShaft.position = [715, 24, 900]
         root.addChild(towerShaft)
-
-        let towerCab = block(
-            size: [31, 10, 31],
-            color: UIColor(red: 0.07, green: 0.14, blue: 0.17, alpha: 1),
-            cornerRadius: 2
-        )
+        let towerCab = block(size: [31, 10, 31], color: UIColor(red: 0.07, green: 0.14, blue: 0.17, alpha: 1), cornerRadius: 2)
         towerCab.position = [715, 52, 900]
         root.addChild(towerCab)
     }
 
     private static func addRunwayLight(to root: Entity, position: SIMD3<Float>, color: UIColor) {
         let light = ModelEntity(
-            mesh: .generateSphere(radius: 0.18),
-            materials: [SimpleMaterial(color: color, isMetallic: false)]
+            mesh: .generateSphere(radius: 0.13),
+            materials: [SimpleMaterial(color: color.withAlphaComponent(0.82), isMetallic: false)]
         )
         light.position = position
         root.addChild(light)
     }
 
     private static func addHangar(to root: Entity, position: SIMD3<Float>) {
-        let body = block(
-            size: [70, 18, 55],
-            color: UIColor(red: 0.35, green: 0.36, blue: 0.35, alpha: 1),
-            cornerRadius: 2
-        )
+        let body = block(size: [70, 18, 55], color: UIColor(red: 0.35, green: 0.36, blue: 0.35, alpha: 1), cornerRadius: 2)
         body.position = [position.x, 9, position.z]
         root.addChild(body)
-
-        let door = block(
-            size: [50, 12, 0.8],
-            color: UIColor(red: 0.14, green: 0.15, blue: 0.15, alpha: 1),
-            cornerRadius: 0.5
-        )
+        let door = block(size: [50, 12, 0.8], color: UIColor(red: 0.14, green: 0.15, blue: 0.15, alpha: 1), cornerRadius: 0.5)
         door.position = [position.x, 6.1, position.z - 27.7]
         root.addChild(door)
     }
@@ -596,7 +557,6 @@ private enum Stage2WorldFactory {
             [[1_800, 4_200], [3_000, 2_800], [4_500, 1_900], [7_000, 1_500]],
             [[2_100, 7_000], [2_400, 4_800], [3_500, 3_000], [5_800, 2_500]]
         ]
-
         for road in roads {
             for index in 0..<(road.count - 1) {
                 addRoadSegment(to: root, from: road[index], to: road[index + 1], width: 17, color: roadColor)
@@ -604,17 +564,10 @@ private enum Stage2WorldFactory {
         }
     }
 
-    private static func addRoadSegment(
-        to root: Entity,
-        from start: SIMD2<Float>,
-        to end: SIMD2<Float>,
-        width: Float,
-        color: UIColor
-    ) {
+    private static func addRoadSegment(to root: Entity, from start: SIMD2<Float>, to end: SIMD2<Float>, width: Float, color: UIColor) {
         let delta = end - start
         let length = simd_length(delta)
         guard length > 1 else { return }
-
         let center = (start + end) * 0.5
         let y = Stage2TerrainProfile.heightMeters(east: center.x, north: center.y) + 0.10
         let road = block(size: [width, 0.08, length], color: color, cornerRadius: 1.5)
@@ -630,7 +583,6 @@ private enum Stage2WorldFactory {
             UIColor(red: 0.51, green: 0.48, blue: 0.42, alpha: 1),
             UIColor(red: 0.42, green: 0.41, blue: 0.38, alpha: 1)
         ]
-
         for row in 0..<6 {
             for column in 0..<8 {
                 let selector = row * 8 + column
@@ -640,20 +592,10 @@ private enum Stage2WorldFactory {
                 let x = 2_700 + Float(column) * 112
                 let z = 3_000 + Float(row) * 118
                 let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
-
-                let building = block(
-                    size: [width, height, depth],
-                    color: wallColors[selector % wallColors.count],
-                    cornerRadius: 1.1
-                )
+                let building = block(size: [width, height, depth], color: wallColors[selector % wallColors.count], cornerRadius: 1.1)
                 building.position = [x, terrain + height * 0.5, z]
                 root.addChild(building)
-
-                let roof = block(
-                    size: [width + 2, 1.2, depth + 2],
-                    color: UIColor(red: 0.17, green: 0.18, blue: 0.18, alpha: 1),
-                    cornerRadius: 0.3
-                )
+                let roof = block(size: [width + 2, 1.2, depth + 2], color: UIColor(red: 0.17, green: 0.18, blue: 0.18, alpha: 1), cornerRadius: 0.3)
                 roof.position = [x, terrain + height + 0.6, z]
                 root.addChild(roof)
             }
@@ -667,11 +609,9 @@ private enum Stage2WorldFactory {
             UIColor(red: 0.11, green: 0.25, blue: 0.075, alpha: 1),
             UIColor(red: 0.15, green: 0.28, blue: 0.085, alpha: 1)
         ]
-
         for belt in 0..<12 {
             let baseX = Float(-6_500 + belt * 1_050)
             let baseZ = Float(1_200 + (belt % 4) * 1_500)
-
             for treeIndex in 0..<9 {
                 let x = baseX + Float(treeIndex) * 70
                 let z = baseZ + sin(Float(treeIndex) * 0.82) * 115
@@ -687,13 +627,7 @@ private enum Stage2WorldFactory {
         }
     }
 
-    private static func addTree(
-        to root: Entity,
-        position: SIMD3<Float>,
-        height: Float,
-        trunkColor: UIColor,
-        canopyColor: UIColor
-    ) {
+    private static func addTree(to root: Entity, position: SIMD3<Float>, height: Float, trunkColor: UIColor, canopyColor: UIColor) {
         let trunkHeight = height * 0.38
         let trunk = ModelEntity(
             mesh: .generateCylinder(height: trunkHeight, radius: height * 0.045),
@@ -701,17 +635,13 @@ private enum Stage2WorldFactory {
         )
         trunk.position = [position.x, position.y + trunkHeight * 0.5, position.z]
         root.addChild(trunk)
-
-        let canopy = ellipsoid(
-            radii: [height * 0.25, height * 0.30, height * 0.25],
-            color: canopyColor
-        )
+        let canopy = ellipsoid(radii: [height * 0.25, height * 0.30, height * 0.25], color: canopyColor)
         canopy.position = [position.x, position.y + trunkHeight + height * 0.22, position.z]
         root.addChild(canopy)
     }
 
     private static func addClouds(to root: Entity) {
-        let cloudColor = UIColor(red: 0.94, green: 0.96, blue: 0.98, alpha: 0.27)
+        let cloudColor = UIColor(red: 0.94, green: 0.96, blue: 0.98, alpha: 0.20)
         let clouds: [(SIMD3<Float>, SIMD3<Float>)] = [
             ([-2_100, 1_250, 2_100], [460, 105, 250]),
             ([1_800, 1_430, 3_100], [540, 120, 300]),
@@ -722,7 +652,6 @@ private enum Stage2WorldFactory {
             ([-8_500, 2_700, 16_000], [1_550, 260, 720]),
             ([8_000, 2_900, 19_000], [1_700, 280, 780])
         ]
-
         for (position, radii) in clouds {
             let cloud = ellipsoid(radii: radii, color: cloudColor)
             cloud.position = position
@@ -739,11 +668,7 @@ private enum Stage2WorldFactory {
         return entity
     }
 
-    private static func block(
-        size: SIMD3<Float>,
-        color: UIColor,
-        cornerRadius: Float
-    ) -> ModelEntity {
+    private static func block(size: SIMD3<Float>, color: UIColor, cornerRadius: Float) -> ModelEntity {
         ModelEntity(
             mesh: .generateBox(size: size, cornerRadius: cornerRadius),
             materials: [SimpleMaterial(color: color, isMetallic: false)]

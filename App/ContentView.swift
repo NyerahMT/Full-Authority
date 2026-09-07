@@ -40,7 +40,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
                     systemToggleButton(
-                        title: simulation.state.gearPosition > 0.05 ? "GEAR" : "GEAR",
+                        title: "GEAR",
                         value: gearStatus,
                         active: simulation.controls.gearDown || simulation.state.gearPosition > 0.05
                     ) {
@@ -59,35 +59,23 @@ struct ContentView: View {
                         simulation.controls = controls
                     }
 
-                    wheelBrakeButton
-
-                    if simulation.state.weightOnWheels {
-                        Text("WOW")
-                            .font(.system(size: 9, weight: .black, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(.white.opacity(0.84))
-                            .padding(.horizontal, 10)
-                            .frame(height: 36)
-                            .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
-                    }
-
                     Spacer()
 
                     Button(action: pauseFlight) {
                         Image(systemName: "pause.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .frame(width: 40, height: 40)
-                            .background(.black.opacity(0.30), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 38, height: 38)
+                            .background(.black.opacity(0.24), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.10), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
-                .safeAreaPadding(.horizontal, 16)
+                .safeAreaPadding(.horizontal, 18)
                 .padding(.top, 5)
 
                 Spacer()
 
-                HStack(alignment: .bottom) {
+                HStack(alignment: .bottom, spacing: 0) {
                     CompactThrottleControl(value: simulation.controls.throttle) { value in
                         var controls = simulation.controls
                         controls.throttle = value
@@ -96,12 +84,16 @@ struct ContentView: View {
 
                     Spacer()
 
-                    CompactRudderControl(value: simulation.controls.rudder) { value in
-                        var controls = simulation.controls
-                        controls.rudder = value
-                        simulation.controls = controls
+                    HStack(alignment: .bottom, spacing: 8) {
+                        wheelBrakeButton
+
+                        CompactRudderControl(value: simulation.controls.rudder) { value in
+                            var controls = simulation.controls
+                            controls.rudder = value
+                            simulation.controls = controls
+                        }
                     }
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 2)
 
                     Spacer()
 
@@ -115,8 +107,8 @@ struct ContentView: View {
                         simulation.controls = controls
                     }
                 }
-                .safeAreaPadding(.horizontal, 24)
-                .padding(.bottom, 7)
+                .safeAreaPadding(.horizontal, 26)
+                .padding(.bottom, 10)
             }
         }
     }
@@ -125,17 +117,16 @@ struct ContentView: View {
         let active = simulation.controls.wheelBrake > 0.01
 
         return VStack(spacing: 1) {
-            Text("WHEEL BRK")
+            Text("BRAKE")
                 .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .foregroundStyle(active ? Color.black.opacity(0.70) : Color.white.opacity(0.52))
+                .foregroundStyle(active ? Color.black.opacity(0.64) : Color.white.opacity(0.48))
             Text(active ? "ON" : "HOLD")
                 .font(.system(size: 10, weight: .black, design: .monospaced))
                 .foregroundStyle(active ? Color.black : Color.white.opacity(0.90))
         }
-        .padding(.horizontal, 11)
-        .frame(height: 36)
-        .background(active ? Color.white.opacity(0.92) : Color.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(active ? 0.04 : 0.11), lineWidth: 1))
+        .frame(width: 58, height: 46)
+        .background(active ? Color.white.opacity(0.92) : Color.black.opacity(0.20), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(active ? 0.04 : 0.10), lineWidth: 1))
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -184,7 +175,7 @@ struct ContentView: View {
                         .offset(y: -8)
 
                     HStack(spacing: 9) {
-                        Text("PHASE II")
+                        Text("STAGE 2")
                             .font(.system(size: 10, weight: .black, design: .monospaced))
                             .tracking(1.2)
                             .padding(.horizontal, 9)
@@ -192,38 +183,44 @@ struct ContentView: View {
                             .background(.white, in: RoundedRectangle(cornerRadius: 6))
                             .foregroundStyle(.black)
 
-                        Text("F-16A / FREE FLIGHT")
+                        Text("F-16A / RUNWAY SORTIE")
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .tracking(1.0)
                             .foregroundStyle(.white.opacity(0.76))
                     }
 
-                    Text("Direct JSBSim F-16 dynamics with a fighter-oriented flight display and native ground reactions.")
+                    Text("Runway start, direct JSBSim F-16 dynamics, native terrain contact and aircraft-relative cameras.")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white.opacity(0.68))
-                        .frame(maxWidth: 450, alignment: .leading)
+                        .frame(maxWidth: 470, alignment: .leading)
                         .padding(.top, 12)
 
                     HStack(spacing: 9) {
                         statusChip("FDM", "JSBSIM")
                         statusChip("FCS", "F-16 FBW")
                         statusChip("RATE", "120 HZ")
-                        statusChip("HUD", "NAV")
-                        statusChip("GROUND", "NATIVE")
+                        statusChip("GROUND", "LIVE")
                     }
                     .padding(.top, 18)
 
-                    HStack(spacing: 16) {
-                        Label("Hold WHEEL BRK to brake", systemImage: "hand.tap")
-                        Label("Rudder steers on WOW", systemImage: "arrow.left.and.right")
+                    HStack(spacing: 15) {
+                        Label("Throttle left", systemImage: "arrow.up.and.down")
+                        Label("Rudder + brake center", systemImage: "arrow.left.and.right")
+                        Label("Stick right", systemImage: "circle.circle")
                     }
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.48))
                     .padding(.top, 13)
 
+                    Text("TAKEOFF  •  RELEASE BRAKE  •  ADVANCE THROTTLE  •  ROTATE ~145 KCAS  •  GEAR UP WITH POSITIVE CLIMB")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .tracking(0.35)
+                        .foregroundStyle(.white.opacity(0.42))
+                        .padding(.top, 10)
+
                     Button(action: launchFlight) {
                         HStack(spacing: 14) {
-                            Text("ENTER FREE FLIGHT")
+                            Text("BEGIN SORTIE")
                                 .font(.system(size: 13, weight: .black, design: .monospaced))
                                 .tracking(0.9)
                             Image(systemName: "arrow.right")
@@ -235,7 +232,7 @@ struct ContentView: View {
                         .background(.white, in: RoundedRectangle(cornerRadius: 13))
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 22)
+                    .padding(.top, 20)
 
                     Text(backendLabel)
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -259,7 +256,7 @@ struct ContentView: View {
                     .font(.system(size: 23, weight: .black, design: .rounded))
                     .tracking(0.5)
 
-                Text("F-16A · JSBSim direct FDM · PHASE II")
+                Text("F-16A · JSBSim direct FDM · STAGE 2")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
 
@@ -291,10 +288,10 @@ struct ContentView: View {
                     .font(.system(size: 10, weight: .black, design: .monospaced))
                     .foregroundStyle(active ? Color.black : Color.white.opacity(0.90))
             }
-            .padding(.horizontal, 11)
-            .frame(height: 36)
-            .background(active ? Color.white.opacity(0.92) : Color.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(active ? 0.04 : 0.11), lineWidth: 1))
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(active ? Color.white.opacity(0.92) : Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(active ? 0.04 : 0.10), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -439,12 +436,12 @@ private struct F16HUD: View {
                     Spacer()
                     AltitudeTape(state: state, color: hudColor)
                 }
-                .safeAreaPadding(.horizontal, 76)
+                .safeAreaPadding(.horizontal, 92)
 
                 VStack {
                     Spacer()
                     bottomData
-                        .padding(.bottom, 58)
+                        .padding(.bottom, 116)
                 }
 
                 warningBanner
@@ -802,29 +799,29 @@ private struct CompactThrottleControl: View {
 
             GeometryReader { geometry in
                 let height = geometry.size.height
-                let knobHeight: CGFloat = 30
+                let knobHeight: CGFloat = 28
                 let travel = max(1, height - knobHeight)
                 let y = (1 - CGFloat(value)) * travel + knobHeight * 0.5
                 let milY = (1 - CGFloat(0.82)) * travel + knobHeight * 0.5
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.28))
-                        .frame(width: 18)
+                        .fill(.black.opacity(0.24))
+                        .frame(width: 16)
 
                     Rectangle()
-                        .fill(.white.opacity(0.30))
-                        .frame(width: 20, height: 1)
+                        .fill(.white.opacity(0.28))
+                        .frame(width: 18, height: 1)
                         .position(x: geometry.size.width * 0.5, y: milY)
 
                     Text("MIL")
                         .font(.system(size: 6, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.44))
-                        .position(x: geometry.size.width * 0.5 + 24, y: milY)
+                        .foregroundStyle(.white.opacity(0.42))
+                        .position(x: geometry.size.width * 0.5 + 22, y: milY)
 
                     RoundedRectangle(cornerRadius: 7)
                         .fill(.white.opacity(0.93))
-                        .frame(width: 32, height: knobHeight)
+                        .frame(width: 30, height: knobHeight)
                         .position(x: geometry.size.width * 0.5, y: y)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -837,11 +834,11 @@ private struct CompactThrottleControl: View {
                         }
                 )
             }
-            .frame(width: 54, height: 136)
+            .frame(width: 50, height: 126)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 7)
-        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -857,19 +854,19 @@ private struct CompactRudderControl: View {
 
             GeometryReader { geometry in
                 let width = geometry.size.width
-                let travel = max(1, width - 32)
+                let travel = max(1, width - 30)
                 let x = width * 0.5 + CGFloat(value) * travel * 0.5
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.28))
-                        .frame(height: 20)
+                        .fill(.black.opacity(0.24))
+                        .frame(height: 18)
                     Rectangle()
                         .fill(.white.opacity(0.18))
-                        .frame(width: 1, height: 23)
+                        .frame(width: 1, height: 21)
                     Circle()
-                        .fill(.white.opacity(0.90))
-                        .frame(width: 28, height: 28)
+                        .fill(.white.opacity(0.92))
+                        .frame(width: 26, height: 26)
                         .position(x: x, y: geometry.size.height * 0.5)
                 }
                 .contentShape(Rectangle())
@@ -883,11 +880,11 @@ private struct CompactRudderControl: View {
                         .onEnded { _ in onChange(0) }
                 )
             }
-            .frame(width: 158, height: 31)
+            .frame(width: 180, height: 29)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.black.opacity(0.17), in: RoundedRectangle(cornerRadius: 13))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
     }
 }
 
@@ -899,17 +896,17 @@ private struct CompactStickControl: View {
     var body: some View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height)
-            let knob: CGFloat = 34
+            let knob: CGFloat = 32
             let radius = max(1, (side - knob) * 0.5)
 
             ZStack {
                 Circle()
-                    .fill(.black.opacity(0.20))
+                    .fill(.black.opacity(0.14))
                 Circle()
-                    .stroke(.white.opacity(0.14), lineWidth: 1)
+                    .stroke(.white.opacity(0.13), lineWidth: 1)
                     .padding(side * 0.29)
-                Rectangle().fill(.white.opacity(0.09)).frame(width: 1).padding(10)
-                Rectangle().fill(.white.opacity(0.09)).frame(height: 1).padding(10)
+                Rectangle().fill(.white.opacity(0.08)).frame(width: 1).padding(10)
+                Rectangle().fill(.white.opacity(0.08)).frame(height: 1).padding(10)
                 Circle()
                     .fill(.white.opacity(0.93))
                     .frame(width: knob, height: knob)
@@ -937,9 +934,9 @@ private struct CompactStickControl: View {
                     .onEnded { _ in onChange(0, 0) }
             )
         }
-        .frame(width: 124, height: 124)
-        .padding(7)
-        .background(.black.opacity(0.16), in: Circle())
+        .frame(width: 112, height: 112)
+        .padding(6)
+        .background(.black.opacity(0.10), in: Circle())
     }
 }
 
