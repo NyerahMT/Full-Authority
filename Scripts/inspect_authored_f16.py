@@ -49,7 +49,7 @@ def inspect_fbx(path, title):
         elif obj.type == 'ARMATURE':
             lines.append(f'  armature bones={len(obj.data.bones)}')
             for bone in obj.data.bones:
-                lines.append(f'  BONE {bone.name} parent={bone.parent.name if bone.parent else "-"} head={fmt_vec(bone.head_local)} tail={fmt_vec(bone.tail_local)} roll={bone.roll:.6f}')
+                lines.append(f'  BONE {bone.name} parent={bone.parent.name if bone.parent else "-"} head={fmt_vec(bone.head_local)} tail={fmt_vec(bone.tail_local)}')
 
     for action in sorted(bpy.data.actions, key=lambda a: a.name):
         lines.append(f'ACTION {action.name} frames={tuple(round(v, 4) for v in action.frame_range)}')
