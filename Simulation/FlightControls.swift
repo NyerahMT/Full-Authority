@@ -17,11 +17,15 @@ struct FlightControls: Equatable, Sendable {
     var gearDown = false
     var speedbrakeExtended = false
 
+    /// Symmetric wheel-brake command. 0 = released, 1 = full braking.
+    var wheelBrake: Float = 0
+
     mutating func clampToValidRange() {
         roll = roll.clamped(to: -1...1)
         pitch = pitch.clamped(to: -1...1)
         throttle = throttle.clamped(to: 0...1)
         rudder = rudder.clamped(to: -1...1)
+        wheelBrake = wheelBrake.clamped(to: 0...1)
     }
 }
 

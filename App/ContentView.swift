@@ -34,42 +34,56 @@ struct ContentView: View {
 
     private var flightInterface: some View {
         ZStack {
-            FlightHUD(state: simulation.state, throttle: simulation.controls.throttle)
+            F16HUD(state: simulation.state, controls: simulation.controls)
                 .allowsHitTesting(false)
 
-            VStack {
-                HStack(spacing: 8) {
-                    flightSystemButton(
-                        simulation.controls.gearDown ? "GEAR DN" : "GEAR UP",
-                        active: simulation.controls.gearDown
+            VStack(spacing: 0) {
+                HStack(spacing: 7) {
+                    systemToggleButton(
+                        title: simulation.state.gearPosition > 0.05 ? "GEAR" : "GEAR",
+                        value: gearStatus,
+                        active: simulation.controls.gearDown || simulation.state.gearPosition > 0.05
                     ) {
                         var controls = simulation.controls
                         controls.gearDown.toggle()
                         simulation.controls = controls
                     }
 
-                    flightSystemButton(
-                        simulation.controls.speedbrakeExtended ? "BRK OUT" : "SPD BRK",
-                        active: simulation.controls.speedbrakeExtended
+                    systemToggleButton(
+                        title: "SPD BRK",
+                        value: String(format: "%02.0f", simulation.state.speedbrakePosition * 100),
+                        active: simulation.controls.speedbrakeExtended || simulation.state.speedbrakePosition > 0.05
                     ) {
                         var controls = simulation.controls
                         controls.speedbrakeExtended.toggle()
                         simulation.controls = controls
                     }
 
+                    wheelBrakeButton
+
+                    if simulation.state.weightOnWheels {
+                        Text("WOW")
+                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(.white.opacity(0.84))
+                            .padding(.horizontal, 10)
+                            .frame(height: 36)
+                            .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
+                    }
+
                     Spacer()
 
                     Button(action: pauseFlight) {
                         Image(systemName: "pause.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .frame(width: 44, height: 44)
-                            .background(.black.opacity(0.40), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(width: 40, height: 40)
+                            .background(.black.opacity(0.30), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
-                .safeAreaPadding(.horizontal, 18)
-                .padding(.top, 6)
+                .safeAreaPadding(.horizontal, 16)
+                .padding(.top, 5)
 
                 Spacer()
 
@@ -87,7 +101,7 @@ struct ContentView: View {
                         controls.rudder = value
                         simulation.controls = controls
                     }
-                    .padding(.bottom, 5)
+                    .padding(.bottom, 4)
 
                     Spacer()
 
@@ -101,16 +115,48 @@ struct ContentView: View {
                         simulation.controls = controls
                     }
                 }
-                .safeAreaPadding(.horizontal, 26)
-                .padding(.bottom, 8)
+                .safeAreaPadding(.horizontal, 24)
+                .padding(.bottom, 7)
             }
         }
+    }
+
+    private var wheelBrakeButton: some View {
+        let active = simulation.controls.wheelBrake > 0.01
+
+        return VStack(spacing: 1) {
+            Text("WHEEL BRK")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(active ? Color.black.opacity(0.70) : Color.white.opacity(0.52))
+            Text(active ? "ON" : "HOLD")
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .foregroundStyle(active ? Color.black : Color.white.opacity(0.90))
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 36)
+        .background(active ? Color.white.opacity(0.92) : Color.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(active ? 0.04 : 0.11), lineWidth: 1))
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard simulation.controls.wheelBrake < 0.99 else { return }
+                    var controls = simulation.controls
+                    controls.wheelBrake = 1
+                    simulation.controls = controls
+                }
+                .onEnded { _ in
+                    var controls = simulation.controls
+                    controls.wheelBrake = 0
+                    simulation.controls = controls
+                }
+        )
     }
 
     private var briefingOverlay: some View {
         ZStack {
             LinearGradient(
-                colors: [.black.opacity(0.76), .black.opacity(0.28), .clear],
+                colors: [.black.opacity(0.80), .black.opacity(0.38), .clear],
                 startPoint: .leading,
                 endPoint: .trailing
             )
@@ -121,41 +167,59 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Rectangle()
                             .fill(.white)
-                            .frame(width: 28, height: 2)
+                            .frame(width: 30, height: 2)
                         Text("NYERAHWORKS FLIGHT SYSTEMS")
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .tracking(1.4)
                             .foregroundStyle(.white.opacity(0.62))
                     }
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 14)
 
                     Text("FULL")
-                        .font(.system(size: 52, weight: .black, design: .rounded))
-                        .tracking(-2.2)
+                        .font(.system(size: 50, weight: .black, design: .rounded))
+                        .tracking(-2.0)
                     Text("AUTHORITY")
-                        .font(.system(size: 52, weight: .black, design: .rounded))
-                        .tracking(-2.2)
+                        .font(.system(size: 50, weight: .black, design: .rounded))
+                        .tracking(-2.0)
                         .offset(y: -8)
 
-                    Text("F-16A  /  FREE FLIGHT")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundStyle(.white.opacity(0.74))
-                        .padding(.top, 1)
+                    HStack(spacing: 9) {
+                        Text("PHASE II")
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .tracking(1.2)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(.black)
 
-                    Text("A native JSBSim flight model inside an iPhone-first combat aviation sandbox.")
+                        Text("F-16A / FREE FLIGHT")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .tracking(1.0)
+                            .foregroundStyle(.white.opacity(0.76))
+                    }
+
+                    Text("Direct JSBSim F-16 dynamics with a fighter-oriented flight display and native ground reactions.")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white.opacity(0.68))
-                        .frame(maxWidth: 410, alignment: .leading)
+                        .frame(maxWidth: 450, alignment: .leading)
                         .padding(.top, 12)
 
-                    HStack(spacing: 10) {
-                        statusChip("JSBSIM", "LIVE FDM")
-                        statusChip("F-16A", "FBW")
-                        statusChip("PHYSICS", "120 HZ")
-                        statusChip("CAM", "AIRFRAME")
+                    HStack(spacing: 9) {
+                        statusChip("FDM", "JSBSIM")
+                        statusChip("FCS", "F-16 FBW")
+                        statusChip("RATE", "120 HZ")
+                        statusChip("HUD", "NAV")
+                        statusChip("GROUND", "NATIVE")
                     }
-                    .padding(.top, 20)
+                    .padding(.top, 18)
+
+                    HStack(spacing: 16) {
+                        Label("Hold WHEEL BRK to brake", systemImage: "hand.tap")
+                        Label("Rudder steers on WOW", systemImage: "arrow.left.and.right")
+                    }
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.48))
+                    .padding(.top, 13)
 
                     Button(action: launchFlight) {
                         HStack(spacing: 14) {
@@ -167,18 +231,18 @@ struct ContentView: View {
                         }
                         .foregroundStyle(.black)
                         .padding(.horizontal, 22)
-                        .frame(height: 52)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                        .frame(height: 50)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 13))
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 24)
+                    .padding(.top, 22)
 
                     Text(backendLabel)
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.42))
-                        .padding(.top, 12)
+                        .padding(.top, 10)
                 }
-                .safeAreaPadding(.leading, 34)
+                .safeAreaPadding(.leading, 32)
 
                 Spacer()
             }
@@ -187,7 +251,7 @@ struct ContentView: View {
 
     private var pauseOverlay: some View {
         ZStack {
-            Color.black.opacity(0.38)
+            Color.black.opacity(0.40)
                 .ignoresSafeArea()
 
             VStack(spacing: 18) {
@@ -195,7 +259,7 @@ struct ContentView: View {
                     .font(.system(size: 23, weight: .black, design: .rounded))
                     .tracking(0.5)
 
-                Text("F-16A  ·  JSBSim direct FDM")
+                Text("F-16A · JSBSim direct FDM · PHASE II")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
 
@@ -212,26 +276,25 @@ struct ContentView: View {
         }
     }
 
-    private func flightSystemButton(
-        _ title: String,
+    private func systemToggleButton(
+        title: String,
+        value: String,
         active: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 9, weight: .black, design: .monospaced))
-                .tracking(0.4)
-                .foregroundStyle(active ? Color.black : Color.white.opacity(0.78))
-                .padding(.horizontal, 11)
-                .frame(height: 38)
-                .background(
-                    active ? AnyShapeStyle(Color.white.opacity(0.92)) : AnyShapeStyle(Color.black.opacity(0.32)),
-                    in: RoundedRectangle(cornerRadius: 10)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(.white.opacity(active ? 0.05 : 0.12), lineWidth: 1)
-                )
+            VStack(spacing: 1) {
+                Text(title)
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundStyle(active ? Color.black.opacity(0.68) : Color.white.opacity(0.50))
+                Text(value)
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .foregroundStyle(active ? Color.black : Color.white.opacity(0.90))
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 36)
+            .background(active ? Color.white.opacity(0.92) : Color.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(active ? 0.04 : 0.11), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -239,16 +302,16 @@ struct ContentView: View {
     private func statusChip(_ top: String, _ bottom: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(top)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.46))
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.44))
             Text(bottom)
-                .font(.system(size: 10, weight: .black, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.92))
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.90))
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.10), lineWidth: 1))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.09), lineWidth: 1))
     }
 
     private func pauseButton(
@@ -271,6 +334,13 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
+    private var gearStatus: String {
+        let position = simulation.state.gearPosition
+        if position > 0.95 { return "DOWN" }
+        if position < 0.05 { return "UP" }
+        return "TRANS"
+    }
+
     private var backendLabel: String {
         switch simulation.backendStatus {
         case .bridgeReady(let version):
@@ -283,25 +353,25 @@ struct ContentView: View {
     }
 
     private func launchFlight() {
-        // FlightSimulation has already loaded and trimmed the F-16 during app
-        // construction. Entering the first sortie should only unpause that
-        // prepared state; a full reload is reserved for explicit restarts.
         simulation.resume()
-        withAnimation(.easeOut(duration: 0.24)) {
+        withAnimation(.easeOut(duration: 0.22)) {
             phase = .flying
         }
     }
 
     private func pauseFlight() {
+        var controls = simulation.controls
+        controls.wheelBrake = 0
+        simulation.controls = controls
         simulation.pause()
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(.easeOut(duration: 0.14)) {
             phase = .paused
         }
     }
 
     private func resumeFlight() {
         simulation.resume()
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(.easeOut(duration: 0.14)) {
             phase = .flying
         }
     }
@@ -316,155 +386,380 @@ struct ContentView: View {
 
     private func returnToBriefing() {
         _ = simulation.resetFlight()
-        withAnimation(.easeOut(duration: 0.22)) {
+        withAnimation(.easeOut(duration: 0.20)) {
             phase = .briefing
         }
     }
 }
 
-private struct FlightHUD: View {
+private struct F16HUD: View {
     let state: AircraftState
-    let throttle: Float
+    let controls: FlightControls
 
-    private let hudColor = Color(red: 0.57, green: 1.0, blue: 0.66)
+    private let hudColor = Color(red: 0.45, green: 1.0, blue: 0.56)
 
     var body: some View {
-        ZStack {
-            GForceVignette(loadFactorG: state.loadFactorG)
-                .ignoresSafeArea()
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = geometry.size.height
+            let fpmX = clamp(CGFloat(-state.sideslipDegrees) * 5.0, min: -width * 0.30, max: width * 0.30)
+            let fpmY = clamp(CGFloat(state.angleOfAttackDegrees) * 5.0, min: -height * 0.27, max: height * 0.27)
 
-            VStack(spacing: 6) {
-                headingRibbon
-                Spacer()
-            }
-            .safeAreaPadding(.top, 8)
+            ZStack {
+                GForceVignette(loadFactorG: state.loadFactorG)
+                    .ignoresSafeArea()
 
-            HStack {
-                speedTape
-                Spacer()
-                altitudeTape
-            }
-            .safeAreaPadding(.horizontal, 104)
+                PitchLadder(
+                    pitchDegrees: state.pitchDegrees,
+                    rollDegrees: state.rollDegrees,
+                    color: hudColor
+                )
+                .frame(width: min(width * 0.52, 470), height: min(height * 0.64, 330))
 
-            AttitudeCue(
-                rollDegrees: state.rollDegrees,
-                pitchDegrees: state.pitchDegrees,
-                color: hudColor
-            )
+                BoresightCue(color: hudColor)
+                    .offset(y: -18)
 
-            VStack {
-                Spacer()
-                HStack(spacing: 17) {
-                    hudReadout("MACH", String(format: "%.2f", state.mach))
-                    hudReadout("G", String(format: "%+.1f", state.loadFactorG))
-                    hudReadout("AOA", String(format: "%+.1f°", state.angleOfAttackDegrees))
-                    hudReadout("THR", String(format: "%.0f", throttle * 100))
+                FlightPathMarker(color: hudColor, limited: abs(fpmX) >= width * 0.295 || abs(fpmY) >= height * 0.265)
+                    .offset(x: fpmX, y: fpmY)
+
+                if state.gearPosition > 0.55 {
+                    LandingReferenceCue(color: hudColor)
+                        .offset(y: 24)
                 }
-                .padding(.bottom, 72)
-            }
 
-            warningBanner
+                VStack(spacing: 0) {
+                    HeadingTape(headingDegrees: state.headingDegrees, color: hudColor)
+                        .frame(width: min(width * 0.46, 420), height: 52)
+                    Spacer()
+                }
+                .safeAreaPadding(.top, 5)
+
+                HStack {
+                    AirspeedTape(state: state, color: hudColor)
+                    Spacer()
+                    AltitudeTape(state: state, color: hudColor)
+                }
+                .safeAreaPadding(.horizontal, 76)
+
+                VStack {
+                    Spacer()
+                    bottomData
+                        .padding(.bottom, 58)
+                }
+
+                warningBanner
+            }
+            .foregroundStyle(hudColor)
         }
-        .foregroundStyle(hudColor)
     }
 
-    private var headingRibbon: some View {
-        VStack(spacing: 2) {
-            Text(String(format: "%03.0f", state.headingDegrees))
-                .font(.system(size: 15, weight: .black, design: .monospaced))
-                .monospacedDigit()
+    private var bottomData: some View {
+        HStack(spacing: 15) {
+            hudDatum("M", String(format: "%.2f", state.mach))
+            hudDatum("G", String(format: "%+.1f", state.loadFactorG))
+            hudDatum("AOA", String(format: "%+.1f", state.angleOfAttackDegrees))
+            hudDatum("FPA", String(format: "%+.1f", state.flightPathAngleDegrees))
 
-            HStack(spacing: 5) {
-                Rectangle().frame(width: 24, height: 1)
-                Image(systemName: "triangle.fill")
-                    .font(.system(size: 6))
-                    .rotationEffect(.degrees(180))
-                Rectangle().frame(width: 24, height: 1)
+            Rectangle()
+                .frame(width: 1, height: 22)
+                .opacity(0.26)
+
+            hudDatum("GEAR", gearReadout)
+            hudDatum("SB", String(format: "%02.0f", state.speedbrakePosition * 100))
+            if controls.wheelBrake > 0.01 {
+                hudDatum("BRK", String(format: "%02.0f", controls.wheelBrake * 100))
             }
-            .opacity(0.72)
+            if state.weightOnWheels {
+                hudDatum("WOW", "ON")
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
+        .fontDesign(.monospaced)
     }
 
-    private var speedTape: some View {
-        let knots = state.airspeedMetersPerSecond * 1.94384
-        return VStack(alignment: .leading, spacing: 1) {
-            Text("SPD")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                .opacity(0.62)
-            HStack(spacing: 5) {
-                Text(String(format: "%03.0f", knots))
-                    .font(.system(size: 21, weight: .black, design: .monospaced))
-                    .monospacedDigit()
-                Rectangle().frame(width: 17, height: 1)
-            }
-            Text("KTAS")
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .opacity(0.55)
-        }
-        .padding(9)
-        .background(.black.opacity(0.20), in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var altitudeTape: some View {
-        let feet = state.altitudeMeters * 3.28084
-        let verticalFeetPerMinute = state.verticalSpeedMetersPerSecond * 196.8504
-        return VStack(alignment: .trailing, spacing: 1) {
-            Text("ALT")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                .opacity(0.62)
-            HStack(spacing: 5) {
-                Rectangle().frame(width: 17, height: 1)
-                Text(String(format: "%04.0f", feet))
-                    .font(.system(size: 21, weight: .black, design: .monospaced))
-                    .monospacedDigit()
-            }
-            Text(String(format: "%+.0f FPM", verticalFeetPerMinute))
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .opacity(0.55)
-        }
-        .padding(9)
-        .background(.black.opacity(0.20), in: RoundedRectangle(cornerRadius: 10))
+    private var gearReadout: String {
+        if state.gearPosition > 0.95 { return "DN" }
+        if state.gearPosition < 0.05 { return "UP" }
+        return "T"
     }
 
     @ViewBuilder
     private var warningBanner: some View {
-        let altitudeFeet = state.altitudeMeters * 3.28084
+        let altitudeFeetAGL = state.altitudeMeters * 3.28084
         let descendingFast = state.verticalSpeedMetersPerSecond < -28
 
         VStack {
-            if altitudeFeet < 450 && descendingFast {
+            if altitudeFeetAGL < 450 && descendingFast {
                 warningText("PULL UP")
             } else if abs(state.angleOfAttackDegrees) > 24 {
                 warningText("AOA LIMIT")
-            } else if state.loadFactorG > 8.2 {
+            } else if state.loadFactorG > 8.4 {
                 warningText("G LIMIT")
+            } else if state.gearPosition > 0.5 && state.calibratedAirspeedKnots > 300 {
+                warningText("GEAR OVERSPEED")
             }
             Spacer()
         }
-        .padding(.top, 66)
+        .padding(.top, 60)
     }
 
     private func warningText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 15, weight: .black, design: .monospaced))
-            .tracking(1.8)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(.black.opacity(0.36), in: RoundedRectangle(cornerRadius: 8))
+            .font(.system(size: 14, weight: .black, design: .monospaced))
+            .tracking(1.7)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private func hudReadout(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 1) {
+    private func hudDatum(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 0) {
             Text(label)
                 .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .opacity(0.50)
+                .opacity(0.54)
             Text(value)
-                .font(.system(size: 11, weight: .black, design: .monospaced))
+                .font(.system(size: 10, weight: .black, design: .monospaced))
                 .monospacedDigit()
         }
+    }
+
+    private func clamp(_ value: CGFloat, min minimum: CGFloat, max maximum: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(value, minimum), maximum)
+    }
+}
+
+private struct HeadingTape: View {
+    let headingDegrees: Float
+    let color: Color
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            HStack(spacing: 0) {
+                ForEach(Array(-3...3), id: \.self) { index in
+                    let heading = wrappedHeading(headingDegrees + Float(index * 10))
+                    VStack(spacing: 2) {
+                        Rectangle()
+                            .frame(width: 1, height: index == 0 ? 10 : 6)
+                            .opacity(index == 0 ? 0.95 : 0.62)
+                        Text(tapeLabel(heading))
+                            .font(.system(size: index == 0 ? 11 : 9, weight: .black, design: .monospaced))
+                            .monospacedDigit()
+                            .opacity(index == 0 ? 0.96 : 0.67)
+                    }
+                    .frame(width: 52)
+                }
+            }
+
+            VStack(spacing: 1) {
+                Text(String(format: "%03.0f", wrappedHeading(headingDegrees)))
+                    .font(.system(size: 13, weight: .black, design: .monospaced))
+                    .monospacedDigit()
+                    .padding(.horizontal, 6)
+                    .background(.black.opacity(0.18))
+                Image(systemName: "triangle.fill")
+                    .font(.system(size: 5, weight: .bold))
+            }
+            .offset(y: 27)
+        }
+        .foregroundStyle(color)
+        .clipped()
+    }
+
+    private func wrappedHeading(_ heading: Float) -> Float {
+        let value = heading.truncatingRemainder(dividingBy: 360)
+        return value >= 0 ? value : value + 360
+    }
+
+    private func tapeLabel(_ heading: Float) -> String {
+        let tens = Int((heading / 10).rounded()) % 36
+        return String(format: "%02d", tens)
+    }
+}
+
+private struct AirspeedTape: View {
+    let state: AircraftState
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("CAS")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .opacity(0.58)
+
+            HStack(spacing: 4) {
+                Text(String(format: "%03.0f", state.calibratedAirspeedKnots))
+                    .font(.system(size: 19, weight: .black, design: .monospaced))
+                    .monospacedDigit()
+                HStack(spacing: 0) {
+                    Rectangle().frame(width: 14, height: 1)
+                    Image(systemName: "triangle.fill")
+                        .font(.system(size: 5))
+                        .rotationEffect(.degrees(90))
+                }
+            }
+
+            Text(String(format: "M %.2f", state.mach))
+                .font(.system(size: 8, weight: .black, design: .monospaced))
+                .opacity(0.72)
+
+            if state.weightOnWheels {
+                Text(String(format: "GS %03.0f", state.groundSpeedKnots))
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .opacity(0.56)
+            }
+        }
+        .foregroundStyle(color)
+    }
+}
+
+private struct AltitudeTape: View {
+    let state: AircraftState
+    let color: Color
+
+    var body: some View {
+        let aglFeet = state.altitudeMeters * 3.28084
+        let verticalFeetPerMinute = state.verticalSpeedMetersPerSecond * 196.8504
+
+        VStack(alignment: .trailing, spacing: 1) {
+            Text("BARO")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .opacity(0.58)
+
+            HStack(spacing: 4) {
+                HStack(spacing: 0) {
+                    Image(systemName: "triangle.fill")
+                        .font(.system(size: 5))
+                        .rotationEffect(.degrees(-90))
+                    Rectangle().frame(width: 14, height: 1)
+                }
+                Text(String(format: "%05.0f", state.altitudeFeetMSL))
+                    .font(.system(size: 19, weight: .black, design: .monospaced))
+                    .monospacedDigit()
+            }
+
+            Text(String(format: "AGL %04.0f", aglFeet))
+                .font(.system(size: 8, weight: .black, design: .monospaced))
+                .opacity(aglFeet < 1_500 ? 0.86 : 0.56)
+
+            Text(String(format: "%+.0f FPM", verticalFeetPerMinute))
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .opacity(0.55)
+        }
+        .foregroundStyle(color)
+    }
+}
+
+private struct PitchLadder: View {
+    let pitchDegrees: Float
+    let rollDegrees: Float
+    let color: Color
+
+    private let pixelsPerDegree: CGFloat = 6.1
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(Array(stride(from: -30, through: 30, by: 5)), id: \.self) { mark in
+                    ladderLine(mark)
+                        .offset(y: CGFloat(pitchDegrees - Float(mark)) * pixelsPerDegree)
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .rotationEffect(.degrees(Double(-rollDegrees)))
+            .clipped()
+        }
+        .foregroundStyle(color)
+    }
+
+    @ViewBuilder
+    private func ladderLine(_ mark: Int) -> some View {
+        let horizon = mark == 0
+        let negative = mark < 0
+        let width: CGFloat = horizon ? 138 : 84
+
+        HStack(spacing: 7) {
+            if !horizon {
+                Text("\(abs(mark))")
+                    .font(.system(size: 7, weight: .black, design: .monospaced))
+                    .monospacedDigit()
+            }
+
+            if negative {
+                HStack(spacing: 4) {
+                    Rectangle().frame(width: width * 0.23, height: 1)
+                    Rectangle().frame(width: width * 0.23, height: 1)
+                    Rectangle().frame(width: width * 0.23, height: 1)
+                }
+            } else {
+                Rectangle().frame(width: width, height: horizon ? 1.4 : 1)
+            }
+
+            if !horizon {
+                Text("\(abs(mark))")
+                    .font(.system(size: 7, weight: .black, design: .monospaced))
+                    .monospacedDigit()
+            }
+        }
+        .opacity(horizon ? 0.95 : 0.70)
+    }
+}
+
+private struct FlightPathMarker: View {
+    let color: Color
+    let limited: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(color, lineWidth: 1.4)
+                .frame(width: 18, height: 18)
+
+            HStack(spacing: 18) {
+                Rectangle().frame(width: 18, height: 1.4)
+                Rectangle().frame(width: 18, height: 1.4)
+            }
+
+            Rectangle()
+                .frame(width: 1.4, height: 11)
+                .offset(y: -13)
+
+            if limited {
+                Text("X")
+                    .font(.system(size: 13, weight: .black, design: .monospaced))
+            }
+        }
+        .foregroundStyle(color)
+        .frame(width: 62, height: 50)
+    }
+}
+
+private struct BoresightCue: View {
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 6) {
+                Rectangle().frame(width: 10, height: 1)
+                Rectangle().frame(width: 10, height: 1)
+            }
+            Rectangle().frame(width: 1, height: 7)
+        }
+        .foregroundStyle(color.opacity(0.82))
+        .frame(width: 34, height: 18)
+    }
+}
+
+private struct LandingReferenceCue: View {
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text("-2.5")
+                .font(.system(size: 7, weight: .black, design: .monospaced))
+            Rectangle().frame(width: 70, height: 1)
+            Text("-2.5")
+                .font(.system(size: 7, weight: .black, design: .monospaced))
+        }
+        .foregroundStyle(color.opacity(0.76))
     }
 }
 
@@ -472,67 +767,22 @@ private struct GForceVignette: View {
     let loadFactorG: Float
 
     var body: some View {
-        let intensity = min(max((abs(loadFactorG) - 4.2) / 4.8, 0), 1)
+        let positiveIntensity = min(max((loadFactorG - 4.5) / 4.5, 0), 1)
+        let negativeIntensity = min(max((-loadFactorG - 1.4) / 1.6, 0), 1)
+        let intensity = max(positiveIntensity, negativeIntensity)
 
         RadialGradient(
             colors: [
                 .clear,
-                .black.opacity(Double(intensity) * 0.10),
-                .black.opacity(Double(intensity) * 0.52)
+                .black.opacity(Double(intensity) * 0.08),
+                .black.opacity(Double(intensity) * 0.48)
             ],
             center: .center,
-            startRadius: 80,
-            endRadius: 560
+            startRadius: 90,
+            endRadius: 590
         )
         .opacity(intensity > 0.01 ? 1 : 0)
         .allowsHitTesting(false)
-    }
-}
-
-private struct AttitudeCue: View {
-    let rollDegrees: Float
-    let pitchDegrees: Float
-    let color: Color
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(color.opacity(0.30), lineWidth: 1)
-                .frame(width: 56, height: 56)
-
-            VStack(spacing: 11) {
-                pitchLine(10)
-                pitchLine(5)
-                HStack(spacing: 8) {
-                    Rectangle().frame(width: 42, height: 1.4)
-                    Circle().frame(width: 4, height: 4)
-                    Rectangle().frame(width: 42, height: 1.4)
-                }
-                pitchLine(-5)
-                pitchLine(-10)
-            }
-            .offset(y: CGFloat(pitchDegrees) * 1.15)
-            .rotationEffect(.degrees(Double(-rollDegrees)))
-
-            Image(systemName: "chevron.down")
-                .font(.system(size: 14, weight: .bold))
-                .offset(y: -47)
-        }
-        .frame(width: 235, height: 160)
-        .clipped()
-        .foregroundStyle(color)
-    }
-
-    private func pitchLine(_ value: Int) -> some View {
-        HStack(spacing: 5) {
-            Text("\(abs(value))")
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-            Rectangle()
-                .frame(width: value == 0 ? 70 : 48, height: 1)
-            Text("\(abs(value))")
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-        }
-        .opacity(0.68)
     }
 }
 
@@ -541,28 +791,40 @@ private struct CompactThrottleControl: View {
     let onChange: (Float) -> Void
 
     var body: some View {
-        VStack(spacing: 5) {
-            Text(String(format: "THR %02.0f", value * 100))
-                .font(.system(size: 8, weight: .black, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.72))
+        VStack(spacing: 4) {
+            HStack(spacing: 5) {
+                Text(value > 0.92 ? "AB" : "THR")
+                Text(String(format: "%02.0f", value * 100))
+                    .foregroundStyle(.white.opacity(0.92))
+            }
+            .font(.system(size: 8, weight: .black, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.58))
 
             GeometryReader { geometry in
                 let height = geometry.size.height
-                let knobHeight: CGFloat = 34
+                let knobHeight: CGFloat = 30
                 let travel = max(1, height - knobHeight)
                 let y = (1 - CGFloat(value)) * travel + knobHeight * 0.5
+                let milY = (1 - CGFloat(0.82)) * travel + knobHeight * 0.5
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.34))
-                        .frame(width: 20)
-                    Capsule()
-                        .fill(.white.opacity(0.20))
-                        .frame(width: 5, height: CGFloat(value) * travel)
-                        .offset(y: (travel - CGFloat(value) * travel) * 0.5)
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.white.opacity(0.92))
-                        .frame(width: 36, height: knobHeight)
+                        .fill(.black.opacity(0.28))
+                        .frame(width: 18)
+
+                    Rectangle()
+                        .fill(.white.opacity(0.30))
+                        .frame(width: 20, height: 1)
+                        .position(x: geometry.size.width * 0.5, y: milY)
+
+                    Text("MIL")
+                        .font(.system(size: 6, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.44))
+                        .position(x: geometry.size.width * 0.5 + 24, y: milY)
+
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.white.opacity(0.93))
+                        .frame(width: 32, height: knobHeight)
                         .position(x: geometry.size.width * 0.5, y: y)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -575,11 +837,11 @@ private struct CompactThrottleControl: View {
                         }
                 )
             }
-            .frame(width: 58, height: 142)
+            .frame(width: 54, height: 136)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 7)
+        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -588,26 +850,26 @@ private struct CompactRudderControl: View {
     let onChange: (Float) -> Void
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text("RUDDER")
+        VStack(spacing: 3) {
+            Text("RUDDER / NWS")
                 .font(.system(size: 7, weight: .black, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.48))
+                .foregroundStyle(.white.opacity(0.44))
 
             GeometryReader { geometry in
                 let width = geometry.size.width
-                let travel = max(1, width - 34)
+                let travel = max(1, width - 32)
                 let x = width * 0.5 + CGFloat(value) * travel * 0.5
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.34))
-                        .frame(height: 22)
+                        .fill(.black.opacity(0.28))
+                        .frame(height: 20)
                     Rectangle()
-                        .fill(.white.opacity(0.20))
-                        .frame(width: 1, height: 25)
+                        .fill(.white.opacity(0.18))
+                        .frame(width: 1, height: 23)
                     Circle()
                         .fill(.white.opacity(0.90))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
                         .position(x: x, y: geometry.size.height * 0.5)
                 }
                 .contentShape(Rectangle())
@@ -616,16 +878,16 @@ private struct CompactRudderControl: View {
                         .onChanged { gesture in
                             let normalized = Float((gesture.location.x - width * 0.5) / max(travel * 0.5, 1))
                             let clamped = min(max(normalized, -1), 1)
-                            onChange(abs(clamped) < 0.045 ? 0 : clamped)
+                            onChange(abs(clamped) < 0.04 ? 0 : clamped)
                         }
                         .onEnded { _ in onChange(0) }
                 )
             }
-            .frame(width: 165, height: 34)
+            .frame(width: 158, height: 31)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.17), in: RoundedRectangle(cornerRadius: 13))
     }
 }
 
@@ -637,17 +899,17 @@ private struct CompactStickControl: View {
     var body: some View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height)
-            let knob: CGFloat = 36
+            let knob: CGFloat = 34
             let radius = max(1, (side - knob) * 0.5)
 
             ZStack {
                 Circle()
-                    .fill(.black.opacity(0.28))
+                    .fill(.black.opacity(0.20))
                 Circle()
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
-                    .padding(side * 0.28)
-                Rectangle().fill(.white.opacity(0.11)).frame(width: 1).padding(10)
-                Rectangle().fill(.white.opacity(0.11)).frame(height: 1).padding(10)
+                    .stroke(.white.opacity(0.14), lineWidth: 1)
+                    .padding(side * 0.29)
+                Rectangle().fill(.white.opacity(0.09)).frame(width: 1).padding(10)
+                Rectangle().fill(.white.opacity(0.09)).frame(height: 1).padding(10)
                 Circle()
                     .fill(.white.opacity(0.93))
                     .frame(width: knob, height: knob)
@@ -668,16 +930,16 @@ private struct CompactStickControl: View {
                         }
                         var normalizedRoll = Float(dx / radius)
                         var normalizedPitch = Float(dy / radius)
-                        if abs(normalizedRoll) < 0.035 { normalizedRoll = 0 }
-                        if abs(normalizedPitch) < 0.035 { normalizedPitch = 0 }
+                        if abs(normalizedRoll) < 0.03 { normalizedRoll = 0 }
+                        if abs(normalizedPitch) < 0.03 { normalizedPitch = 0 }
                         onChange(normalizedRoll, normalizedPitch)
                     }
                     .onEnded { _ in onChange(0, 0) }
             )
         }
-        .frame(width: 132, height: 132)
-        .padding(8)
-        .background(.black.opacity(0.22), in: Circle())
+        .frame(width: 124, height: 124)
+        .padding(7)
+        .background(.black.opacity(0.16), in: Circle())
     }
 }
 
