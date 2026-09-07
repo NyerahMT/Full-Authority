@@ -10,43 +10,43 @@ enum Stage2FlightEffects {
 
     private static let leftWingVaporName = "FA.effects.vapor.left"
     private static let rightWingVaporName = "FA.effects.vapor.right"
-    private static let shockOuterName = "FA.effects.shock.outer"
-    private static let shockInnerName = "FA.effects.shock.inner"
-    private static let trailCount = 36
+    private static let transonicCloudPrefix = "FA.effects.transonic"
+
+    // 96 samples at 0.10 s gives just under ten seconds of persistent plume
+    // history without creating an unbounded RealityKit entity count.
+    private static let trailCount = 96
 
     final class Runtime {
-        fileprivate var leftSegments: [ModelEntity] = []
-        fileprivate var rightSegments: [ModelEntity] = []
+        fileprivate var coreSegments: [ModelEntity] = []
+        fileprivate var hazeSegments: [ModelEntity] = []
         fileprivate var birthTimes = Array(repeating: -10_000.0, count: trailCount)
-        fileprivate var leftLengths = Array(repeating: Float(1), count: trailCount)
-        fileprivate var rightLengths = Array(repeating: Float(1), count: trailCount)
+        fileprivate var lengths = Array(repeating: Float(1), count: trailCount)
+        fileprivate var strengths = Array(repeating: Float(0), count: trailCount)
         fileprivate var cursor = 0
         fileprivate var lastTrailSampleTime = -10_000.0
-        fileprivate var previousLeft: SIMD3<Float>?
-        fileprivate var previousRight: SIMD3<Float>?
+        fileprivate var previousExhaustPoint: SIMD3<Float>?
         fileprivate var lastSimulationTime = 0.0
 
         fileprivate func bind(to root: Entity) {
-            guard leftSegments.count != Self.expectedCount else { return }
-            leftSegments = (0..<Stage2FlightEffects.trailCount).compactMap {
-                root.findEntity(named: "FA.effects.trail.left.\($0)") as? ModelEntity
+            guard coreSegments.count != Self.expectedCount else { return }
+            coreSegments = (0..<Stage2FlightEffects.trailCount).compactMap {
+                root.findEntity(named: "FA.effects.contrail.core.\($0)") as? ModelEntity
             }
-            rightSegments = (0..<Stage2FlightEffects.trailCount).compactMap {
-                root.findEntity(named: "FA.effects.trail.right.\($0)") as? ModelEntity
+            hazeSegments = (0..<Stage2FlightEffects.trailCount).compactMap {
+                root.findEntity(named: "FA.effects.contrail.haze.\($0)") as? ModelEntity
             }
         }
 
         fileprivate func clear() {
-            for entity in leftSegments + rightSegments {
+            for entity in coreSegments + hazeSegments {
                 entity.isEnabled = false
             }
             birthTimes = Array(repeating: -10_000.0, count: Stage2FlightEffects.trailCount)
-            leftLengths = Array(repeating: 1, count: Stage2FlightEffects.trailCount)
-            rightLengths = Array(repeating: 1, count: Stage2FlightEffects.trailCount)
+            lengths = Array(repeating: 1, count: Stage2FlightEffects.trailCount)
+            strengths = Array(repeating: 0, count: Stage2FlightEffects.trailCount)
             cursor = 0
             lastTrailSampleTime = -10_000
-            previousLeft = nil
-            previousRight = nil
+            previousExhaustPoint = nil
         }
 
         private static let expectedCount = Stage2FlightEffects.trailCount
@@ -59,7 +59,7 @@ enum Stage2FlightEffects {
         if let leftMesh = makeWingVaporMesh(phase: 0.0) {
             let left = ModelEntity(mesh: leftMesh, materials: [effectMaterial(alpha: 0.0)])
             left.name = leftWingVaporName
-            left.position = [-3.65, -0.02, -1.85]
+            left.position = [-3.55, 0.02, -1.60]
             left.isEnabled = false
             root.addChild(left)
         }
@@ -67,23 +67,22 @@ enum Stage2FlightEffects {
         if let rightMesh = makeWingVaporMesh(phase: 1.7) {
             let right = ModelEntity(mesh: rightMesh, materials: [effectMaterial(alpha: 0.0)])
             right.name = rightWingVaporName
-            right.position = [3.65, -0.02, -1.85]
+            right.position = [3.55, 0.02, -1.60]
             right.isEnabled = false
             root.addChild(right)
         }
 
-        if let shockMesh = makeShockConeMesh(radialSegments: 32, axialSegments: 8) {
-            let outer = ModelEntity(mesh: shockMesh, materials: [effectMaterial(alpha: 0.0)])
-            outer.name = shockOuterName
-            outer.position = [0, 0.02, 5.55]
-            outer.isEnabled = false
-            root.addChild(outer)
-
-            let inner = ModelEntity(mesh: shockMesh, materials: [effectMaterial(alpha: 0.0)])
-            inner.name = shockInnerName
-            inner.position = [0, 0.02, 5.35]
-            inner.isEnabled = false
-            root.addChild(inner)
+        // A visible "Mach cone" in photography is normally a transonic
+        // condensation cloud, not the shock wave itself. Three irregular shell
+        // layers avoid the old perfect translucent geometric cone.
+        for layer in 0..<3 {
+            if let mesh = makeTransonicCondensationMesh(phase: Float(layer) * 1.93) {
+                let cloud = ModelEntity(mesh: mesh, materials: [effectMaterial(alpha: 0.0)])
+                cloud.name = "\(transonicCloudPrefix).\(layer)"
+                cloud.position = [0, 0.05, -0.10 - Float(layer) * 0.18]
+                cloud.isEnabled = false
+                root.addChild(cloud)
+            }
         }
 
         return root
@@ -92,18 +91,18 @@ enum Stage2FlightEffects {
     static func makeTrailPool() -> Entity {
         let root = Entity()
         root.name = trailRootName
-        guard let segmentMesh = makeUnitCrossRibbonMesh() else { return root }
+        guard let segmentMesh = makePlumeSegmentMesh() else { return root }
 
         for index in 0..<trailCount {
-            let left = ModelEntity(mesh: segmentMesh, materials: [effectMaterial(alpha: 0.0)])
-            left.name = "FA.effects.trail.left.\(index)"
-            left.isEnabled = false
-            root.addChild(left)
+            let core = ModelEntity(mesh: segmentMesh, materials: [effectMaterial(alpha: 0.0)])
+            core.name = "FA.effects.contrail.core.\(index)"
+            core.isEnabled = false
+            root.addChild(core)
 
-            let right = ModelEntity(mesh: segmentMesh, materials: [effectMaterial(alpha: 0.0)])
-            right.name = "FA.effects.trail.right.\(index)"
-            right.isEnabled = false
-            root.addChild(right)
+            let haze = ModelEntity(mesh: segmentMesh, materials: [effectMaterial(alpha: 0.0)])
+            haze.name = "FA.effects.contrail.haze.\(index)"
+            haze.isEnabled = false
+            root.addChild(haze)
         }
         return root
     }
@@ -113,8 +112,7 @@ enum Stage2FlightEffects {
         state: AircraftState,
         simulationTime: TimeInterval
     ) {
-        // Retire the Stage 010 primitive ellipsoids. They remain in the factory
-        // only for backwards asset compatibility and are never rendered here.
+        // Permanently retire the Stage 010 primitive vapor/contrail entities.
         for oldName in [
             PrototypeAircraftFactory.vaporLeftName,
             PrototypeAircraftFactory.vaporRightName,
@@ -126,11 +124,117 @@ enum Stage2FlightEffects {
 
         guard let root = aircraft.findEntity(named: attachedRootName) else { return }
 
-        let gIntensity = clamp((abs(state.loadFactorG) - 2.6) / 4.8, 0, 1)
-        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 7.0) / 14.0, 0, 1)
-        let qbarIntensity = clamp(state.dynamicPressurePSF / 550.0, 0, 1)
+        updateWingCondensation(root: root, state: state, simulationTime: simulationTime)
+        updateTransonicCondensation(root: root, state: state, simulationTime: simulationTime)
+    }
+
+    static func updateWorldTrails(
+        root: Entity,
+        state: AircraftState,
+        simulationTime: TimeInterval,
+        runtime: Runtime
+    ) {
+        runtime.bind(to: root)
+        guard runtime.coreSegments.count == trailCount,
+              runtime.hazeSegments.count == trailCount else { return }
+
+        if simulationTime + 0.001 < runtime.lastSimulationTime {
+            runtime.clear()
+        }
+        runtime.lastSimulationTime = simulationTime
+
+        // Schmidt-Appleman formation depends on temperature, humidity and engine
+        // exhaust. Stage 2 does not have a weather humidity field yet, so use ISA
+        // temperature as a conservative formation proxy. This can be replaced by
+        // live RH/temperature later without changing the plume renderer.
+        let ambientTemperatureC = isaTemperatureC(altitudeFeet: state.altitudeFeetMSL)
+        let coldFactor = clamp((-36.0 - ambientTemperatureC) / 14.0, 0, 1)
+        let altitudeFactor = clamp((state.altitudeFeetMSL - 23_000) / 9_000, 0, 1)
+        let speedFactor = clamp((state.calibratedAirspeedKnots - 210) / 170, 0, 1)
+        let formationStrength = coldFactor * max(0.32, altitudeFactor) * speedFactor
+        let persistentContrail = formationStrength > 0.10 && state.altitudeFeetMSL > 23_000
+
+        if persistentContrail && simulationTime - runtime.lastTrailSampleTime >= 0.10 {
+            // F-16A is single-engine. Emit the persistent plume from the F100
+            // nozzle instead of incorrectly drawing permanent wingtip trails.
+            // This point is in the aircraft CG/root frame; the visual airframe has
+            // its own vertical offset.
+            let exhaust = worldPoint(local: [0, -0.20, -7.75], state: state)
+
+            if let previous = runtime.previousExhaustPoint {
+                let index = runtime.cursor
+                runtime.lengths[index] = configureTrailSegment(
+                    runtime.coreSegments[index],
+                    from: previous,
+                    to: exhaust
+                )
+                _ = configureTrailSegment(
+                    runtime.hazeSegments[index],
+                    from: previous,
+                    to: exhaust
+                )
+                runtime.birthTimes[index] = simulationTime
+                runtime.strengths[index] = formationStrength
+                runtime.cursor = (runtime.cursor + 1) % trailCount
+            }
+
+            runtime.previousExhaustPoint = exhaust
+            runtime.lastTrailSampleTime = simulationTime
+        } else if !persistentContrail {
+            runtime.previousExhaustPoint = nil
+        }
+
+        let lifetime: Double = 9.4
+        for index in 0..<trailCount {
+            let age = simulationTime - runtime.birthTimes[index]
+            let core = runtime.coreSegments[index]
+            let haze = runtime.hazeSegments[index]
+
+            guard age >= 0, age < lifetime else {
+                core.isEnabled = false
+                haze.isEnabled = false
+                continue
+            }
+
+            let t = Float(age / lifetime)
+            let strength = runtime.strengths[index]
+
+            // Young exhaust is narrow and bright. Wake mixing then broadens the
+            // plume and shifts opacity from its core into a diffuse outer haze.
+            let ageF = Float(age)
+            let coreRadius = 0.12 + 0.095 * ageF + 0.014 * ageF * ageF
+            let hazeRadius = 0.28 + 0.19 * ageF + 0.022 * ageF * ageF
+            let coreFade = pow(max(0, 1 - t), 1.45)
+            let hazeEnvelope = sin(.pi * min(1, t * 1.10)) * pow(max(0, 1 - t), 0.78)
+
+            core.isEnabled = true
+            haze.isEnabled = true
+            core.scale = [coreRadius, coreRadius, runtime.lengths[index]]
+            haze.scale = [hazeRadius, hazeRadius, runtime.lengths[index]]
+
+            // Very small settling/expansion displacement keeps an old plume from
+            // reading like a rigid tube attached to the aircraft trajectory.
+            let settling = ageF * ageF * 0.007
+            core.position.y -= settling * 0.010
+            haze.position.y -= settling * 0.018
+
+            setEffectAlpha(core, alpha: 0.17 * strength * coreFade)
+            setEffectAlpha(haze, alpha: 0.075 * strength * hazeEnvelope)
+        }
+    }
+
+    // MARK: - Aerodynamic condensation
+
+    private static func updateWingCondensation(
+        root: Entity,
+        state: AircraftState,
+        simulationTime: TimeInterval
+    ) {
+        let gIntensity = clamp((abs(state.loadFactorG) - 2.7) / 4.8, 0, 1)
+        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 13.0, 0, 1)
+        let qbarIntensity = clamp((state.dynamicPressurePSF - 120) / 520.0, 0, 1)
         let vaporIntensity = max(gIntensity, alphaIntensity) * qbarIntensity
-        let vaporEnabled = vaporIntensity > 0.045 && state.calibratedAirspeedKnots > 165
+        let vaporEnabled = vaporIntensity > 0.055 && state.calibratedAirspeedKnots > 170
 
         let alpha = state.angleOfAttackDegrees * .pi / 180
         let beta = state.sideslipDegrees * .pi / 180
@@ -141,162 +245,87 @@ enum Stage2FlightEffects {
         if let left = root.findEntity(named: leftWingVaporName) as? ModelEntity {
             left.isEnabled = vaporEnabled
             left.orientation = flowOrientation
-            left.position = [-3.65, -0.02 + 0.018 * sin(Float(simulationTime) * 31.0), -1.85]
+            left.position = [-3.55, 0.02 + 0.010 * sin(Float(simulationTime) * 24.0), -1.60]
             left.scale = [
-                0.72 + vaporIntensity * 0.55,
-                0.70 + vaporIntensity * 0.38,
-                0.78 + vaporIntensity * 1.15
+                0.76 + vaporIntensity * 0.48,
+                0.72 + vaporIntensity * 0.32,
+                0.90 + vaporIntensity * 1.25
             ]
-            setEffectAlpha(left, alpha: 0.035 + vaporIntensity * 0.19)
+            setEffectAlpha(left, alpha: 0.025 + vaporIntensity * 0.16)
         }
 
         if let right = root.findEntity(named: rightWingVaporName) as? ModelEntity {
             right.isEnabled = vaporEnabled
             right.orientation = flowOrientation
-            right.position = [3.65, -0.02 + 0.018 * sin(Float(simulationTime) * 33.0 + 1.1), -1.85]
+            right.position = [3.55, 0.02 + 0.010 * sin(Float(simulationTime) * 25.0 + 0.8), -1.60]
             right.scale = [
-                0.72 + vaporIntensity * 0.55,
-                0.70 + vaporIntensity * 0.38,
-                0.78 + vaporIntensity * 1.15
+                0.76 + vaporIntensity * 0.48,
+                0.72 + vaporIntensity * 0.32,
+                0.90 + vaporIntensity * 1.25
             ]
-            setEffectAlpha(right, alpha: 0.035 + vaporIntensity * 0.19)
-        }
-
-        updateShockCone(root: root, state: state, simulationTime: simulationTime)
-    }
-
-    static func updateWorldTrails(
-        root: Entity,
-        state: AircraftState,
-        simulationTime: TimeInterval,
-        runtime: Runtime
-    ) {
-        runtime.bind(to: root)
-        guard runtime.leftSegments.count == trailCount,
-              runtime.rightSegments.count == trailCount else { return }
-
-        if simulationTime + 0.001 < runtime.lastSimulationTime {
-            runtime.clear()
-        }
-        runtime.lastSimulationTime = simulationTime
-
-        let persistentContrail = state.altitudeFeetMSL > 23_000 && state.calibratedAirspeedKnots > 250
-        let loadedWingtipTrail = state.altitudeFeetMSL > 12_000 && abs(state.loadFactorG) > 4.8 && state.calibratedAirspeedKnots > 240
-        let active = persistentContrail || loadedWingtipTrail
-
-        if active && simulationTime - runtime.lastTrailSampleTime >= 0.09 {
-            let left = worldPoint(local: [-4.75, 0.02, -2.15], state: state)
-            let right = worldPoint(local: [4.75, 0.02, -2.15], state: state)
-
-            if let previousLeft = runtime.previousLeft,
-               let previousRight = runtime.previousRight {
-                let index = runtime.cursor
-                runtime.leftLengths[index] = configureTrailSegment(
-                    runtime.leftSegments[index],
-                    from: previousLeft,
-                    to: left
-                )
-                runtime.rightLengths[index] = configureTrailSegment(
-                    runtime.rightSegments[index],
-                    from: previousRight,
-                    to: right
-                )
-                runtime.birthTimes[index] = simulationTime
-                runtime.cursor = (runtime.cursor + 1) % trailCount
-            }
-
-            runtime.previousLeft = left
-            runtime.previousRight = right
-            runtime.lastTrailSampleTime = simulationTime
-        } else if !active {
-            runtime.previousLeft = nil
-            runtime.previousRight = nil
-        }
-
-        let lifetime: Double = persistentContrail ? 8.0 : 4.2
-        for index in 0..<trailCount {
-            let birth = runtime.birthTimes[index]
-            let age = simulationTime - birth
-            let left = runtime.leftSegments[index]
-            let right = runtime.rightSegments[index]
-
-            guard age >= 0, age < lifetime else {
-                left.isEnabled = false
-                right.isEnabled = false
-                continue
-            }
-
-            let normalizedAge = Float(age / lifetime)
-            let fade = pow(max(0, 1 - normalizedAge), 1.55)
-            let spread = 0.19 + Float(age) * (persistentContrail ? 0.075 : 0.045)
-            let alpha = (persistentContrail ? Float(0.13) : Float(0.10)) * fade
-
-            left.isEnabled = true
-            right.isEnabled = true
-            left.scale = [spread, spread, runtime.leftLengths[index]]
-            right.scale = [spread, spread, runtime.rightLengths[index]]
-            setEffectAlpha(left, alpha: alpha)
-            setEffectAlpha(right, alpha: alpha)
+            setEffectAlpha(right, alpha: 0.025 + vaporIntensity * 0.16)
         }
     }
 
-    // MARK: - Mach shock
-
-    private static func updateShockCone(
+    private static func updateTransonicCondensation(
         root: Entity,
         state: AircraftState,
         simulationTime: TimeInterval
     ) {
+        // The pressure wave itself is not a white cone. The visible phenomenon is
+        // a short-lived condensation cloud when local pressure/temperature drop
+        // enough in humid air. Keep the visual tightly centered around Mach 1.
         let mach = state.mach
-        let visible = mach > 0.965 && mach < 1.65 && state.calibratedAirspeedKnots > 300
-        let effectiveMach = max(mach, 1.01)
-        let machAngle = asin(clamp(1 / effectiveMach, 0.02, 0.995))
-        let axialLength: Float = 4.7
-        let baseRadius = min(6.4, max(2.0, axialLength * tan(machAngle)))
+        let transonicPeak = exp(-pow((mach - 1.005) / 0.038, 2))
+        let qbarFactor = clamp((state.dynamicPressurePSF - 180) / 650.0, 0, 1)
+        let altitudeMoistureProxy = 1 - 0.55 * clamp((state.altitudeFeetMSL - 18_000) / 22_000, 0, 1)
+        let alphaPenalty = 1 - 0.45 * clamp(abs(state.angleOfAttackDegrees) / 18.0, 0, 1)
+        let intensity = transonicPeak * qbarFactor * altitudeMoistureProxy * alphaPenalty
+        let visible = mach > 0.955 && mach < 1.085 && intensity > 0.025
 
-        let peak = exp(-pow((mach - 1.035) / 0.13, 2))
-        let supersonicPersistence: Float = mach > 1.0 ? 0.16 : 0
-        let pulse = 0.92 + 0.08 * sin(Float(simulationTime) * 27.0)
-        let intensity = clamp((peak + supersonicPersistence) * pulse, 0, 1)
-
-        if let outer = root.findEntity(named: shockOuterName) as? ModelEntity {
-            outer.isEnabled = visible && intensity > 0.035
-            outer.scale = [baseRadius, baseRadius, axialLength]
-            setEffectAlpha(outer, alpha: 0.018 + intensity * 0.105)
-        }
-
-        if let inner = root.findEntity(named: shockInnerName) as? ModelEntity {
-            inner.isEnabled = visible && intensity > 0.08
-            inner.scale = [baseRadius * 0.82, baseRadius * 0.82, axialLength * 0.76]
-            setEffectAlpha(inner, alpha: 0.012 + intensity * 0.055)
+        for layer in 0..<3 {
+            guard let cloud = root.findEntity(named: "\(transonicCloudPrefix).\(layer)") as? ModelEntity else {
+                continue
+            }
+            let phase = Float(layer) * 1.73
+            let flutter = 1 + 0.018 * sin(Float(simulationTime) * (18 + Float(layer) * 2.4) + phase)
+            let layerScale = 0.92 + Float(layer) * 0.08
+            cloud.isEnabled = visible
+            cloud.scale = [
+                layerScale * flutter,
+                layerScale * (0.94 + 0.02 * sin(Float(simulationTime) * 13 + phase)),
+                0.94 + intensity * 0.22
+            ]
+            cloud.position.y = 0.05 + 0.05 * sin(Float(simulationTime) * 11 + phase)
+            setEffectAlpha(cloud, alpha: (0.050 - Float(layer) * 0.010) * intensity)
         }
     }
 
     // MARK: - Geometry
 
     private static func makeWingVaporMesh(phase: Float) -> MeshResource? {
-        let segments = 18
+        let segments = 22
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
-        // Two crossed, tapered sheets make a soft ribbon that reads from above,
-        // below and behind without using a sphere/ellipsoid primitive.
-        for sheet in 0..<2 {
+        // Crossed tapered sheets give the condensation volume from chase, side
+        // and underside views without a primitive sphere/tube.
+        for sheet in 0..<3 {
             let base = UInt32(positions.count)
+            let sheetAngle = Float(sheet) * (.pi / 3)
+            let c = cos(sheetAngle)
+            let s = sin(sheetAngle)
+
             for index in 0..<segments {
                 let t = Float(index) / Float(segments - 1)
-                let z = -0.12 - 6.8 * t
-                let envelope = sin(.pi * min(1, t * 1.18)) * (1 - 0.48 * t)
-                let width = 0.12 + 0.58 * envelope
-                let ripple = sin(t * 16.0 + phase) * 0.055 * t
-
-                if sheet == 0 {
-                    positions.append([-width, ripple, z])
-                    positions.append([width, -ripple, z])
-                } else {
-                    positions.append([ripple, -width * 0.34, z])
-                    positions.append([-ripple, width * 0.34, z])
-                }
+                let z = -0.10 - 7.4 * t
+                let envelope = sin(.pi * min(1, t * 1.16)) * (1 - 0.50 * t)
+                let width = 0.08 + 0.56 * envelope
+                let ripple = sin(t * 17.0 + phase + Float(sheet)) * 0.045 * t
+                let a = SIMD2<Float>(-width, ripple)
+                let b = SIMD2<Float>(width, -ripple)
+                positions.append([a.x * c - a.y * s, a.x * s + a.y * c, z])
+                positions.append([b.x * c - b.y * s, b.x * s + b.y * c, z])
             }
 
             for index in 0..<(segments - 1) {
@@ -308,24 +337,38 @@ enum Stage2FlightEffects {
             }
         }
 
-        var descriptor = MeshDescriptor(name: "Wing condensation ribbon")
+        var descriptor = MeshDescriptor(name: "Wing condensation volume")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
     }
 
-    private static func makeShockConeMesh(radialSegments: Int, axialSegments: Int) -> MeshResource? {
-        guard radialSegments >= 8, axialSegments >= 2 else { return nil }
+    private static func makeTransonicCondensationMesh(phase: Float) -> MeshResource? {
+        let radialSegments = 44
+        let axialSegments = 18
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
+        // Irregular annular cloud envelope around the wing/fuselage pressure-drop
+        // region. This intentionally is not a perfect Mach-angle cone: visible
+        // transonic vapor photography is a condensation cloud, not the shockwave.
         for axial in 0...axialSegments {
-            let t = max(0.025, Float(axial) / Float(axialSegments))
-            let z = -t
-            let radius = t
+            let t = Float(axial) / Float(axialSegments)
+            let z = 2.7 - 6.2 * t
+            let center = exp(-pow((t - 0.48) / 0.23, 2))
+            let baseRadius = 0.72 + 3.25 * center
+
             for radial in 0..<radialSegments {
                 let angle = Float(radial) / Float(radialSegments) * 2 * .pi
-                positions.append([cos(angle) * radius, sin(angle) * radius, z])
+                let irregular = 1
+                    + 0.055 * sin(angle * 5 + phase + t * 7)
+                    + 0.028 * sin(angle * 11 - phase * 0.7 + t * 13)
+                let radius = baseRadius * irregular
+                positions.append([
+                    cos(angle) * radius,
+                    sin(angle) * radius * 0.72,
+                    z
+                ])
             }
         }
 
@@ -342,22 +385,35 @@ enum Stage2FlightEffects {
             }
         }
 
-        var descriptor = MeshDescriptor(name: "Mach shock cone")
+        var descriptor = MeshDescriptor(name: "Transonic condensation cloud")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
     }
 
-    private static func makeUnitCrossRibbonMesh() -> MeshResource? {
-        let positions: [SIMD3<Float>] = [
-            [-0.5, 0, -0.5], [0.5, 0, -0.5], [-0.5, 0, 0.5], [0.5, 0, 0.5],
-            [0, -0.5, -0.5], [0, 0.5, -0.5], [0, -0.5, 0.5], [0, 0.5, 0.5]
-        ]
+    private static func makePlumeSegmentMesh() -> MeshResource? {
+        var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
-        appendDoubleSidedQuad(&indices, 0, 1, 2, 3)
-        appendDoubleSidedQuad(&indices, 4, 5, 6, 7)
 
-        var descriptor = MeshDescriptor(name: "Contrail ribbon segment")
+        // Three intersecting ribbon planes approximate a soft volumetric plume
+        // from arbitrary viewing angles with far fewer entities than particles.
+        for sheet in 0..<3 {
+            let angle = Float(sheet) * (.pi / 3)
+            let c = cos(angle)
+            let s = sin(angle)
+            let base = UInt32(positions.count)
+            let points: [SIMD2<Float>] = [
+                [-0.5, 0], [0.5, 0], [-0.5, 0], [0.5, 0]
+            ]
+            let z: [Float] = [-0.5, -0.5, 0.5, 0.5]
+            for i in 0..<4 {
+                let p = points[i]
+                positions.append([p.x * c - p.y * s, p.x * s + p.y * c, z[i]])
+            }
+            appendDoubleSidedQuad(&indices, base, base + 1, base + 2, base + 3)
+        }
+
+        var descriptor = MeshDescriptor(name: "Contrail plume segment")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
@@ -393,9 +449,17 @@ enum Stage2FlightEffects {
             from: SIMD3<Float>(0, 0, 1),
             to: delta / length
         )
-        entity.scale = [0.19, 0.19, length]
+        entity.scale = [0.12, 0.12, length]
         entity.isEnabled = true
         return length
+    }
+
+    private static func isaTemperatureC(altitudeFeet: Float) -> Float {
+        let altitudeMeters = max(0, altitudeFeet * 0.3048)
+        if altitudeMeters <= 11_000 {
+            return 15.0 - 0.0065 * altitudeMeters
+        }
+        return -56.5
     }
 
     private static func worldPoint(local: SIMD3<Float>, state: AircraftState) -> SIMD3<Float> {
@@ -404,7 +468,7 @@ enum Stage2FlightEffects {
 
     private static func setEffectAlpha(_ entity: ModelEntity, alpha: Float) {
         guard var model = entity.model else { return }
-        model.materials = [effectMaterial(alpha: clamp(alpha, 0, 0.32))]
+        model.materials = [effectMaterial(alpha: clamp(alpha, 0, 0.30))]
         entity.model = model
     }
 
