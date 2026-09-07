@@ -277,9 +277,8 @@ final class FlightSimulation: ObservableObject {
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
 
         // Full Authority's touch control is screen-centric: dragging right means
-        // right pedal / nose-right. The F-16 JSBSim model's rudder/steer command
-        // convention is opposite to that UI convention, so convert once here at
-        // the simulation boundary. This keeps airborne rudder and NWS consistent.
+        // right pedal / nose-right. The current F-16 resource patch converts this
+        // sign again at the model boundary; NWS uses this sign directly.
         let pilotYawCommand = -Double(controls.rudder)
         let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
 
@@ -311,6 +310,9 @@ final class FlightSimulation: ObservableObject {
         let pitch = Float(bridge.value(forProperty: "attitude/theta-rad"))
         let yaw = Float(bridge.value(forProperty: "attitude/psi-rad"))
 
+        // JSBSim uses its aerospace body/NED convention; RealityKit uses Y-up.
+        // Keep one explicit conversion and expose display-space bank below so
+        // HUD attitude symbology rotates with the rendered world, not against it.
         let yawQ = simd_quatf(angle: yaw, axis: SIMD3<Float>(0, 1, 0))
         let pitchQ = simd_quatf(angle: -pitch, axis: SIMD3<Float>(1, 0, 0))
         let rollQ = simd_quatf(angle: -roll, axis: SIMD3<Float>(0, 0, 1))
@@ -346,7 +348,7 @@ final class FlightSimulation: ObservableObject {
         let wrappedHeading = rawHeading.truncatingRemainder(dividingBy: 360)
         state.headingDegrees = wrappedHeading >= 0 ? wrappedHeading : wrappedHeading + 360
 
-        state.rollDegrees = roll * radiansToDegrees
+        state.rollDegrees = -roll * radiansToDegrees
         state.pitchDegrees = pitch * radiansToDegrees
         state.mach = finiteFloat("velocities/mach", fallback: 0)
         state.angleOfAttackDegrees = finiteFloat("aero/alpha-deg", fallback: 0)
