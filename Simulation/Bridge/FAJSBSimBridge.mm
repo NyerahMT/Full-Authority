@@ -26,23 +26,41 @@ void SetBridgeError(NSError **error, NSString *message) {
 }
 }
 
+@interface FAJSBSimBridge ()
+- (void)rebuildExecutive;
+@end
+
 @implementation FAJSBSimBridge {
     std::unique_ptr<JSBSim::FGFDMExec> _exec;
     BOOL _modelLoaded;
+    NSString *_rootPath;
+    double _deltaTime;
 }
 
 - (instancetype)initWithRootPath:(NSString *)rootPath {
     self = [super init];
     if (self) {
-        _exec = std::make_unique<JSBSim::FGFDMExec>();
-        _exec->SetRootDir(SGPath(std::string(rootPath.UTF8String)));
-        _exec->SetAircraftPath(SGPath("aircraft"));
-        _exec->SetEnginePath(SGPath("engine"));
-        _exec->SetSystemsPath(SGPath("systems"));
-        _exec->Setdt(1.0 / 120.0);
-        _modelLoaded = NO;
+        _rootPath = [rootPath copy];
+        _deltaTime = 1.0 / 120.0;
+        [self rebuildExecutive];
     }
     return self;
+}
+
+- (void)rebuildExecutive {
+    // FGFDMExec::LoadModel is fine for an initial model load, but reusing the
+    // same executive for a full aircraft reload can leave FGInitialCondition
+    // holding references into models that were torn down by the previous load.
+    // Always rebuild the executive for an explicit aircraft load/restart so the
+    // inertial model, IC object, propulsion, FCS and property tree share one
+    // clean lifetime.
+    _exec = std::make_unique<JSBSim::FGFDMExec>();
+    _exec->SetRootDir(SGPath(std::string(_rootPath.UTF8String ?: "")));
+    _exec->SetAircraftPath(SGPath("aircraft"));
+    _exec->SetEnginePath(SGPath("engine"));
+    _exec->SetSystemsPath(SGPath("systems"));
+    _exec->Setdt(_deltaTime);
+    _modelLoaded = NO;
 }
 
 - (NSString *)version {
@@ -56,22 +74,24 @@ void SetBridgeError(NSError **error, NSString *message) {
 }
 
 - (double)deltaTime {
-    return _exec ? _exec->GetDeltaT() : 0.0;
+    return _exec ? _exec->GetDeltaT() : _deltaTime;
 }
 
 - (void)setDeltaTime:(double)deltaTime {
-    if (_exec && deltaTime > 0.0) {
+    if (deltaTime <= 0.0) return;
+    _deltaTime = deltaTime;
+    if (_exec) {
         _exec->Setdt(deltaTime);
     }
 }
 
 - (BOOL)loadModel:(NSString *)modelName error:(NSError **)error {
-    if (!_exec) {
-        SetBridgeError(error, @"JSBSim executive is not available.");
-        return NO;
-    }
-
     try {
+        // A model load is a complete simulation reset. Recreate FGFDMExec first
+        // instead of asking a previously initialized executive to replace its
+        // aircraft graph in place.
+        [self rebuildExecutive];
+
         _modelLoaded = _exec->LoadModel(std::string(modelName.UTF8String), true);
         if (!_modelLoaded) {
             SetBridgeError(error, [NSString stringWithFormat:@"JSBSim could not load aircraft model '%@'.", modelName]);
