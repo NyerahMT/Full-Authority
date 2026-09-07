@@ -20,16 +20,7 @@ replace_once(
 sim_path = "Simulation/FlightSimulation.swift"
 replace_once(
     sim_path,
-    '''        state.engineFuelFlowPoundsPerSecond = max(
-            0,
-            finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0)
-        )''',
-    '''        state.engineFuelFlowPoundsPerSecond = max(
-            0,
-            finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0)
-        )
-        state.aircraftMassKg = max(
-            1,
-            finiteFloat("inertia/weight-lbs", fallback: 20_944) * 0.45359237
-        )'''
+    '        state.engineFuelFlowPoundsPerSecond = max(0, finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0))',
+    '        state.engineFuelFlowPoundsPerSecond = max(0, finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0))\n'
+    '        state.aircraftMassKg = max(1, finiteFloat("inertia/weight-lbs", fallback: 20_944) * 0.45359237)'
 )
