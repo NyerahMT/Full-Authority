@@ -149,7 +149,7 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addAnimatedSurfaces(to root: Entity) {
-        // Stage 010.5: these overlays are laid out around the rendered OBJ's
+        // Stage 010.6: these overlays are laid out around the rendered OBJ's
         // trailing-edge geometry instead of generic F-16 dimensions. The source
         // OBJ is welded, so the movable panels remain separate hinge children,
         // but their pivots now sit on the visible wing/tail planform.
@@ -157,7 +157,7 @@ enum PrototypeAircraftFactory {
 
         let speedbrake = Entity()
         speedbrake.name = speedbrakeName
-        speedbrake.position = [0, -0.16, -4.00]
+        speedbrake.position = [0, -0.28, -4.00]
         if let leftMesh = makeHorizontalSurfaceMesh(
             outline: [[-1.10, 0.00], [-0.18, 0.00], [-0.22, -0.78], [-0.98, -0.62]],
             thickness: 0.026
@@ -180,7 +180,7 @@ enum PrototypeAircraftFactory {
         // floating over the wing.
         root.addChild(horizontalHingedSurface(
             name: leftAileronName,
-            hingePosition: [-3.42, -1.00, -3.58],
+            hingePosition: [-3.42, -1.12, -3.58],
             outline: [
                 [-0.90, 0.00],
                 [0.78, 0.00],
@@ -191,7 +191,7 @@ enum PrototypeAircraftFactory {
         ))
         root.addChild(horizontalHingedSurface(
             name: rightAileronName,
-            hingePosition: [3.42, -1.00, -3.58],
+            hingePosition: [3.42, -1.12, -3.58],
             outline: [
                 [-0.78, 0.00],
                 [0.90, 0.00],
@@ -206,7 +206,7 @@ enum PrototypeAircraftFactory {
         // rotate the entire surface.
         root.addChild(horizontalHingedSurface(
             name: leftElevatorName,
-            hingePosition: [-1.55, -0.82, -5.05],
+            hingePosition: [-1.55, -0.94, -5.05],
             outline: [
                 [-1.58, 0.00],
                 [0.90, 0.00],
@@ -217,7 +217,7 @@ enum PrototypeAircraftFactory {
         ))
         root.addChild(horizontalHingedSurface(
             name: rightElevatorName,
-            hingePosition: [1.55, -0.82, -5.05],
+            hingePosition: [1.55, -0.94, -5.05],
             outline: [
                 [-0.90, 0.00],
                 [1.58, 0.00],
@@ -229,7 +229,7 @@ enum PrototypeAircraftFactory {
 
         root.addChild(verticalHingedSurface(
             name: rudderName,
-            hingePosition: [0, 0.14, -5.62],
+            hingePosition: [0, 0.02, -5.62],
             outline: [
                 [0.04, 0.00],
                 [2.00, 0.08],

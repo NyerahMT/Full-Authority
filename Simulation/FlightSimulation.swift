@@ -356,6 +356,17 @@ final class FlightSimulation: ObservableObject {
         state.loadFactorG = finiteFloat("accelerations/n-pilot-z-norm", fallback: 1)
         state.dynamicPressurePSF = max(0, finiteFloat("aero/qbar-psf", fallback: 0))
 
+        // Feed presentation the atmosphere JSBSim is actually using.
+        let temperatureRankine = finiteFloat("atmosphere/T-R", fallback: 518.67)
+        state.ambientTemperatureC = temperatureRankine / 1.8 - 273.15
+        state.ambientPressurePSF = max(0, finiteFloat("atmosphere/P-psf", fallback: 2_116.22))
+        state.airDensitySlugsPerCubicFoot = max(0, finiteFloat("atmosphere/rho-slugs_ft3", fallback: 0.0023769))
+        state.engineFuelFlowPoundsPerSecond = max(0, finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0))
+        let windNorth = finiteFloat("atmosphere/total-wind-north-fps", fallback: 0) * feetToMeters
+        let windEast = finiteFloat("atmosphere/total-wind-east-fps", fallback: 0) * feetToMeters
+        let windDown = finiteFloat("atmosphere/total-wind-down-fps", fallback: 0) * feetToMeters
+        state.windMetersPerSecond = SIMD3<Float>(windEast, -windDown, windNorth)
+
         state.gearPosition = clampFloat(finiteFloat("gear/gear-pos-norm", fallback: 0), min: 0, max: 1)
         state.speedbrakePosition = clampFloat(finiteFloat("fcs/speedbrake-pos-norm", fallback: 0), min: 0, max: 1)
         state.weightOnWheels = finiteFloat("gear/wow", fallback: 0) > 0.5
