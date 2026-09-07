@@ -57,7 +57,7 @@ enum PrototypeAircraftFactory {
         }
 
         let source = try String(contentsOf: url, encoding: .utf8)
-        let lines = source.split(whereSeparator: \Character.isNewline)
+        let lines = source.split(whereSeparator: \.isNewline)
 
         var sourcePositions: [SIMD3<Float>] = []
         var sourceNormals: [SIMD3<Float>] = []
@@ -121,7 +121,8 @@ enum PrototypeAircraftFactory {
 
         func vertexIndex(for token: Substring) -> UInt32? {
             let components = token.split(separator: "/", omittingEmptySubsequences: false)
-            guard let rawPosition = Int(components.first ?? ""),
+            guard !components.isEmpty,
+                  let rawPosition = Int(components[0]),
                   let positionIndex = resolvedIndex(rawPosition, count: sourcePositions.count) else {
                 return nil
             }
