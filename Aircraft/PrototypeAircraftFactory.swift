@@ -1,3 +1,4 @@
+import Foundation
 import RealityKit
 import UIKit
 import simd
@@ -6,171 +7,178 @@ import simd
 enum PrototypeAircraftFactory {
     static let aircraftName = "FA.aircraft"
 
+    private struct OBJVertexKey: Hashable {
+        let position: Int
+        let normal: Int
+    }
+
+    private enum OBJError: Error {
+        case missingAsset
+        case invalidGeometry
+    }
+
     static func make() -> Entity {
         let root = Entity()
         root.name = aircraftName
 
-        let upperGray = UIColor(red: 0.40, green: 0.43, blue: 0.45, alpha: 1)
-        let lowerGray = UIColor(red: 0.50, green: 0.52, blue: 0.53, alpha: 1)
-        let darkGray = UIColor(red: 0.16, green: 0.18, blue: 0.19, alpha: 1)
-        let edgeGray = UIColor(red: 0.30, green: 0.32, blue: 0.33, alpha: 1)
-        let glass = UIColor(red: 0.06, green: 0.15, blue: 0.19, alpha: 0.96)
-        let intakeDark = UIColor(red: 0.055, green: 0.06, blue: 0.065, alpha: 1)
-
-        // Stage 006 targets a stylized-realistic silhouette: real proportions and
-        // recognizable major forms, without spending mobile GPU budget on tiny
-        // panel/rivet geometry. The physics aircraft remains JSBSim's F-15.
-        let mainBody = ellipsoid(radii: [1.28, 0.76, 6.20], color: upperGray, metallic: true)
-        mainBody.position = [0, 0.06, 0.55]
-        root.addChild(mainBody)
-
-        let lowerBody = ellipsoid(radii: [1.06, 0.53, 4.70], color: lowerGray, metallic: true)
-        lowerBody.position = [0, -0.40, -0.20]
-        root.addChild(lowerBody)
-
-        let nose = ellipsoid(radii: [0.82, 0.56, 3.55], color: upperGray, metallic: true)
-        nose.position = [0, -0.02, 6.20]
-        root.addChild(nose)
-
-        let radome = ellipsoid(radii: [0.55, 0.43, 1.52], color: darkGray, metallic: false)
-        radome.position = [0, -0.03, 8.25]
-        root.addChild(radome)
-
-        let canopy = ellipsoid(radii: [0.68, 0.42, 1.72], color: glass, metallic: true)
-        canopy.position = [0, 0.70, 3.70]
-        root.addChild(canopy)
-
-        let canopyFrame = roundedBlock(size: [0.10, 0.48, 2.50], color: edgeGray, cornerRadius: 0.04)
-        canopyFrame.position = [0, 0.71, 3.45]
-        root.addChild(canopyFrame)
-
-        // Twin inlet trunks and nacelles give the rear three-quarter view the
-        // unmistakable Eagle shape that the Stage 005 boxes could not provide.
-        for x: Float in [-1.02, 1.02] {
-            let inlet = roundedBlock(size: [1.18, 0.82, 2.85], color: intakeDark, cornerRadius: 0.18)
-            inlet.position = [x, -0.08, 1.65]
-            root.addChild(inlet)
-
-            let inletLip = roundedBlock(size: [1.32, 0.96, 0.18], color: lowerGray, cornerRadius: 0.10)
-            inletLip.position = [x, -0.08, 3.05]
-            root.addChild(inletLip)
-
-            let nacelle = cylinder(length: 5.85, radius: 0.61, color: darkGray, metallic: true)
-            nacelle.position = [x, -0.35, -2.45]
-            root.addChild(nacelle)
-
-            let exhaustOuter = cylinder(length: 0.72, radius: 0.67, color: edgeGray, metallic: true)
-            exhaustOuter.position = [x, -0.35, -5.67]
-            root.addChild(exhaustOuter)
-
-            let exhaustInner = cylinder(length: 0.78, radius: 0.43, color: .black, metallic: true)
-            exhaustInner.position = [x, -0.35, -5.78]
-            root.addChild(exhaustInner)
+        do {
+            let mesh = try loadF16Mesh()
+            let material = SimpleMaterial(
+                color: UIColor(red: 0.45, green: 0.49, blue: 0.52, alpha: 1),
+                isMetallic: true
+            )
+            let model = ModelEntity(mesh: mesh, materials: [material])
+            model.name = "FA.aircraft.f16.mesh"
+            root.addChild(model)
+        } catch {
+            // This should only appear if CI failed to stage the pinned mesh.
+            // Keep the scene alive and make a missing asset immediately obvious.
+            let fallback = ModelEntity(
+                mesh: .generateBox(size: [4, 1, 10], cornerRadius: 0.2),
+                materials: [SimpleMaterial(color: .red, isMetallic: false)]
+            )
+            fallback.name = "FA.aircraft.missing-mesh"
+            root.addChild(fallback)
         }
-
-        // Swept wings are built from tapered visual segments. They read far more
-        // naturally than one rectangular slab while remaining very inexpensive.
-        addWing(to: root, side: -1, upperGray: upperGray, edgeGray: edgeGray)
-        addWing(to: root, side: 1, upperGray: upperGray, edgeGray: edgeGray)
-
-        addTailplane(to: root, side: -1, color: upperGray)
-        addTailplane(to: root, side: 1, color: upperGray)
-
-        for x: Float in [-1.02, 1.02] {
-            let fin = roundedBlock(size: [0.18, 2.95, 2.45], color: upperGray, cornerRadius: 0.07)
-            fin.position = [x, 1.32, -4.15]
-            fin.orientation = simd_quatf(angle: x < 0 ? -0.10 : 0.10, axis: [0, 0, 1])
-            root.addChild(fin)
-
-            let finCap = roundedBlock(size: [0.22, 0.30, 1.42], color: edgeGray, cornerRadius: 0.08)
-            finCap.position = [x, 2.70, -4.55]
-            finCap.orientation = fin.orientation
-            root.addChild(finCap)
-        }
-
-        // Subtle high-contrast underside stripe remains as a gameplay cue; unlike
-        // the previous orange bar, this is narrow enough not to dominate the art.
-        let orientationStripe = roundedBlock(
-            size: [0.14, 0.035, 6.3],
-            color: UIColor(red: 0.84, green: 0.46, blue: 0.11, alpha: 1),
-            cornerRadius: 0.02
-        )
-        orientationStripe.position = [0, -0.96, -0.60]
-        root.addChild(orientationStripe)
 
         return root
     }
 
-    private static func addWing(
-        to root: Entity,
-        side: Float,
-        upperGray: UIColor,
-        edgeGray: UIColor
-    ) {
-        let direction: Float = side < 0 ? -1 : 1
-        let yaw: Float = side < 0 ? 0.19 : -0.19
+    /// Loads the pinned MIT-licensed F-16 OBJ staged by CI and converts it into
+    /// one RealityKit mesh. The OBJ was exported by Blender with Y-up and the
+    /// fuselage running along Z, which matches Full Authority's visual axes.
+    private static func loadF16Mesh() throws -> MeshResource {
+        guard let url = Bundle.main.url(
+            forResource: "f16",
+            withExtension: "obj",
+            subdirectory: "Models"
+        ) else {
+            throw OBJError.missingAsset
+        }
 
-        let inner = roundedBlock(size: [3.05, 0.14, 3.05], color: upperGray, cornerRadius: 0.06)
-        inner.position = [direction * 2.15, -0.02, -0.10]
-        inner.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
-        root.addChild(inner)
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let lines = source.split(whereSeparator: \Character.isNewline)
 
-        let middle = roundedBlock(size: [2.15, 0.12, 2.28], color: upperGray, cornerRadius: 0.05)
-        middle.position = [direction * 4.50, -0.03, -0.86]
-        middle.orientation = simd_quatf(angle: yaw * 1.08, axis: [0, 1, 0])
-        root.addChild(middle)
+        var sourcePositions: [SIMD3<Float>] = []
+        var sourceNormals: [SIMD3<Float>] = []
+        sourcePositions.reserveCapacity(2_500)
+        sourceNormals.reserveCapacity(4_000)
 
-        let tip = roundedBlock(size: [1.25, 0.10, 1.52], color: edgeGray, cornerRadius: 0.05)
-        tip.position = [direction * 6.15, -0.04, -1.47]
-        tip.orientation = simd_quatf(angle: yaw * 1.16, axis: [0, 1, 0])
-        root.addChild(tip)
-    }
+        for line in lines {
+            if line.hasPrefix("v ") {
+                let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                guard fields.count >= 4,
+                      let x = Float(fields[1]),
+                      let y = Float(fields[2]),
+                      let z = Float(fields[3]) else { continue }
+                sourcePositions.append([x, y, z])
+            } else if line.hasPrefix("vn ") {
+                let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                guard fields.count >= 4,
+                      let x = Float(fields[1]),
+                      let y = Float(fields[2]),
+                      let z = Float(fields[3]) else { continue }
+                let value = SIMD3<Float>(x, y, z)
+                sourceNormals.append(simd_length_squared(value) > 0 ? simd_normalize(value) : SIMD3<Float>(0, 1, 0))
+            }
+        }
 
-    private static func addTailplane(to root: Entity, side: Float, color: UIColor) {
-        let direction: Float = side < 0 ? -1 : 1
-        let yaw: Float = side < 0 ? 0.20 : -0.20
+        guard !sourcePositions.isEmpty else { throw OBJError.invalidGeometry }
 
-        let tailplane = roundedBlock(size: [2.70, 0.10, 1.58], color: color, cornerRadius: 0.05)
-        tailplane.position = [direction * 2.05, 0.02, -4.45]
-        tailplane.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
-        root.addChild(tailplane)
-    }
+        // The mesh source is unitless. Scale its measured nose-to-tail Z extent
+        // to the real F-16A length (49 ft 4 in / 15.03 m). We intentionally keep
+        // the source origin because it is already close to the aircraft center.
+        var minZ = Float.greatestFiniteMagnitude
+        var maxZ = -Float.greatestFiniteMagnitude
+        for position in sourcePositions {
+            minZ = Swift.min(minZ, position.z)
+            maxZ = Swift.max(maxZ, position.z)
+        }
+        let sourceLength = maxZ - minZ
+        guard sourceLength > 0.001 else { throw OBJError.invalidGeometry }
+        let scale: Float = 15.03 / sourceLength
 
-    private static func ellipsoid(
-        radii: SIMD3<Float>,
-        color: UIColor,
-        metallic: Bool
-    ) -> ModelEntity {
-        let entity = ModelEntity(
-            mesh: .generateSphere(radius: 1),
-            materials: [SimpleMaterial(color: color, isMetallic: metallic)]
-        )
-        entity.scale = radii
-        return entity
-    }
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var indices: [UInt32] = []
+        var vertexMap: [OBJVertexKey: UInt32] = [:]
 
-    private static func cylinder(
-        length: Float,
-        radius: Float,
-        color: UIColor,
-        metallic: Bool
-    ) -> ModelEntity {
-        let entity = ModelEntity(
-            mesh: .generateCylinder(height: length, radius: radius),
-            materials: [SimpleMaterial(color: color, isMetallic: metallic)]
-        )
-        entity.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
-        return entity
-    }
+        positions.reserveCapacity(5_000)
+        normals.reserveCapacity(5_000)
+        indices.reserveCapacity(24_000)
 
-    private static func roundedBlock(
-        size: SIMD3<Float>,
-        color: UIColor,
-        cornerRadius: Float
-    ) -> ModelEntity {
-        ModelEntity(
-            mesh: .generateBox(size: size, cornerRadius: cornerRadius),
-            materials: [SimpleMaterial(color: color, isMetallic: false)]
-        )
+        func resolvedIndex(_ raw: Int, count: Int) -> Int? {
+            if raw > 0 {
+                let value = raw - 1
+                return value < count ? value : nil
+            }
+            if raw < 0 {
+                let value = count + raw
+                return value >= 0 && value < count ? value : nil
+            }
+            return nil
+        }
+
+        func vertexIndex(for token: Substring) -> UInt32? {
+            let components = token.split(separator: "/", omittingEmptySubsequences: false)
+            guard let rawPosition = Int(components.first ?? ""),
+                  let positionIndex = resolvedIndex(rawPosition, count: sourcePositions.count) else {
+                return nil
+            }
+
+            var normalIndex = -1
+            if components.count >= 3,
+               let rawNormal = Int(components[2]),
+               let resolvedNormal = resolvedIndex(rawNormal, count: sourceNormals.count) {
+                normalIndex = resolvedNormal
+            }
+
+            let key = OBJVertexKey(position: positionIndex, normal: normalIndex)
+            if let existing = vertexMap[key] {
+                return existing
+            }
+
+            let newIndex = UInt32(positions.count)
+            positions.append(sourcePositions[positionIndex] * scale)
+            if normalIndex >= 0 {
+                normals.append(sourceNormals[normalIndex])
+            } else {
+                normals.append([0, 1, 0])
+            }
+            vertexMap[key] = newIndex
+            return newIndex
+        }
+
+        for line in lines where line.hasPrefix("f ") {
+            let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+            guard fields.count >= 4 else { continue }
+
+            var face: [UInt32] = []
+            face.reserveCapacity(fields.count - 1)
+            for token in fields.dropFirst() {
+                guard let index = vertexIndex(for: token) else {
+                    face.removeAll(keepingCapacity: true)
+                    break
+                }
+                face.append(index)
+            }
+
+            guard face.count >= 3 else { continue }
+            for i in 1..<(face.count - 1) {
+                indices.append(face[0])
+                indices.append(face[i])
+                indices.append(face[i + 1])
+            }
+        }
+
+        guard positions.count >= 3, indices.count >= 3 else {
+            throw OBJError.invalidGeometry
+        }
+
+        var descriptor = MeshDescriptor(name: "F-16A")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.primitives = .triangles(indices)
+        return try MeshResource.generate(from: [descriptor])
     }
 }
