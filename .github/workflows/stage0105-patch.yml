@@ -1,0 +1,76 @@
+name: Stage 010.5 patch
+
+on:
+  push:
+    branches:
+      - stage-010-5-rigid-camera-surfaces
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage-010-5-rigid-camera-surfaces
+          fetch-depth: 0
+
+      - name: Apply Stage 010.5 camera, surface, and yaw pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          scene = Path('App/PrototypeSceneView.swift')
+          text = scene.read_text(encoding='utf-8')
+          runtime_old = '''    var lastCameraTime: TimeInterval?\n    var cameraModeKey = ""\n    var cameraInitialized = false\n    let effects = Stage2FlightEffects.Runtime()\n'''
+          runtime_new = '''    var lastCameraTime: TimeInterval?\n    var cameraModeKey = ""\n    var cameraInitialized = false\n    var lastAirspeed: Float?\n    var chasePullbackMeters: Float = 0\n    let effects = Stage2FlightEffects.Runtime()\n'''
+          if runtime_old not in text:
+              raise SystemExit('camera runtime anchor not found')
+          text = text.replace(runtime_old, runtime_new, 1)
+
+          start = text.index('    // MARK: - Camera\n')
+          end = text.index('    private func lookRotation', start)
+          camera_block = '''    // MARK: - Camera\n\n    @MainActor\n    private func positionCamera(_ camera: Entity, forceSnap: Bool) {\n        let state = simulation.state\n        let aircraftPosition = state.positionMeters\n        let attitude = state.orientation\n\n        let now = ProcessInfo.processInfo.systemUptime\n        let dt: Float\n        if let last = runtime.lastCameraTime {\n            dt = clamp(Float(now - last), 1.0 / 240.0, 1.0 / 20.0)\n        } else {\n            dt = 1.0 / 60.0\n        }\n        runtime.lastCameraTime = now\n\n        // The chase rig is intentionally almost rigid. Airframe position and\n        // attitude are applied directly every render update so pitch/roll/yaw do\n        // not swim behind the JSBSim state. Only the optional longitudinal\n        // pullback is filtered, which preserves a tiny acceleration cue without\n        // turning the camera into another spring-mass system.\n        let airspeed = state.airspeedMetersPerSecond\n        if let previousAirspeed = runtime.lastAirspeed {\n            let acceleration = max(0, (airspeed - previousAirspeed) / max(dt, 1.0 / 240.0))\n            let accelerationPullback = min(acceleration * 0.075, 1.35)\n            let highSpeedResidual = clamp((airspeed - 250) / 250, 0, 1) * 0.48\n            let targetPullback = accelerationPullback + highSpeedResidual\n            let response: Float = targetPullback > runtime.chasePullbackMeters ? 11.0 : 4.8\n            let blend = 1 - exp(-response * dt)\n            runtime.chasePullbackMeters += (targetPullback - runtime.chasePullbackMeters) * blend\n        } else {\n            runtime.chasePullbackMeters = 0\n        }\n        runtime.lastAirspeed = airspeed\n\n        var localCameraOffset: SIMD3<Float>\n        let localLookPoint: SIMD3<Float>\n        let fieldOfView: Float\n        let pullbackScale: Float\n\n        switch cameraMode {\n        case .chase:\n            localCameraOffset = [0, 4.10, -17.15]\n            localLookPoint = [0, 0.72, 4.05]\n            fieldOfView = 58\n            pullbackScale = 1.0\n\n        case .close:\n            localCameraOffset = [0, 3.00, -11.75]\n            localLookPoint = [0, 0.62, 4.30]\n            fieldOfView = 62\n            pullbackScale = 0.55\n\n        case .cockpit:\n            // Upstream F-16 eyepoint relative to CG. Cockpit view has no\n            // synthetic pullback at all: it is locked to the airframe.\n            localCameraOffset = [0, 0.88, 3.64]\n            localLookPoint = [0, 0.88, 90]\n            fieldOfView = 72\n            pullbackScale = 0\n        }\n\n        localCameraOffset.z -= runtime.chasePullbackMeters * pullbackScale\n\n        camera.components.set(PerspectiveCameraComponent(\n            near: cameraMode == .cockpit ? 0.02 : 0.08,\n            far: 62_000,\n            fieldOfViewInDegrees: fieldOfView\n        ))\n\n        let desiredPosition = aircraftPosition + simd_act(attitude, localCameraOffset)\n        let desiredLookTarget = aircraftPosition + simd_act(attitude, localLookPoint)\n        let aircraftUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))\n        let desiredOrientation = lookRotation(\n            forward: desiredLookTarget - desiredPosition,\n            up: aircraftUp\n        )\n\n        // Rigid means rigid: no exponential position lag and no quaternion\n        // spring. JSBSim remains authoritative; the camera simply renders the\n        // latest aircraft-relative pose.\n        camera.position = desiredPosition\n        camera.orientation = desiredOrientation\n        runtime.cameraInitialized = true\n        runtime.cameraModeKey = cameraMode.rawValue\n\n        _ = forceSnap // retained by the call sites for reset/mode-change semantics\n    }\n\n'''
+          text = text[:start] + camera_block + text[end:]
+          scene.write_text(text, encoding='utf-8')
+
+          aircraft = Path('Aircraft/PrototypeAircraftFactory.swift')
+          text = aircraft.read_text(encoding='utf-8')
+          start = text.index('    private static func addAnimatedSurfaces(to root: Entity) {\n')
+          end = text.index('    private static func addLandingGear(to root: Entity) {\n', start)
+          surfaces = '''    private static func addAnimatedSurfaces(to root: Entity) {\n        // Stage 010.5: these overlays are laid out around the rendered OBJ's\n        // trailing-edge geometry instead of generic F-16 dimensions. The source\n        // OBJ is welded, so the movable panels remain separate hinge children,\n        // but their pivots now sit on the visible wing/tail planform.\n        let panelColor = UIColor(red: 0.335, green: 0.35, blue: 0.36, alpha: 1)\n\n        let speedbrake = Entity()\n        speedbrake.name = speedbrakeName\n        speedbrake.position = [0, -0.16, -4.00]\n        if let leftMesh = makeHorizontalSurfaceMesh(\n            outline: [[-1.10, 0.00], [-0.18, 0.00], [-0.22, -0.78], [-0.98, -0.62]],\n            thickness: 0.026\n        ) {\n            let left = ModelEntity(mesh: leftMesh, materials: [SimpleMaterial(color: panelColor, isMetallic: false)])\n            speedbrake.addChild(left)\n        }\n        if let rightMesh = makeHorizontalSurfaceMesh(\n            outline: [[0.18, 0.00], [1.10, 0.00], [0.98, -0.62], [0.22, -0.78]],\n            thickness: 0.026\n        ) {\n            let right = ModelEntity(mesh: rightMesh, materials: [SimpleMaterial(color: panelColor, isMetallic: false)])\n            speedbrake.addChild(right)\n        }\n        root.addChild(speedbrake)\n\n        // Flaperons: the previous hinge at z=-2.12 sat visibly forward of the\n        // OBJ trailing edge. Move the hinge aft and use the measured taper of the\n        // rendered wing so deflection reads as part of the airplane, not a flap\n        // floating over the wing.\n        root.addChild(horizontalHingedSurface(\n            name: leftAileronName,\n            hingePosition: [-3.42, -1.00, -3.58],\n            outline: [\n                [-0.90, 0.00],\n                [0.78, 0.00],\n                [0.61, -0.69],\n                [-0.82, -0.57]\n            ],\n            color: panelColor\n        ))\n        root.addChild(horizontalHingedSurface(\n            name: rightAileronName,\n            hingePosition: [3.42, -1.00, -3.58],\n            outline: [\n                [-0.78, 0.00],\n                [0.90, 0.00],\n                [0.82, -0.57],\n                [-0.61, -0.69]\n            ],\n            color: panelColor\n        ))\n\n        // The F-16 uses all-moving horizontal tails. Root the complete tail\n        // panels on their hinge line and let the JSBSim differential-tail output\n        // rotate the entire surface.\n        root.addChild(horizontalHingedSurface(\n            name: leftElevatorName,\n            hingePosition: [-1.55, -0.82, -5.05],\n            outline: [\n                [-1.58, 0.00],\n                [0.90, 0.00],\n                [0.58, -1.60],\n                [-1.25, -1.34]\n            ],\n            color: panelColor\n        ))\n        root.addChild(horizontalHingedSurface(\n            name: rightElevatorName,\n            hingePosition: [1.55, -0.82, -5.05],\n            outline: [\n                [-0.90, 0.00],\n                [1.58, 0.00],\n                [1.25, -1.34],\n                [-0.58, -1.60]\n            ],\n            color: panelColor\n        ))\n\n        root.addChild(verticalHingedSurface(\n            name: rudderName,\n            hingePosition: [0, 0.14, -5.62],\n            outline: [\n                [0.04, 0.00],\n                [2.00, 0.08],\n                [1.70, -1.02],\n                [0.18, -1.10]\n            ],\n            color: panelColor\n        ))\n    }\n\n'''
+          text = text[:start] + surfaces + text[end:]
+          aircraft.write_text(text, encoding='utf-8')
+
+          stage = Path('scripts/stage-f16-calibration.sh')
+          text = stage.read_text(encoding='utf-8')
+          replacements = [
+              ('# input has a little more authority without creating another feedback system.\n', '# input has meaningfully more authority without creating another feedback system.\n'),
+              ('# in the final rudder scheduler. The stock yaw PID still owns yaw-rate and\n# lateral-load damping; this adds 12% of pedal command after that loop so touch\n', '# in the final rudder scheduler. The stock yaw PID still owns yaw-rate and\n# lateral-load damping; this adds 28% of pedal command after that loop so touch\n'),
+              ('    <gain>0.12</gain>', '    <gain>0.28</gain>'),
+              ('stock JSBSim yaw controller + modest pedal feed-forward', 'stock JSBSim yaw controller + stronger pedal feed-forward'),
+              ('with upstream yaw damping, modest pedal feed-forward, terrain texture', 'with upstream yaw damping, stronger pedal feed-forward, terrain texture'),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'stage-f16 anchor not found: {old!r}')
+              text = text.replace(old, new, 1)
+          stage.write_text(text, encoding='utf-8')
+
+          workflow = Path('.github/workflows/stage0105-patch.yml')
+          workflow.unlink()
+          PY
+
+          git diff --check
+          git status --short
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Stage 010.5: rigid chase camera and corrected F-16 surfaces'
+          git push origin HEAD:stage-010-5-rigid-camera-surfaces
