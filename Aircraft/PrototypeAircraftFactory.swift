@@ -6,6 +6,7 @@ import simd
 @MainActor
 enum PrototypeAircraftFactory {
     static let aircraftName = "FA.aircraft"
+    static let visualRootName = "FA.aircraft.visual-root"
     static let meshName = "FA.aircraft.f16.mesh"
     static let afterburnerName = "FA.aircraft.afterburner"
     static let nozzleName = "FA.aircraft.nozzle"
@@ -23,6 +24,12 @@ enum PrototypeAircraftFactory {
     static let contrailLeftName = "FA.aircraft.contrail.left"
     static let contrailRightName = "FA.aircraft.contrail.right"
 
+    /// The source OBJ is centered around its visual bounding box, not the F-16
+    /// CG used by JSBSim. JSBSim places the radome only ~0.09 m below the CG,
+    /// while the source mesh placed it ~1.02 m below the root. This offset aligns
+    /// the visual airframe with the FDM structural/reference coordinates.
+    static let visualVerticalOffset: Float = 0.93
+
     private struct OBJVertexKey: Hashable {
         let position: Int
         let normal: Int
@@ -38,19 +45,28 @@ enum PrototypeAircraftFactory {
         root.name = aircraftName
 
         do {
+            let visualRoot = Entity()
+            visualRoot.name = visualRootName
+            visualRoot.position = [0, visualVerticalOffset, 0]
+            root.addChild(visualRoot)
+
             let mesh = try loadF16Mesh()
             let airframeMaterial = SimpleMaterial(
-                color: UIColor(red: 0.46, green: 0.48, blue: 0.48, alpha: 1),
+                color: UIColor(red: 0.39, green: 0.41, blue: 0.42, alpha: 1),
                 isMetallic: false
             )
             let model = ModelEntity(mesh: mesh, materials: [airframeMaterial])
             model.name = meshName
-            root.addChild(model)
+            visualRoot.addChild(model)
 
-            addVisualDetail(to: root)
-            addAnimatedSurfaces(to: root)
+            addVisualDetail(to: visualRoot)
+            addAnimatedSurfaces(to: visualRoot)
+            addFlightEffects(to: visualRoot)
+
+            // Landing gear is positioned directly from the F-16 JSBSim contact
+            // geometry relative to CG, so it intentionally does not inherit the
+            // OBJ-only visualVerticalOffset.
             addLandingGear(to: root)
-            addFlightEffects(to: root)
         } catch {
             let fallback = ModelEntity(
                 mesh: .generateBox(size: [4, 1, 10], cornerRadius: 0.2),
@@ -134,7 +150,7 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addAnimatedSurfaces(to root: Entity) {
-        let panelColor = UIColor(red: 0.37, green: 0.39, blue: 0.39, alpha: 1)
+        let panelColor = UIColor(red: 0.32, green: 0.34, blue: 0.35, alpha: 1)
 
         let speedbrake = ModelEntity(
             mesh: .generateBox(size: [1.12, 0.055, 1.25], cornerRadius: 0.06),
@@ -186,30 +202,35 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addLandingGear(to root: Entity) {
-        let strutColor = UIColor(red: 0.68, green: 0.69, blue: 0.67, alpha: 1)
-        let tireColor = UIColor(red: 0.035, green: 0.035, blue: 0.035, alpha: 1)
+        let strutColor = UIColor(red: 0.72, green: 0.73, blue: 0.71, alpha: 1)
+        let tireColor = UIColor(red: 0.025, green: 0.025, blue: 0.026, alpha: 1)
 
+        // JSBSim F-16 contact geometry, converted from structural inches to
+        // visual meters relative to CG. +Z in Full Authority is nose-forward.
         root.addChild(gearAssembly(
             name: noseGearName,
-            rootPosition: [0, -0.45, 3.45],
+            rootPosition: [0, -0.33, 2.71],
             strutHeight: 1.12,
             wheelRadius: 0.25,
+            wheelWidth: 0.20,
             strutColor: strutColor,
             tireColor: tireColor
         ))
         root.addChild(gearAssembly(
             name: leftGearName,
-            rootPosition: [-1.35, -0.48, -1.05],
+            rootPosition: [-1.22, -0.38, -0.87],
             strutHeight: 1.00,
             wheelRadius: 0.31,
+            wheelWidth: 0.24,
             strutColor: strutColor,
             tireColor: tireColor
         ))
         root.addChild(gearAssembly(
             name: rightGearName,
-            rootPosition: [1.35, -0.48, -1.05],
+            rootPosition: [1.22, -0.38, -0.87],
             strutHeight: 1.00,
             wheelRadius: 0.31,
+            wheelWidth: 0.24,
             strutColor: strutColor,
             tireColor: tireColor
         ))
@@ -264,6 +285,7 @@ enum PrototypeAircraftFactory {
         rootPosition: SIMD3<Float>,
         strutHeight: Float,
         wheelRadius: Float,
+        wheelWidth: Float,
         strutColor: UIColor,
         tireColor: UIColor
     ) -> Entity {
@@ -271,15 +293,22 @@ enum PrototypeAircraftFactory {
         assembly.name = name
         assembly.position = rootPosition
 
-        let strut = ModelEntity(
-            mesh: .generateCylinder(height: strutHeight, radius: 0.055),
+        let upperStrut = ModelEntity(
+            mesh: .generateCylinder(height: strutHeight, radius: 0.068),
             materials: [SimpleMaterial(color: strutColor, isMetallic: true)]
         )
-        strut.position = [0, -strutHeight * 0.5, 0]
-        assembly.addChild(strut)
+        upperStrut.position = [0, -strutHeight * 0.5, 0]
+        assembly.addChild(upperStrut)
+
+        let fork = ModelEntity(
+            mesh: .generateBox(size: [wheelWidth + 0.10, 0.10, 0.10], cornerRadius: 0.03),
+            materials: [SimpleMaterial(color: strutColor, isMetallic: true)]
+        )
+        fork.position = [0, -strutHeight + 0.03, 0]
+        assembly.addChild(fork)
 
         let wheel = ModelEntity(
-            mesh: .generateCylinder(height: 0.18, radius: wheelRadius),
+            mesh: .generateCylinder(height: wheelWidth, radius: wheelRadius),
             materials: [SimpleMaterial(color: tireColor, isMetallic: false)]
         )
         wheel.position = [0, -strutHeight, 0]
@@ -296,7 +325,7 @@ enum PrototypeAircraftFactory {
         color: UIColor
     ) {
         let light = ModelEntity(
-            mesh: .generateSphere(radius: 0.11),
+            mesh: .generateSphere(radius: 0.085),
             materials: [SimpleMaterial(color: color, isMetallic: false)]
         )
         light.name = name
