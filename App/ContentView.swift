@@ -283,7 +283,9 @@ struct ContentView: View {
     }
 
     private func launchFlight() {
-        _ = simulation.resetFlight()
+        // FlightSimulation has already loaded and trimmed the F-16 during app
+        // construction. Entering the first sortie should only unpause that
+        // prepared state; a full reload is reserved for explicit restarts.
         simulation.resume()
         withAnimation(.easeOut(duration: 0.24)) {
             phase = .flying
@@ -427,38 +429,41 @@ private struct FlightHUD: View {
         .background(.black.opacity(0.20), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func hudReadout(_ label: String, _ value: String) -> some View {
-        HStack(spacing: 4) {
-            Text(label)
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .opacity(0.55)
-            Text(value)
-                .font(.system(size: 10, weight: .black, design: .monospaced))
-                .monospacedDigit()
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.black.opacity(0.20), in: Capsule())
-    }
-
     @ViewBuilder
     private var warningBanner: some View {
-        let lowAltitude = state.altitudeMeters < 150 && state.verticalSpeedMetersPerSecond < -8
-        let highAlpha = abs(state.angleOfAttackDegrees) > 25
-        let highG = abs(state.loadFactorG) > 8.6
+        let altitudeFeet = state.altitudeMeters * 3.28084
+        let descendingFast = state.verticalSpeedMetersPerSecond < -28
 
         VStack {
-            Spacer()
-            if lowAltitude || highAlpha || highG {
-                Text(lowAltitude ? "PULL UP" : (highAlpha ? "AOA LIMIT" : "G LIMIT"))
-                    .font(.system(size: 14, weight: .black, design: .monospaced))
-                    .tracking(1.2)
-                    .foregroundStyle(Color(red: 1.0, green: 0.43, blue: 0.25))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(.black.opacity(0.42), in: Capsule())
-                    .padding(.bottom, 112)
+            if altitudeFeet < 450 && descendingFast {
+                warningText("PULL UP")
+            } else if abs(state.angleOfAttackDegrees) > 24 {
+                warningText("AOA LIMIT")
+            } else if state.loadFactorG > 8.2 {
+                warningText("G LIMIT")
             }
+            Spacer()
+        }
+        .padding(.top, 66)
+    }
+
+    private func warningText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 15, weight: .black, design: .monospaced))
+            .tracking(1.8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(.black.opacity(0.36), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func hudReadout(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .opacity(0.50)
+            Text(value)
+                .font(.system(size: 11, weight: .black, design: .monospaced))
+                .monospacedDigit()
         }
     }
 }
@@ -467,19 +472,20 @@ private struct GForceVignette: View {
     let loadFactorG: Float
 
     var body: some View {
-        let magnitude = abs(loadFactorG)
-        let intensity = max(0, min(1, (magnitude - 5.4) / 3.6))
+        let intensity = min(max((abs(loadFactorG) - 4.2) / 4.8, 0), 1)
+
         RadialGradient(
             colors: [
                 .clear,
-                .black.opacity(Double(intensity) * 0.08),
-                .black.opacity(Double(intensity) * 0.42)
+                .black.opacity(Double(intensity) * 0.10),
+                .black.opacity(Double(intensity) * 0.52)
             ],
             center: .center,
-            startRadius: 90,
-            endRadius: 520
+            startRadius: 80,
+            endRadius: 560
         )
-        .opacity(intensity > 0 ? 1 : 0)
+        .opacity(intensity > 0.01 ? 1 : 0)
+        .allowsHitTesting(false)
     }
 }
 
@@ -488,37 +494,45 @@ private struct AttitudeCue: View {
     let pitchDegrees: Float
     let color: Color
 
-    private let marks = [-20, -10, 0, 10, 20]
-
     var body: some View {
         ZStack {
-            ForEach(marks, id: \.self) { mark in
-                HStack(spacing: 6) {
-                    if mark != 0 {
-                        Text("\(abs(mark))")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    }
-                    Rectangle()
-                        .frame(width: mark == 0 ? 84 : 42, height: mark == 0 ? 1.5 : 1)
-                    if mark != 0 {
-                        Text("\(abs(mark))")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    }
-                }
-                .offset(y: CGFloat(pitchDegrees - Float(mark)) * 2.55)
-            }
+            Circle()
+                .stroke(color.opacity(0.30), lineWidth: 1)
+                .frame(width: 56, height: 56)
 
-            HStack(spacing: 5) {
-                Rectangle().frame(width: 18, height: 2)
-                Circle().stroke(lineWidth: 1.5).frame(width: 24, height: 24)
-                Rectangle().frame(width: 18, height: 2)
+            VStack(spacing: 11) {
+                pitchLine(10)
+                pitchLine(5)
+                HStack(spacing: 8) {
+                    Rectangle().frame(width: 42, height: 1.4)
+                    Circle().frame(width: 4, height: 4)
+                    Rectangle().frame(width: 42, height: 1.4)
+                }
+                pitchLine(-5)
+                pitchLine(-10)
             }
+            .offset(y: CGFloat(pitchDegrees) * 1.15)
+            .rotationEffect(.degrees(Double(-rollDegrees)))
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 14, weight: .bold))
+                .offset(y: -47)
         }
-        .foregroundStyle(color)
-        .frame(width: 190, height: 150)
+        .frame(width: 235, height: 160)
         .clipped()
-        .rotationEffect(.degrees(Double(-rollDegrees)))
-        .opacity(0.82)
+        .foregroundStyle(color)
+    }
+
+    private func pitchLine(_ value: Int) -> some View {
+        HStack(spacing: 5) {
+            Text("\(abs(value))")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+            Rectangle()
+                .frame(width: value == 0 ? 70 : 48, height: 1)
+            Text("\(abs(value))")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+        }
+        .opacity(0.68)
     }
 }
 
@@ -527,30 +541,31 @@ private struct CompactThrottleControl: View {
     let onChange: (Float) -> Void
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text(String(format: "%02.0f", value * 100))
-                .font(.system(size: 9, weight: .black, design: .monospaced))
+        VStack(spacing: 5) {
+            Text(String(format: "THR %02.0f", value * 100))
+                .font(.system(size: 8, weight: .black, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.72))
 
             GeometryReader { geometry in
                 let height = geometry.size.height
-                let knob: CGFloat = 38
-                let travel = max(1, height - knob)
-                let centerY = (1 - CGFloat(value)) * travel + knob * 0.5
+                let knobHeight: CGFloat = 34
+                let travel = max(1, height - knobHeight)
+                let y = (1 - CGFloat(value)) * travel + knobHeight * 0.5
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.32))
-                        .frame(width: 18)
+                        .fill(.black.opacity(0.34))
+                        .frame(width: 20)
                     Capsule()
-                        .fill(.white.opacity(0.18))
-                        .frame(width: 4, height: travel)
-                    Circle()
-                        .fill(.white.opacity(0.94))
-                        .frame(width: knob, height: knob)
-                        .overlay(Circle().stroke(.black.opacity(0.30), lineWidth: 1))
-                        .position(x: geometry.size.width * 0.5, y: centerY)
+                        .fill(.white.opacity(0.20))
+                        .frame(width: 5, height: CGFloat(value) * travel)
+                        .offset(y: (travel - CGFloat(value) * travel) * 0.5)
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.white.opacity(0.92))
+                        .frame(width: 36, height: knobHeight)
+                        .position(x: geometry.size.width * 0.5, y: y)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -560,14 +575,11 @@ private struct CompactThrottleControl: View {
                         }
                 )
             }
-            .frame(width: 52, height: 142)
-
-            Text("THR")
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.46))
+            .frame(width: 58, height: 142)
         }
-        .padding(8)
-        .background(.black.opacity(0.20), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -576,38 +588,44 @@ private struct CompactRudderControl: View {
     let onChange: (Float) -> Void
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let usable = max(1, width - 42)
-            let knobX = width * 0.5 + CGFloat(value) * usable * 0.5
+        VStack(spacing: 4) {
+            Text("RUDDER")
+                .font(.system(size: 7, weight: .black, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.48))
 
-            ZStack {
-                Capsule()
-                    .fill(.black.opacity(0.28))
-                    .frame(height: 22)
-                Capsule()
-                    .fill(.white.opacity(0.15))
-                    .frame(width: usable, height: 2)
-                Rectangle()
-                    .fill(.white.opacity(0.35))
-                    .frame(width: 1, height: 24)
-                Circle()
-                    .fill(.white.opacity(0.92))
-                    .frame(width: 32, height: 32)
-                    .position(x: knobX, y: geometry.size.height * 0.5)
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                let travel = max(1, width - 34)
+                let x = width * 0.5 + CGFloat(value) * travel * 0.5
+
+                ZStack {
+                    Capsule()
+                        .fill(.black.opacity(0.34))
+                        .frame(height: 22)
+                    Rectangle()
+                        .fill(.white.opacity(0.20))
+                        .frame(width: 1, height: 25)
+                    Circle()
+                        .fill(.white.opacity(0.90))
+                        .frame(width: 30, height: 30)
+                        .position(x: x, y: geometry.size.height * 0.5)
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            let normalized = Float((gesture.location.x - width * 0.5) / max(travel * 0.5, 1))
+                            let clamped = min(max(normalized, -1), 1)
+                            onChange(abs(clamped) < 0.045 ? 0 : clamped)
+                        }
+                        .onEnded { _ in onChange(0) }
+                )
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { gesture in
-                        let centered = Float((gesture.location.x - width * 0.5) / max(usable * 0.5, 1))
-                        let clamped = min(max(centered, -1), 1)
-                        onChange(abs(clamped) < 0.04 ? 0 : clamped)
-                    }
-                    .onEnded { _ in onChange(0) }
-            )
+            .frame(width: 165, height: 34)
         }
-        .frame(width: 188, height: 40)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -619,33 +637,21 @@ private struct CompactStickControl: View {
     var body: some View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height)
-            let knob: CGFloat = 38
+            let knob: CGFloat = 36
             let radius = max(1, (side - knob) * 0.5)
 
             ZStack {
                 Circle()
-                    .fill(.black.opacity(0.24))
+                    .fill(.black.opacity(0.28))
                 Circle()
-                    .stroke(.white.opacity(0.18), lineWidth: 1)
+                    .stroke(.white.opacity(0.16), lineWidth: 1)
+                    .padding(side * 0.28)
+                Rectangle().fill(.white.opacity(0.11)).frame(width: 1).padding(10)
+                Rectangle().fill(.white.opacity(0.11)).frame(height: 1).padding(10)
                 Circle()
-                    .stroke(.white.opacity(0.10), lineWidth: 1)
-                    .padding(side * 0.27)
-                Rectangle()
-                    .fill(.white.opacity(0.12))
-                    .frame(width: 1)
-                    .padding(.vertical, 8)
-                Rectangle()
-                    .fill(.white.opacity(0.12))
-                    .frame(height: 1)
-                    .padding(.horizontal, 8)
-                Circle()
-                    .fill(.white.opacity(0.94))
+                    .fill(.white.opacity(0.93))
                     .frame(width: knob, height: knob)
-                    .overlay(Circle().stroke(.black.opacity(0.30), lineWidth: 1))
-                    .offset(
-                        x: CGFloat(roll) * radius,
-                        y: CGFloat(pitch) * radius
-                    )
+                    .offset(x: CGFloat(roll) * radius, y: CGFloat(pitch) * radius)
             }
             .contentShape(Circle())
             .gesture(
@@ -655,13 +661,11 @@ private struct CompactStickControl: View {
                         var dx = gesture.location.x - center.x
                         var dy = gesture.location.y - center.y
                         let magnitude = sqrt(dx * dx + dy * dy)
-
                         if magnitude > radius {
-                            let scale = radius / magnitude
-                            dx *= scale
-                            dy *= scale
+                            let factor = radius / magnitude
+                            dx *= factor
+                            dy *= factor
                         }
-
                         var normalizedRoll = Float(dx / radius)
                         var normalizedPitch = Float(dy / radius)
                         if abs(normalizedRoll) < 0.035 { normalizedRoll = 0 }
@@ -671,7 +675,9 @@ private struct CompactStickControl: View {
                     .onEnded { _ in onChange(0, 0) }
             )
         }
-        .frame(width: 148, height: 148)
+        .frame(width: 132, height: 132)
+        .padding(8)
+        .background(.black.opacity(0.22), in: Circle())
     }
 }
 
