@@ -1,6 +1,5 @@
 import bpy
 import json
-import math
 import shutil
 import sys
 from pathlib import Path
@@ -41,8 +40,6 @@ def clear_scene():
 
 
 def to_fa(v):
-    # Blender source: +X right, +Y nose, +Z up.
-    # Full Authority mesh local: +X right, +Y up, +Z nose.
     return Vector((v.x, v.z, v.y))
 
 
@@ -59,44 +56,46 @@ def dominant_group(mesh_obj, vertex_index):
     return mesh_obj.vertex_groups[best.group].name
 
 
+def validate_partition(mesh_obj):
+    mesh = mesh_obj.data
+    mesh.calc_loop_triangles()
+    mixed = []
+    counts = {part: 0 for part in PARTS}
+    for tri in mesh.loop_triangles:
+        groups = [dominant_group(mesh_obj, i) for i in tri.vertices]
+        if len(set(groups)) != 1:
+            mixed.append((tuple(tri.vertices), tuple(groups)))
+            continue
+        if groups[0] not in counts:
+            raise RuntimeError(f'Unexpected vertex group {groups[0]}')
+        counts[groups[0]] += 1
+    if mixed:
+        raise RuntimeError(f'{len(mixed)} mixed-group triangles found; first five: {mixed[:5]}')
+    return counts
+
+
 def write_part_obj(mesh_obj, part_name, path, pivot_source):
     mesh = mesh_obj.data
     mesh.calc_loop_triangles()
     pivot = to_fa(pivot_source)
-
     triangles = []
     for tri in mesh.loop_triangles:
-        groups = [dominant_group(mesh_obj, i) for i in tri.vertices]
-        if not all(g == part_name for g in groups):
-            continue
-        triangles.append(tri)
-
+        if all(dominant_group(mesh_obj, i) == part_name for i in tri.vertices):
+            triangles.append(tri)
     if not triangles:
         raise RuntimeError(f'No triangles found for {part_name}')
 
-    # OBJ uses separate position/uv/normal indexes; emit one tuple per triangle loop
-    # because this source is tiny and it preserves exact UV seams/normals cleanly.
-    positions = []
-    uvs = []
-    normals = []
-    faces = []
+    positions, uvs, normals, faces = [], [], [], []
     uv_layer = mesh.uv_layers.active.data if mesh.uv_layers.active else None
-
     for tri in triangles:
         face = []
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
-            src_pos = mesh.vertices[loop.vertex_index].co
-            pos = to_fa(src_pos) - pivot
-            positions.append(pos)
-            if uv_layer:
-                uv = uv_layer[loop_index].uv
-                uvs.append((uv.x, uv.y))
-            else:
-                uvs.append((0.0, 0.0))
+            positions.append(to_fa(mesh.vertices[loop.vertex_index].co) - pivot)
+            uv = uv_layer[loop_index].uv if uv_layer else (0.0, 0.0)
+            uvs.append((float(uv[0]), float(uv[1])))
             normals.append(normal_to_fa(loop.normal))
-            idx = len(positions)
-            face.append(idx)
+            face.append(len(positions))
         faces.append(face)
 
     with path.open('w', encoding='utf-8') as f:
@@ -111,11 +110,7 @@ def write_part_obj(mesh_obj, part_name, path, pivot_source):
         for face in faces:
             f.write('f ' + ' '.join(f'{i}/{i}/{i}' for i in face) + '\n')
 
-    return {
-        'vertices_emitted': len(positions),
-        'triangles': len(faces),
-        'pivot': [pivot.x, pivot.y, pivot.z],
-    }
+    return {'vertices_emitted': len(positions), 'triangles': len(faces), 'pivot': list(pivot)}
 
 
 def export_aircraft():
@@ -126,24 +121,40 @@ def export_aircraft():
     if mesh_obj is None or armature is None:
         raise RuntimeError('F16 mesh/Armature not found')
 
-    # Source report showed hard 1.0 weights. Make that an importer invariant so
-    # a future upstream asset change cannot silently corrupt a surface partition.
     for vertex in mesh_obj.data.vertices:
         weighted = [(mesh_obj.vertex_groups[g.group].name, g.weight) for g in vertex.groups if g.weight > 0.001]
         if len(weighted) != 1 or abs(weighted[0][1] - 1.0) > 1e-4:
             raise RuntimeError(f'Vertex {vertex.index} has ambiguous weights: {weighted}')
 
-    manifest = {'source': 'vazgriz/FlightSim_F16', 'license': 'MIT', 'parts': {}}
+    partition_counts = validate_partition(mesh_obj)
+    manifest = {
+        'source': 'vazgriz/FlightSim_F16',
+        'source_revision': 'df9a4162f0afbdae92bf386ed9503737e0edbecd',
+        'license': 'MIT',
+        'source_axes': '+X right, +Y nose, +Z up',
+        'full_authority_axes': '+X right, +Y up, +Z nose',
+        'parts': {},
+    }
     for part in PARTS:
         bone = armature.data.bones.get(part)
         if bone is None:
             raise RuntimeError(f'Missing authored bone {part}')
         pivot_source = bone.head_local if part != 'Root' else Vector((0, 0, 0))
-        manifest['parts'][part] = write_part_obj(mesh_obj, part, out_dir / FILE_NAMES[part], pivot_source)
-        manifest['parts'][part]['bone_head_source'] = list(bone.head_local)
-        manifest['parts'][part]['bone_tail_source'] = list(bone.tail_local)
+        info = write_part_obj(mesh_obj, part, out_dir / FILE_NAMES[part], pivot_source)
+        basis = bone.matrix_local.to_3x3()
+        # The source animation curves rotate all authored moving surfaces around
+        # their local quaternion X component. Convert that rest-space local-X
+        # direction into Full Authority coordinates and store it explicitly.
+        axis = normal_to_fa(basis.col[0])
+        info.update({
+            'source_bone': part,
+            'bone_head_source': list(bone.head_local),
+            'bone_tail_source': list(bone.tail_local),
+            'rotation_axis': list(axis),
+            'source_triangles': partition_counts[part],
+        })
+        manifest['parts'][part] = info
 
-    # Record full source bounds after coordinate conversion.
     coords = [to_fa(v.co) for v in mesh_obj.data.vertices]
     manifest['bounds'] = {
         'min': [min(v[i] for v in coords) for i in range(3)],
@@ -160,24 +171,16 @@ def export_afterburner():
         raise RuntimeError('Afterburner mesh not found')
     mesh = mesh_obj.data
     mesh.calc_loop_triangles()
-    positions = []
-    normals = []
-    uvs = []
-    faces = []
+    positions, normals, uvs, faces = [], [], [], []
     uv_layer = mesh.uv_layers.active.data if mesh.uv_layers.active else None
-    # Its source local -Y extends aft. Map to Full Authority -Z aft.
     for tri in mesh.loop_triangles:
         face = []
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             src = mesh.vertices[loop.vertex_index].co
-            p = Vector((src.x, src.z, src.y))
-            positions.append(p)
-            if uv_layer:
-                uv = uv_layer[loop_index].uv
-                uvs.append((uv.x, uv.y))
-            else:
-                uvs.append((0, 0))
+            positions.append(Vector((src.x, src.z, src.y)))
+            uv = uv_layer[loop_index].uv if uv_layer else (0.0, 0.0)
+            uvs.append((float(uv[0]), float(uv[1])))
             normals.append(normal_to_fa(loop.normal))
             face.append(len(positions))
         faces.append(face)
