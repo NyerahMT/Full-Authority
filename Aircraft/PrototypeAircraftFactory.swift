@@ -151,7 +151,8 @@ enum PrototypeAircraftFactory {
                 material: controlMaterial
             )
 
-            addNozzle(to: visualRoot)
+            // The authored static F-16 mesh already contains the exhaust/nozzle.
+            // Do not cover it with a generated cylinder or sphere overlay.
             try addAfterburner(to: visualRoot)
             addLandingGear(to: aircraft)
         } catch {
@@ -182,40 +183,19 @@ enum PrototypeAircraftFactory {
         root.addChild(hinge)
     }
 
-    private static func addNozzle(to root: Entity) {
-        let nozzle = ModelEntity(
-            mesh: .generateCylinder(height: 0.34, radius: 0.47),
-            materials: [SimpleMaterial(
-                color: UIColor(red: 0.12, green: 0.125, blue: 0.13, alpha: 1),
-                roughness: 0.31,
-                isMetallic: true
-            )]
-        )
-        nozzle.name = nozzleName
-        nozzle.position = [0, -0.16, -6.90]
-        nozzle.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
-        root.addChild(nozzle)
-
-        let glow = ModelEntity(
-            mesh: .generateSphere(radius: 0.34),
-            materials: [SimpleMaterial(
-                color: UIColor(red: 0.34, green: 0.53, blue: 0.78, alpha: 0.20),
-                isMetallic: false
-            )]
-        )
-        glow.name = nozzleGlowName
-        glow.position = [0, -0.16, -7.10]
-        glow.scale = [1, 1, 0.24]
-        glow.isEnabled = false
-        root.addChild(glow)
-    }
-
     private static func addAfterburner(to root: Entity) throws {
         let plumeMesh = try loadAuthoredOBJ("afterburner_plume")
         let plume = Entity()
         plume.name = afterburnerName
         plume.position = [0, -0.16, -7.03]
         plume.isEnabled = false
+
+        // The authored afterburner FBX's long axis imports as local +Y while
+        // Full Authority's aircraft points forward along +Z. Rotate the mesh
+        // children so +Y becomes -Z (dead aft) while leaving the plume parent
+        // unrotated; the runtime can then continue using parent Z scale as its
+        // longitudinal intensity/length axis.
+        let aftRotation = simd_quatf(angle: -.pi / 2, axis: SIMD3<Float>(1, 0, 0))
 
         let outer = ModelEntity(
             mesh: plumeMesh,
@@ -225,6 +205,7 @@ enum PrototypeAircraftFactory {
             )]
         )
         outer.name = afterburnerOuterName
+        outer.orientation = aftRotation
         plume.addChild(outer)
 
         let inner = ModelEntity(
@@ -235,26 +216,12 @@ enum PrototypeAircraftFactory {
             )]
         )
         inner.name = afterburnerInnerName
-        inner.scale = [0.55, 0.55, 0.72]
+        inner.orientation = aftRotation
+        inner.scale = [0.55, 0.72, 0.55]
         plume.addChild(inner)
 
-        // Supersonic exhaust shock cells are represented as a short series of
-        // faint hot cores inside the authored plume envelope. They are visual
-        // exhaust structure only and never feed forces back into JSBSim.
-        for index in 0..<4 {
-            let diamond = ModelEntity(
-                mesh: .generateSphere(radius: 0.24),
-                materials: [SimpleMaterial(
-                    color: UIColor(red: 0.78, green: 0.88, blue: 1.0, alpha: 0.22),
-                    isMetallic: false
-                )]
-            )
-            diamond.name = "FA.aircraft.afterburner.diamond.\(index)"
-            diamond.position = [0, 0, -0.72 - Float(index) * 0.82]
-            diamond.scale = [1.15 - Float(index) * 0.10, 0.74, 1.55]
-            plume.addChild(diamond)
-        }
-
+        // No generated sphere "shock diamonds" here. The authored plume envelope
+        // is the only afterburner geometry, so chase view cannot expose round blobs.
         root.addChild(plume)
     }
 
