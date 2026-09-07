@@ -32,9 +32,6 @@ final class FlightSimulation: ObservableObject {
         bridge.setDeltaTime(fixedStep)
         backendStatus = .bridgeReady(version: bridge.version)
 
-        // Stage 005 uses the upstream F-15 as a simple fixed-wing calibration
-        // aircraft. It keeps the renderer, controls, and coordinate mapping easy
-        // to reason about before Full Authority gets its own aircraft models.
         _ = loadModel(named: "f15")
     }
 
@@ -94,11 +91,10 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("ic/psi-true-deg", value: 0)
 
         if modelName == "f15" {
-            // Start already established in low-level flight. This removes taxi,
-            // engine-start, and takeoff variables while we validate handling,
-            // camera behavior, and visual depth cues.
-            bridge.setProperty("ic/h-agl-ft", value: 1_500)
-            bridge.setProperty("ic/vg-fps", value: 500)
+            // Stage 006 deliberately starts lower and a little slower so nearby
+            // terrain produces useful parallax and closure-rate cues on a phone.
+            bridge.setProperty("ic/h-agl-ft", value: 900)
+            bridge.setProperty("ic/vg-fps", value: 430)
             bridge.setProperty("ic/theta-deg", value: 2)
             bridge.setProperty("ic/gamma-deg", value: 0)
         } else {
@@ -111,8 +107,6 @@ final class FlightSimulation: ObservableObject {
     private func configureModelSystems(for modelName: String) {
         guard modelName == "f15" else { return }
 
-        // JSBSim's turbine helper accepts -1 as "set every engine running".
-        // Gear/flaps are kept clean for an airborne handling calibration.
         bridge.setProperty("propulsion/set-running", value: -1)
         bridge.setProperty("gear/gear-cmd-norm", value: 0)
         bridge.setProperty("fcs/flap-cmd-norm", value: 0)
@@ -120,8 +114,12 @@ final class FlightSimulation: ObservableObject {
     }
 
     private func applyControls() {
-        bridge.setProperty("fcs/aileron-cmd-norm", value: Double(controls.roll))
-        bridge.setProperty("fcs/elevator-cmd-norm", value: Double(controls.pitch))
+        // The Stage 005 screen-to-FDM mapping was backwards on both stick axes.
+        // Keep the UI conventional (right = right roll, pull down = nose up) and
+        // correct the sign at the JSBSim boundary so every future input device
+        // shares the same Full Authority control convention.
+        bridge.setProperty("fcs/aileron-cmd-norm", value: -Double(controls.roll))
+        bridge.setProperty("fcs/elevator-cmd-norm", value: -Double(controls.pitch))
         bridge.setProperty("fcs/rudder-cmd-norm", value: Double(controls.rudder))
 
         bridge.setProperty("fcs/throttle-cmd-norm", value: Double(controls.throttle))
@@ -166,8 +164,6 @@ final class FlightSimulation: ObservableObject {
         let wrappedHeading = rawHeading.truncatingRemainder(dividingBy: 360)
         state.headingDegrees = wrappedHeading >= 0 ? wrappedHeading : wrappedHeading + 360
 
-        // Rotor fields remain in AircraftState because helicopters are still on
-        // the roadmap, but a fixed-wing calibration aircraft reports none.
         state.mainRotorRPM = 0
         state.tailRotorRPM = 0
         state.mainRotorPhaseRadians = 0

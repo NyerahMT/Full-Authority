@@ -60,7 +60,7 @@ struct ContentView: View {
             Text("FULL AUTHORITY")
                 .font(.system(size: 17, weight: .black, design: .rounded))
 
-            Text("CALIBRATION 005 · F-15")
+            Text("STAGE 006 · F-15 · VISUAL PASS")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(.secondary)
 
@@ -71,18 +71,18 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
+        .background(.black.opacity(0.40), in: RoundedRectangle(cornerRadius: 13))
     }
 
     private var enginePanel: some View {
         HStack(spacing: 12) {
             telemetryItem("THR", String(format: "%.0f%%", simulation.controls.throttle * 100))
             telemetryItem("FDM", "F-15")
-            telemetryItem("MODE", "CHASE")
+            telemetryItem("CAM", "CLOSE")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
+        .background(.black.opacity(0.40), in: RoundedRectangle(cornerRadius: 13))
     }
 
     private var telemetryPanel: some View {
@@ -97,7 +97,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 13))
+        .background(.black.opacity(0.40), in: RoundedRectangle(cornerRadius: 13))
     }
 
     private func telemetryItem(_ label: String, _ value: String) -> some View {
@@ -145,7 +145,7 @@ private struct ThrottleControl: View {
 
                 ZStack(alignment: .bottom) {
                     RoundedRectangle(cornerRadius: 11)
-                        .fill(.black.opacity(0.48))
+                        .fill(.black.opacity(0.44))
                         .frame(width: 26)
 
                     RoundedRectangle(cornerRadius: 8)
@@ -186,7 +186,7 @@ private struct ThrottleControl: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 18))
+        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -213,7 +213,7 @@ private struct RudderControl: View {
 
                 ZStack {
                     Capsule()
-                        .fill(.black.opacity(0.52))
+                        .fill(.black.opacity(0.48))
                         .frame(height: 30)
 
                     Rectangle()
@@ -242,7 +242,7 @@ private struct RudderControl: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
+        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -268,7 +268,7 @@ private struct StickControl: View {
 
                 ZStack {
                     Circle()
-                        .fill(.black.opacity(0.52))
+                        .fill(.black.opacity(0.48))
                     Circle()
                         .stroke(.white.opacity(0.22), lineWidth: 1)
                         .padding(side * 0.23)
@@ -309,8 +309,8 @@ private struct StickControl: View {
                             }
 
                             var normalizedRoll = Float(dx / radius)
-                            // Pulling the touch stick down is nose-up, matching a
-                            // conventional aircraft stick rather than a screen axis.
+                            // Conventional stick: pull down for nose-up, move right
+                            // for right roll. FlightSimulation handles FDM signs.
                             var normalizedPitch = Float(dy / radius)
                             if abs(normalizedRoll) < 0.04 { normalizedRoll = 0 }
                             if abs(normalizedPitch) < 0.04 { normalizedPitch = 0 }
@@ -322,7 +322,7 @@ private struct StickControl: View {
             .frame(width: 166, height: 166)
         }
         .padding(11)
-        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 22))
+        .background(.black.opacity(0.44), in: RoundedRectangle(cornerRadius: 22))
     }
 }
 
