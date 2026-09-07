@@ -13,6 +13,10 @@ struct FlightControls: Equatable, Sendable {
     /// Rudder. -1 = full left, +1 = full right.
     var rudder: Float = 0
 
+    /// Aircraft system commands passed directly into JSBSim.
+    var gearDown = false
+    var speedbrakeExtended = false
+
     mutating func clampToValidRange() {
         roll = roll.clamped(to: -1...1)
         pitch = pitch.clamped(to: -1...1)
