@@ -8,5 +8,6 @@ Physical-device checks for the Stage 010.7 mesh/effects pass:
 - Every stabilator triangle must lie fully inside the tail planform/height gate; fuselage/root triangles must remain in the static shell.
 - Hinge pivots are exact mirror pairs.
 - JSBSim dht-left and dht-right angles are used directly with mirror-correct hinge axes.
+- Left aileron presentation follows the mature F-16 convention: JSBSim's mirrored left sign is inverted at the visual hinge while the right side is used directly.
 - External CHASE/CLOSE drag orbit and RECENTER remain functional.
 - Contrail activation retains the Stage 010.6 atmosphere logic; visible wake geometry uses the Stage 010.7 core/vortex/secondary-wake model.
