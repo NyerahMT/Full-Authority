@@ -7,14 +7,14 @@ struct FlightControls: Equatable, Sendable {
     /// Longitudinal stick. -1 = full nose-down, +1 = full nose-up.
     var pitch: Float = 0
 
-    /// Engine throttle. 0 = idle, 1 = maximum command.
-    var throttle: Float = 0.72
+    /// Engine throttle. Stage 2 starts on the runway near idle.
+    var throttle: Float = 0.05
 
     /// Rudder. -1 = full left, +1 = full right.
     var rudder: Float = 0
 
     /// Aircraft system commands passed directly into JSBSim.
-    var gearDown = false
+    var gearDown = true
     var speedbrakeExtended = false
 
     /// Symmetric wheel-brake command. 0 = released, 1 = full braking.
