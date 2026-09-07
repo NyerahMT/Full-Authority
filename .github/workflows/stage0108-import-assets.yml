@@ -1,0 +1,50 @@
+name: Stage 010.8 import authored F-16 assets
+
+on:
+  push:
+    branches: [stage-010-8-authored-f16-audio]
+    paths:
+      - Scripts/import_authored_f16.py
+      - .github/workflows/stage0108-import-assets.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage-010-8-authored-f16-audio
+      - name: Install import tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs blender python3-numpy file
+          git lfs install
+      - name: Fetch MIT authored F-16 source
+        run: |
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/vazgriz/FlightSim_F16.git /tmp/FlightSim_F16
+          cd /tmp/FlightSim_F16
+          git lfs pull --include="Assets/Models/F16.fbx,Assets/Models/afterburner.fbx,Assets/Textures/f16.png,Assets/Textures/afterburner.png"
+          file Assets/Models/F16.fbx Assets/Models/afterburner.fbx Assets/Textures/f16.png Assets/Textures/afterburner.png
+      - name: Export RealityKit-friendly parts
+        run: |
+          rm -rf Models/AuthoredF16
+          blender -b --python Scripts/import_authored_f16.py -- \
+            /tmp/FlightSim_F16/Assets/Models/F16.fbx \
+            /tmp/FlightSim_F16/Assets/Models/afterburner.fbx \
+            /tmp/FlightSim_F16/Assets/Textures/f16.png \
+            /tmp/FlightSim_F16/Assets/Textures/afterburner.png \
+            Models/AuthoredF16 \
+            /tmp/FlightSim_F16/license.txt
+          ls -lh Models/AuthoredF16
+          cat Models/AuthoredF16/manifest.json
+      - name: Commit imported assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Models/AuthoredF16
+          git diff --cached --quiet || git commit -m "Import authored MIT F-16 visual assets"
+          git push origin HEAD:stage-010-8-authored-f16-audio
