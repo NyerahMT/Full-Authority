@@ -30,13 +30,13 @@ cp "$SOURCE_ROOT/engine/F100-PW-229.xml" "$RESOURCE_ROOT/engine/F100-PW-229.xml"
 cp "$SOURCE_ROOT/engine/direct.xml" "$RESOURCE_ROOT/engine/direct.xml"
 cp "$SOURCE_ROOT/COPYING" "$RESOURCE_ROOT/licenses/JSBSim-COPYING.txt"
 
-# Stage 010.3 keeps the upstream F-16 aerodynamic tables intact, but corrects
-# the old yaw-control-law behavior. The upstream yaw PID treats pedal input as
-# a desired yaw-rate term; JSBSim maintainers have also called that high-level
-# logic into question. Full Authority instead sends pedal deflection directly
-# into the rudder scheduler while the existing rate/load PID acts only as a
-# damper. The leading '-' also converts Full Authority's current UI/bridge sign
-# to the model's positive nose-right aerodynamic rudder convention.
+# Stage 010.3 keeps the upstream aerodynamic coefficient tables intact but uses
+# a conservative yaw command path. The previous experimental PID multiplied
+# yaw-rate feedback by up to 100 before a delayed rudder actuator, which caused
+# the on-device hunting/oscillation. Pedal authority is now direct, with only a
+# small proportional yaw-rate and lateral-load damper. No I/D terms are used.
+# Full Authority currently sends the airborne command with the opposite sign,
+# so the leading '-' converts it back to the model's positive rudder convention.
 python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
 from pathlib import Path
 import re
@@ -49,52 +49,32 @@ pattern = re.compile(
     re.S,
 )
 replacement = '''  <channel name="Yaw">
-   <!-- Full Authority Stage 010.3: direct pedal + rate/load yaw damper. -->
-   <scheduled_gain name="fcs/yaw-rate-norm">
+   <!-- Full Authority Stage 010.3b: direct pedal + gentle proportional damper. -->
+   <scheduled_gain name="fcs/yaw-rate-damper">
     <input>velocities/r-aero-rad_sec</input>
     <table>
      <independentVar>velocities/vg-fps</independentVar>
      <tableData>
-      80.0   0.0
-      100.0 15.0
-      150.0 100.0
+       0.0    0.00
+      80.0    0.00
+     120.0   -0.30
+     250.0   -0.65
+     700.0   -0.55
+    1800.0   -0.40
      </tableData>
     </table>
    </scheduled_gain>
 
-   <pure_gain name="fcs/yaw-load-norm">
+   <pure_gain name="fcs/yaw-load-damper">
     <input>accelerations/n-pilot-y-norm</input>
-    <gain>0.25</gain>
+    <gain>-0.06</gain>
    </pure_gain>
-
-   <summer name="fcs/yaw-damper-error">
-    <input>-fcs/yaw-rate-norm</input>
-    <input>-fcs/yaw-load-norm</input>
-   </summer>
-
-   <switch name="fcs/rudder-pid-trigger">
-    <default value="1"/>
-    <test value="0">
-     velocities/vc-kts lt 10.0
-    </test>
-   </switch>
-
-   <pid name="fcs/yaw-load-pid">
-    <trigger>fcs/rudder-pid-trigger</trigger>
-    <input>fcs/yaw-damper-error</input>
-    <kp>0.105500</kp>
-    <ki>0.000010</ki>
-    <kd>0.00005</kd>
-    <clipto>
-     <min>-1</min>
-     <max>1</max>
-    </clipto>
-   </pid>
 
    <summer name="fcs/yaw-scheduler">
     <input>-fcs/rudder-cmd-norm</input>
     <input>fcs/yaw-trim-cmd-norm</input>
-    <input>fcs/yaw-load-pid</input>
+    <input>fcs/yaw-rate-damper</input>
+    <input>fcs/yaw-load-damper</input>
     <clipto>
      <min>-1</min>
      <max>1</max>
@@ -106,11 +86,11 @@ replacement = '''  <channel name="Yaw">
     <traverse>
      <setting>
       <position>-1</position>
-      <time>0.4</time>
+      <time>0.32</time>
      </setting>
      <setting>
       <position>1</position>
-      <time>0.4</time>
+      <time>0.32</time>
      </setting>
     </traverse>
     <output>fcs/rudder-pos-norm</output>
@@ -133,7 +113,7 @@ if count != 1:
 path.write_text(updated, encoding="utf-8")
 PY
 
-grep -q 'Full Authority Stage 010.3' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'Full Authority Stage 010.3b' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
 # JSBSim intentionally does not ship render art. Stage a pinned, MIT-licensed
 # F-16 OBJ rather than fabricating an aircraft from RealityKit primitives.
@@ -209,4 +189,4 @@ done
 grep -q '^o f16' "$MODEL_ROOT/f16.obj"
 grep -q '^f ' "$MODEL_ROOT/f16.obj"
 
-echo "Staged JSBSim F-16, corrected yaw control law, terrain texture and pinned F-16 render mesh"
+echo "Staged JSBSim F-16, stable yaw control law, terrain texture and pinned F-16 render mesh"
