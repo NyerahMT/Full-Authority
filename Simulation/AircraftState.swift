@@ -11,10 +11,15 @@ struct AircraftState: Equatable, Sendable {
     var velocityMetersPerSecond: SIMD3<Float> = .zero
     var angularVelocityRadiansPerSecond: SIMD3<Float> = .zero
 
+    /// Height above the JSBSim terrain plane.
     var altitudeMeters: Float = 0
+    var altitudeFeetMSL: Float = 0
     var airspeedMetersPerSecond: Float = 0
+    var calibratedAirspeedKnots: Float = 0
+    var groundSpeedKnots: Float = 0
     var verticalSpeedMetersPerSecond: Float = 0
     var headingDegrees: Float = 0
+    var flightPathAngleDegrees: Float = 0
 
     /// Additional raw JSBSim telemetry used by the in-game HUD.
     var rollDegrees: Float = 0
@@ -23,6 +28,12 @@ struct AircraftState: Equatable, Sendable {
     var angleOfAttackDegrees: Float = 0
     var sideslipDegrees: Float = 0
     var loadFactorG: Float = 1
+    var dynamicPressurePSF: Float = 0
+
+    /// Actual system state read back from JSBSim rather than inferred from UI commands.
+    var gearPosition: Float = 0
+    var speedbrakePosition: Float = 0
+    var weightOnWheels = false
 
     // Retained for the helicopter path when Full Authority returns to rotary wing.
     var mainRotorRPM: Float = 0
