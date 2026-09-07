@@ -89,7 +89,7 @@ struct ContentView: View {
         let knots = simulation.state.airspeedMetersPerSecond * 1.94384
         let verticalSpeed = simulation.state.verticalSpeedMetersPerSecond
 
-        return HStack(sping: 12) {
+        return HStack(spacing: 12) {
             telemetryItem("ALT", String(format: "%.0f m", simulation.state.altitudeMeters))
             telemetryItem("IAS", String(format: "%.0f kt", knots))
             telemetryItem("V/S", String(format: "%+.1f", verticalSpeed))
