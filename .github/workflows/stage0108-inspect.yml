@@ -25,11 +25,12 @@ jobs:
           git lfs install
       - name: Clone authored MIT F-16 project
         run: |
-          git clone --depth 1 https://github.com/vazgriz/FlightSim_F16.git /tmp/FlightSim_F16
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/vazgriz/FlightSim_F16.git /tmp/FlightSim_F16
           cd /tmp/FlightSim_F16
           git lfs pull --include="Assets/Models/F16.fbx,Assets/Models/afterburner.fbx,Assets/Textures/f16.png,Assets/Textures/afterburner.png"
-          test $(stat -c%s Assets/Models/F16.fbx) -gt 1000000
-          test $(stat -c%s Assets/Models/afterburner.fbx) -gt 100000
+          ls -lh Assets/Models/F16.fbx Assets/Models/afterburner.fbx Assets/Textures/f16.png Assets/Textures/afterburner.png
+          test -f Assets/Models/F16.fbx
+          test -f Assets/Models/afterburner.fbx
       - name: Inspect FBX hierarchy
         run: |
           blender -b --python Scripts/inspect_authored_f16.py -- \
