@@ -61,7 +61,6 @@ enum PrototypeAircraftFactory {
 
             addVisualDetail(to: visualRoot)
             addAnimatedSurfaces(to: visualRoot)
-            addFlightEffects(to: visualRoot)
 
             // Landing gear is positioned directly from the F-16 JSBSim contact
             // geometry relative to CG, so it intentionally does not inherit the
@@ -150,58 +149,91 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addAnimatedSurfaces(to root: Entity) {
-        // These are visual overlays because the source OBJ is one welded mesh.
-        // Stage 010.2 anchors every overlay at its hinge instead of rotating a
-        // floating box around its center. Neutral positions sit on the trailing
-        // edges of the source F-16 silhouette and deflect aft of the hinge.
-        let panelColor = UIColor(red: 0.355, green: 0.37, blue: 0.38, alpha: 1)
+        // The staged OBJ is a welded airframe, so animated surfaces are separate
+        // overlays. Stage 010.3b uses actual planform-shaped meshes rooted on the
+        // hinge lines instead of center-rotated boxes floating near the airplane.
+        let panelColor = UIColor(red: 0.335, green: 0.35, blue: 0.36, alpha: 1)
 
-        let speedbrake = ModelEntity(
-            mesh: .generateBox(size: [0.92, 0.035, 0.90], cornerRadius: 0.035),
-            materials: [SimpleMaterial(color: panelColor, isMetallic: false)]
-        )
+        // F-16 speedbrakes sit on the aft fuselage. Keep one named hinge root so
+        // the scene can animate the pair together while the panels remain split.
+        let speedbrake = Entity()
         speedbrake.name = speedbrakeName
-        speedbrake.position = [0, 0.02, -2.62]
+        speedbrake.position = [0, -0.16, -4.00]
+        if let leftMesh = makeHorizontalSurfaceMesh(
+            outline: [[-1.10, 0.00], [-0.18, 0.00], [-0.22, -0.78], [-0.98, -0.62]],
+            thickness: 0.026
+        ) {
+            let left = ModelEntity(mesh: leftMesh, materials: [SimpleMaterial(color: panelColor, isMetallic: false)])
+            speedbrake.addChild(left)
+        }
+        if let rightMesh = makeHorizontalSurfaceMesh(
+            outline: [[0.18, 0.00], [1.10, 0.00], [0.98, -0.62], [0.22, -0.78]],
+            thickness: 0.026
+        ) {
+            let right = ModelEntity(mesh: rightMesh, materials: [SimpleMaterial(color: panelColor, isMetallic: false)])
+            speedbrake.addChild(right)
+        }
         root.addChild(speedbrake)
 
-        root.addChild(hingedSurface(
+        root.addChild(horizontalHingedSurface(
             name: leftAileronName,
-            hingePosition: [-3.48, -1.00, -2.18],
-            size: [1.52, 0.035, 0.46],
-            childOffset: [0, 0, -0.23],
+            hingePosition: [-3.40, -1.00, -2.12],
+            outline: [
+                [-0.86, 0.00],
+                [0.82, 0.00],
+                [0.65, -0.49],
+                [-0.72, -0.42]
+            ],
             color: panelColor
         ))
-        root.addChild(hingedSurface(
+        root.addChild(horizontalHingedSurface(
             name: rightAileronName,
-            hingePosition: [3.48, -1.00, -2.18],
-            size: [1.52, 0.035, 0.46],
-            childOffset: [0, 0, -0.23],
+            hingePosition: [3.40, -1.00, -2.12],
+            outline: [
+                [-0.82, 0.00],
+                [0.86, 0.00],
+                [0.72, -0.42],
+                [-0.65, -0.49]
+            ],
             color: panelColor
         ))
 
-        root.addChild(hingedSurface(
+        // Horizontal tails are intentionally larger than the old boxes and are
+        // centered around the actual aft planform. Their root is the hinge axis.
+        root.addChild(horizontalHingedSurface(
             name: leftElevatorName,
-            hingePosition: [-1.72, -0.82, -4.58],
-            size: [1.92, 0.040, 1.02],
-            childOffset: [0, 0, -0.51],
+            hingePosition: [-1.66, -0.82, -4.47],
+            outline: [
+                [-1.30, 0.00],
+                [0.94, 0.00],
+                [0.70, -1.23],
+                [-0.95, -1.04]
+            ],
             color: panelColor
         ))
-        root.addChild(hingedSurface(
+        root.addChild(horizontalHingedSurface(
             name: rightElevatorName,
-            hingePosition: [1.72, -0.82, -4.58],
-            size: [1.92, 0.040, 1.02],
-            childOffset: [0, 0, -0.51],
+            hingePosition: [1.66, -0.82, -4.47],
+            outline: [
+                [-0.94, 0.00],
+                [1.30, 0.00],
+                [0.95, -1.04],
+                [-0.70, -1.23]
+            ],
             color: panelColor
         ))
 
-        // Rudder hinge runs vertically through the aft fin. The visible panel is
-        // offset aft/up from that axis so yaw deflection no longer swings a box
-        // through the center of the tail.
-        root.addChild(hingedSurface(
+        // Rudder plane is Y/Z with a true vertical hinge axis. The panel tapers
+        // with the fin instead of rotating a rectangular block through the tail.
+        root.addChild(verticalHingedSurface(
             name: rudderName,
-            hingePosition: [0, 0.08, -5.08],
-            size: [0.055, 1.34, 0.78],
-            childOffset: [0, 0.67, -0.39],
+            hingePosition: [0, 0.16, -5.03],
+            outline: [
+                [0.00, 0.00],
+                [1.82, 0.12],
+                [1.50, -0.83],
+                [0.16, -0.92]
+            ],
             color: panelColor
         ))
     }
@@ -241,53 +273,111 @@ enum PrototypeAircraftFactory {
         ))
     }
 
-    private static func addFlightEffects(to root: Entity) {
-        let vaporColor = UIColor(red: 0.92, green: 0.96, blue: 1.0, alpha: 0.24)
-
-        let leftVapor = ellipsoid(radii: [0.22, 0.08, 2.4], color: vaporColor, metallic: false)
-        leftVapor.name = vaporLeftName
-        leftVapor.position = [-3.75, -1.0, -4.5]
-        leftVapor.isEnabled = false
-        root.addChild(leftVapor)
-
-        let rightVapor = ellipsoid(radii: [0.22, 0.08, 2.4], color: vaporColor, metallic: false)
-        rightVapor.name = vaporRightName
-        rightVapor.position = [3.75, -1.0, -4.5]
-        rightVapor.isEnabled = false
-        root.addChild(rightVapor)
-
-        let contrailColor = UIColor(red: 0.95, green: 0.97, blue: 1.0, alpha: 0.18)
-        let leftContrail = ellipsoid(radii: [0.12, 0.12, 7.0], color: contrailColor, metallic: false)
-        leftContrail.name = contrailLeftName
-        leftContrail.position = [-1.15, -1.10, -13.3]
-        leftContrail.isEnabled = false
-        root.addChild(leftContrail)
-
-        let rightContrail = ellipsoid(radii: [0.12, 0.12, 7.0], color: contrailColor, metallic: false)
-        rightContrail.name = contrailRightName
-        rightContrail.position = [1.15, -1.10, -13.3]
-        rightContrail.isEnabled = false
-        root.addChild(rightContrail)
-    }
-
-    private static func hingedSurface(
+    private static func horizontalHingedSurface(
         name: String,
         hingePosition: SIMD3<Float>,
-        size: SIMD3<Float>,
-        childOffset: SIMD3<Float>,
+        outline: [SIMD2<Float>],
         color: UIColor
     ) -> Entity {
         let hinge = Entity()
         hinge.name = name
         hinge.position = hingePosition
-
-        let panel = ModelEntity(
-            mesh: .generateBox(size: size, cornerRadius: 0.025),
-            materials: [SimpleMaterial(color: color, isMetallic: false)]
-        )
-        panel.position = childOffset
-        hinge.addChild(panel)
+        if let mesh = makeHorizontalSurfaceMesh(outline: outline, thickness: 0.034) {
+            let panel = ModelEntity(
+                mesh: mesh,
+                materials: [SimpleMaterial(color: color, isMetallic: false)]
+            )
+            hinge.addChild(panel)
+        }
         return hinge
+    }
+
+    private static func verticalHingedSurface(
+        name: String,
+        hingePosition: SIMD3<Float>,
+        outline: [SIMD2<Float>],
+        color: UIColor
+    ) -> Entity {
+        let hinge = Entity()
+        hinge.name = name
+        hinge.position = hingePosition
+        if let mesh = makeVerticalSurfaceMesh(outline: outline, thickness: 0.034) {
+            let panel = ModelEntity(
+                mesh: mesh,
+                materials: [SimpleMaterial(color: color, isMetallic: false)]
+            )
+            hinge.addChild(panel)
+        }
+        return hinge
+    }
+
+    /// Outline coordinates are (spanwise X, chordwise Z), with Z=0 on the hinge
+    /// and negative Z extending aft. Two faces give the panel visible thickness
+    /// without relying on RealityKit primitive boxes.
+    private static func makeHorizontalSurfaceMesh(
+        outline: [SIMD2<Float>],
+        thickness: Float
+    ) -> MeshResource? {
+        guard outline.count >= 3 else { return nil }
+        let half = thickness * 0.5
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var indices: [UInt32] = []
+
+        for point in outline {
+            positions.append([point.x, half, point.y])
+            normals.append([0, 1, 0])
+        }
+        for point in outline {
+            positions.append([point.x, -half, point.y])
+            normals.append([0, -1, 0])
+        }
+
+        let count = UInt32(outline.count)
+        for index in 1..<(outline.count - 1) {
+            indices.append(contentsOf: [0, UInt32(index), UInt32(index + 1)])
+            indices.append(contentsOf: [count, count + UInt32(index + 1), count + UInt32(index)])
+        }
+
+        var descriptor = MeshDescriptor(name: "F-16 horizontal control surface")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.primitives = .triangles(indices)
+        return try? MeshResource.generate(from: [descriptor])
+    }
+
+    /// Outline coordinates are (vertical Y, chordwise Z), with Z=0 on the
+    /// vertical hinge. Faces are duplicated on either side of the fin plane.
+    private static func makeVerticalSurfaceMesh(
+        outline: [SIMD2<Float>],
+        thickness: Float
+    ) -> MeshResource? {
+        guard outline.count >= 3 else { return nil }
+        let half = thickness * 0.5
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var indices: [UInt32] = []
+
+        for point in outline {
+            positions.append([half, point.x, point.y])
+            normals.append([1, 0, 0])
+        }
+        for point in outline {
+            positions.append([-half, point.x, point.y])
+            normals.append([-1, 0, 0])
+        }
+
+        let count = UInt32(outline.count)
+        for index in 1..<(outline.count - 1) {
+            indices.append(contentsOf: [0, UInt32(index), UInt32(index + 1)])
+            indices.append(contentsOf: [count, count + UInt32(index + 1), count + UInt32(index)])
+        }
+
+        var descriptor = MeshDescriptor(name: "F-16 vertical control surface")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.primitives = .triangles(indices)
+        return try? MeshResource.generate(from: [descriptor])
     }
 
     private static func gearAssembly(
