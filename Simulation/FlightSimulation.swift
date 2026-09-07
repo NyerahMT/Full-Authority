@@ -144,11 +144,15 @@ final class FlightSimulation: ObservableObject {
     private func configureModelSystems(for modelName: String) {
         guard modelName == "f16" else { return }
 
-        // Let the aircraft XML own aerodynamics, control laws and propulsion.
-        // These are configuration commands only; no forces are synthesized here.
+        // Let the aircraft XML own aerodynamics, control laws, gear friction and propulsion.
+        // These are pilot/system commands only; Full Authority synthesizes no forces here.
         bridge.setProperty("propulsion/set-running", value: -1)
         bridge.setProperty("gear/gear-cmd-norm", value: 0)
         bridge.setProperty("fcs/speedbrake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/left-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/right-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/center-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/steer-cmd-norm", value: 0)
         bridge.setProperty("fcs/fbw-override", value: 0)
         bridge.setProperty("fcs/pitch-trim-cmd-norm", value: 0)
         bridge.setProperty("fcs/roll-trim-cmd-norm", value: 0)
@@ -161,6 +165,10 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/rudder-cmd-norm", value: 0)
         bridge.setProperty("fcs/throttle-cmd-norm", value: Double(controls.throttle))
         bridge.setProperty("fcs/throttle-cmd-norm[0]", value: Double(controls.throttle))
+        bridge.setProperty("fcs/left-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/right-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/center-brake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/steer-cmd-norm", value: 0)
     }
 
     private func captureTrimCommands() {
@@ -202,6 +210,7 @@ final class FlightSimulation: ObservableObject {
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
         let rudder = clamp(trimRudderCommand + Double(controls.rudder), min: -1, max: 1)
         let throttle = clamp(Double(controls.throttle), min: 0, max: 1)
+        let brake = clamp(Double(controls.wheelBrake), min: 0, max: 1)
 
         bridge.setProperty("fcs/aileron-cmd-norm", value: aileron)
         bridge.setProperty("fcs/elevator-cmd-norm", value: elevator)
@@ -210,6 +219,17 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/throttle-cmd-norm[0]", value: throttle)
         bridge.setProperty("gear/gear-cmd-norm", value: controls.gearDown ? 1 : 0)
         bridge.setProperty("fcs/speedbrake-cmd-norm", value: controls.speedbrakeExtended ? 1 : 0)
+
+        // JSBSim's F-16 bogeys already define the tire friction coefficients and brake groups.
+        // Supplying brake and steering commands here lets that native ground-reaction model work.
+        bridge.setProperty("fcs/left-brake-cmd-norm", value: brake)
+        bridge.setProperty("fcs/right-brake-cmd-norm", value: brake)
+        bridge.setProperty("fcs/center-brake-cmd-norm", value: brake)
+
+        let steering = state.weightOnWheels && state.gearPosition > 0.8
+            ? clamp(Double(controls.rudder), min: -1, max: 1)
+            : 0
+        bridge.setProperty("fcs/steer-cmd-norm", value: steering)
     }
 
     private func readStateFromJSBSim() {
@@ -239,11 +259,18 @@ final class FlightSimulation: ObservableObject {
         )
 
         state.altitudeMeters = max(0, Float(bridge.value(forProperty: "position/h-agl-ft")) * feetToMeters)
+        state.altitudeFeetMSL = finiteFloat("position/h-sl-ft", fallback: state.altitudeMeters * 3.28084)
         updateLocalPositionFromGeodetic()
-        state.positionMeters.y = max(0.6, state.altitudeMeters)
+        state.positionMeters.y = max(0.05, state.altitudeMeters)
 
         state.airspeedMetersPerSecond = max(0, Float(bridge.value(forProperty: "velocities/vtrue-fps")) * feetToMeters)
+        state.calibratedAirspeedKnots = max(
+            0,
+            finiteFloat("velocities/vc-kts", fallback: state.airspeedMetersPerSecond * 1.94384)
+        )
+        state.groundSpeedKnots = max(0, finiteFloat("velocities/vg-fps", fallback: 0) * 0.592484)
         state.verticalSpeedMetersPerSecond = -down
+        state.flightPathAngleDegrees = finiteFloat("flight-path/gamma-deg", fallback: 0)
 
         let rawHeading = yaw * radiansToDegrees
         let wrappedHeading = rawHeading.truncatingRemainder(dividingBy: 360)
@@ -255,6 +282,11 @@ final class FlightSimulation: ObservableObject {
         state.angleOfAttackDegrees = finiteFloat("aero/alpha-deg", fallback: 0)
         state.sideslipDegrees = finiteFloat("aero/beta-deg", fallback: 0)
         state.loadFactorG = finiteFloat("accelerations/n-pilot-z-norm", fallback: 1)
+        state.dynamicPressurePSF = max(0, finiteFloat("aero/qbar-psf", fallback: 0))
+
+        state.gearPosition = clampFloat(finiteFloat("gear/gear-pos-norm", fallback: 0), min: 0, max: 1)
+        state.speedbrakePosition = clampFloat(finiteFloat("fcs/speedbrake-pos-norm", fallback: 0), min: 0, max: 1)
+        state.weightOnWheels = finiteFloat("gear/wow", fallback: 0) > 0.5
 
         state.mainRotorRPM = 0
         state.tailRotorRPM = 0
@@ -280,6 +312,10 @@ final class FlightSimulation: ObservableObject {
     private func finiteFloat(_ property: String, fallback: Float) -> Float {
         let value = Float(bridge.value(forProperty: property))
         return value.isFinite ? value : fallback
+    }
+
+    private func clampFloat(_ value: Float, min minimum: Float, max maximum: Float) -> Float {
+        Swift.min(Swift.max(value, minimum), maximum)
     }
 
     private func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {
