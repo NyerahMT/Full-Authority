@@ -9,6 +9,8 @@ private final class Stage2SceneRuntime: ObservableObject {
     var lastCameraTime: TimeInterval?
     var cameraModeKey = ""
     var cameraInitialized = false
+    var lastAirspeed: Float?
+    var chasePullbackMeters: Float = 0
     let effects = Stage2FlightEffects.Runtime()
 }
 
@@ -223,35 +225,62 @@ struct PrototypeSceneView: View {
         let aircraftPosition = state.positionMeters
         let attitude = state.orientation
 
-        let localCameraOffset: SIMD3<Float>
+        let now = ProcessInfo.processInfo.systemUptime
+        let dt: Float
+        if let last = runtime.lastCameraTime {
+            dt = clamp(Float(now - last), 1.0 / 240.0, 1.0 / 20.0)
+        } else {
+            dt = 1.0 / 60.0
+        }
+        runtime.lastCameraTime = now
+
+        // The chase rig is intentionally almost rigid. Airframe position and
+        // attitude are applied directly every render update so pitch/roll/yaw do
+        // not swim behind the JSBSim state. Only the optional longitudinal
+        // pullback is filtered, which preserves a tiny acceleration cue without
+        // turning the camera into another spring-mass system.
+        let airspeed = state.airspeedMetersPerSecond
+        if let previousAirspeed = runtime.lastAirspeed {
+            let acceleration = max(0, (airspeed - previousAirspeed) / max(dt, 1.0 / 240.0))
+            let accelerationPullback = min(acceleration * 0.075, 1.35)
+            let highSpeedResidual = clamp((airspeed - 250) / 250, 0, 1) * 0.48
+            let targetPullback = accelerationPullback + highSpeedResidual
+            let response: Float = targetPullback > runtime.chasePullbackMeters ? 11.0 : 4.8
+            let blend = 1 - exp(-response * dt)
+            runtime.chasePullbackMeters += (targetPullback - runtime.chasePullbackMeters) * blend
+        } else {
+            runtime.chasePullbackMeters = 0
+        }
+        runtime.lastAirspeed = airspeed
+
+        var localCameraOffset: SIMD3<Float>
         let localLookPoint: SIMD3<Float>
         let fieldOfView: Float
-        let positionResponse: Float
-        let rotationResponse: Float
+        let pullbackScale: Float
 
         switch cameraMode {
         case .chase:
-            localCameraOffset = [0, 4.45, -20.2]
-            localLookPoint = [0, 0.72, 3.65]
+            localCameraOffset = [0, 4.10, -17.15]
+            localLookPoint = [0, 0.72, 4.05]
             fieldOfView = 58
-            positionResponse = 6.2
-            rotationResponse = 7.5
+            pullbackScale = 1.0
 
         case .close:
-            localCameraOffset = [0, 3.05, -12.4]
-            localLookPoint = [0, 0.58, 3.95]
+            localCameraOffset = [0, 3.00, -11.75]
+            localLookPoint = [0, 0.62, 4.30]
             fieldOfView = 62
-            positionResponse = 8.4
-            rotationResponse = 9.8
+            pullbackScale = 0.55
 
         case .cockpit:
-            // Upstream F-16 eyepoint relative to CG.
+            // Upstream F-16 eyepoint relative to CG. Cockpit view has no
+            // synthetic pullback at all: it is locked to the airframe.
             localCameraOffset = [0, 0.88, 3.64]
             localLookPoint = [0, 0.88, 90]
             fieldOfView = 72
-            positionResponse = 24
-            rotationResponse = 28
+            pullbackScale = 0
         }
+
+        localCameraOffset.z -= runtime.chasePullbackMeters * pullbackScale
 
         camera.components.set(PerspectiveCameraComponent(
             near: cameraMode == .cockpit ? 0.02 : 0.08,
@@ -267,34 +296,15 @@ struct PrototypeSceneView: View {
             up: aircraftUp
         )
 
-        let now = ProcessInfo.processInfo.systemUptime
-        let dt: Float
-        if let last = runtime.lastCameraTime {
-            dt = clamp(Float(now - last), 1.0 / 240.0, 1.0 / 20.0)
-        } else {
-            dt = 1.0 / 60.0
-        }
-        runtime.lastCameraTime = now
-
-        let modeChanged = runtime.cameraModeKey != cameraMode.rawValue
-        let distance = simd_distance(camera.position, desiredPosition)
-        let shouldSnap = forceSnap || !runtime.cameraInitialized || modeChanged || distance > 110
-
-        if shouldSnap {
-            camera.position = desiredPosition
-            camera.orientation = desiredOrientation
-            runtime.cameraInitialized = true
-        } else {
-            // Exponential response is frame-rate independent and smooths BOTH
-            // translation and rotation. The old rig lagged only position while
-            // snapping aim/up vectors to raw FDM steps, which caused the shaking.
-            let positionBlend = 1 - exp(-positionResponse * dt)
-            let rotationBlend = 1 - exp(-rotationResponse * dt)
-            camera.position += (desiredPosition - camera.position) * positionBlend
-            camera.orientation = simd_slerp(camera.orientation, desiredOrientation, rotationBlend)
-        }
-
+        // Rigid means rigid: no exponential position lag and no quaternion
+        // spring. JSBSim remains authoritative; the camera simply renders the
+        // latest aircraft-relative pose.
+        camera.position = desiredPosition
+        camera.orientation = desiredOrientation
+        runtime.cameraInitialized = true
         runtime.cameraModeKey = cameraMode.rawValue
+
+        _ = forceSnap // retained by the call sites for reset/mode-change semantics
     }
 
     private func lookRotation(forward: SIMD3<Float>, up: SIMD3<Float>) -> simd_quatf {
