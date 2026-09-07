@@ -202,8 +202,9 @@ enum Stage2FlightEffects {
             // Young exhaust is narrow and bright. Wake mixing then broadens the
             // plume and shifts opacity from its core into a diffuse outer haze.
             let ageF = Float(age)
-            let coreRadius = 0.12 + 0.095 * ageF + 0.014 * ageF * ageF
-            let hazeRadius = 0.28 + 0.19 * ageF + 0.022 * ageF * ageF
+            let wakeVariation = 1 + 0.075 * sin(Float(index) * 1.71 + ageF * 0.52)
+            let coreRadius = (0.12 + 0.095 * ageF + 0.014 * ageF * ageF) * wakeVariation
+            let hazeRadius = (0.28 + 0.19 * ageF + 0.022 * ageF * ageF) * (2 - wakeVariation)
             let coreFade = pow(max(0, 1 - t), 1.45)
             let hazeEnvelope = sin(.pi * min(1, t * 1.10)) * pow(max(0, 1 - t), 0.78)
 
@@ -211,12 +212,6 @@ enum Stage2FlightEffects {
             haze.isEnabled = true
             core.scale = [coreRadius, coreRadius, runtime.lengths[index]]
             haze.scale = [hazeRadius, hazeRadius, runtime.lengths[index]]
-
-            // Very small settling/expansion displacement keeps an old plume from
-            // reading like a rigid tube attached to the aircraft trajectory.
-            let settling = ageF * ageF * 0.007
-            core.position.y -= settling * 0.010
-            haze.position.y -= settling * 0.018
 
             setEffectAlpha(core, alpha: 0.17 * strength * coreFade)
             setEffectAlpha(haze, alpha: 0.075 * strength * hazeEnvelope)
