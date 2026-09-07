@@ -23,97 +23,34 @@ F16_VISUAL_PATH="demo/R4%20iOS%20Demo/Resources/Meshes/f16.obj"
 rm -rf "$RESOURCE_ROOT/aircraft/f16"
 mkdir -p "$RESOURCE_ROOT/aircraft" "$RESOURCE_ROOT/engine" "$RESOURCE_ROOT/licenses" "$MODEL_ROOT"
 
-# Preserve the complete upstream aircraft directory. That includes reset files,
-# local systems and every other resource the FDM expects beside f16.xml.
+# Preserve the complete upstream aircraft directory. This deliberately restores
+# the stock JSBSim F-16 yaw-rate / lateral-load controller. Full Authority does
+# not replace that stability logic anymore.
 cp -R "$SOURCE_ROOT/aircraft/f16" "$RESOURCE_ROOT/aircraft/f16"
 cp "$SOURCE_ROOT/engine/F100-PW-229.xml" "$RESOURCE_ROOT/engine/F100-PW-229.xml"
 cp "$SOURCE_ROOT/engine/direct.xml" "$RESOURCE_ROOT/engine/direct.xml"
 cp "$SOURCE_ROOT/COPYING" "$RESOURCE_ROOT/licenses/JSBSim-COPYING.txt"
 
-# Stage 010.3 keeps the upstream aerodynamic coefficient tables intact but uses
-# a conservative yaw command path. The previous experimental PID multiplied
-# yaw-rate feedback by up to 100 before a delayed rudder actuator, which caused
-# the on-device hunting/oscillation. Pedal authority is now direct, with only a
-# small proportional yaw-rate and lateral-load damper. No I/D terms are used.
-# Full Authority currently sends the airborne command with the opposite sign,
-# so the leading '-' converts it back to the model's positive rudder convention.
+# Keep the upstream yaw controller intact and add only a small feed-forward term
+# in the final rudder scheduler. The stock yaw PID still owns yaw-rate and
+# lateral-load damping; this adds 12% of pedal command after that loop so touch
+# input has a little more authority without creating another feedback system.
 python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
 from pathlib import Path
-import re
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-pattern = re.compile(
-    r'  <channel name="Yaw">\n.*?\n  </channel>\n\n  <channel name="Landing Gear">',
-    re.S,
-)
-replacement = '''  <channel name="Yaw">
-   <!-- Full Authority Stage 010.3b: direct pedal + gentle proportional damper. -->
-   <scheduled_gain name="fcs/yaw-rate-damper">
-    <input>velocities/r-aero-rad_sec</input>
-    <table>
-     <independentVar>velocities/vg-fps</independentVar>
-     <tableData>
-       0.0    0.00
-      80.0    0.00
-     120.0   -0.30
-     250.0   -0.65
-     700.0   -0.55
-    1800.0   -0.40
-     </tableData>
-    </table>
-   </scheduled_gain>
-
-   <pure_gain name="fcs/yaw-load-damper">
-    <input>accelerations/n-pilot-y-norm</input>
-    <gain>-0.06</gain>
-   </pure_gain>
-
-   <summer name="fcs/yaw-scheduler">
-    <input>-fcs/rudder-cmd-norm</input>
-    <input>fcs/yaw-trim-cmd-norm</input>
-    <input>fcs/yaw-rate-damper</input>
-    <input>fcs/yaw-load-damper</input>
-    <clipto>
-     <min>-1</min>
-     <max>1</max>
-    </clipto>
-   </summer>
-
-   <kinematic name="fcs/rudder-position">
-    <input>fcs/yaw-scheduler</input>
-    <traverse>
-     <setting>
-      <position>-1</position>
-      <time>0.32</time>
-     </setting>
-     <setting>
-      <position>1</position>
-      <time>0.32</time>
-     </setting>
-    </traverse>
-    <output>fcs/rudder-pos-norm</output>
-   </kinematic>
-
-   <aerosurface_scale name="fcs/rudder-control">
-    <input>fcs/rudder-pos-norm</input>
-    <range>
-     <min>-0.524</min>
-     <max>0.524</max>
-    </range>
-    <output>fcs/rudder-pos-rad</output>
-   </aerosurface_scale>
-  </channel>
-
-  <channel name="Landing Gear">'''
-updated, count = pattern.subn(replacement, text, count=1)
-if count != 1:
-    raise SystemExit(f"expected one F-16 yaw channel, replaced {count}")
-path.write_text(updated, encoding="utf-8")
+needle = '''   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>'''
+replacement = '''   <!-- Full Authority: stock JSBSim yaw controller + modest pedal feed-forward. -->\n   <pure_gain name="fcs/fa-pedal-feedforward">\n    <input>fcs/rudder-cmd-norm</input>\n    <gain>0.12</gain>\n   </pure_gain>\n\n   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>\n     <input>fcs/fa-pedal-feedforward</input>'''
+if text.count(needle) != 1:
+    raise SystemExit(f"expected one upstream F-16 yaw scheduler, found {text.count(needle)}")
+text = text.replace(needle, replacement, 1)
+path.write_text(text, encoding="utf-8")
 PY
 
-grep -q 'Full Authority Stage 010.3b' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'stock JSBSim yaw controller + modest pedal feed-forward' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
 # JSBSim intentionally does not ship render art. Stage a pinned, MIT-licensed
 # F-16 OBJ rather than fabricating an aircraft from RealityKit primitives.
@@ -189,4 +126,4 @@ done
 grep -q '^o f16' "$MODEL_ROOT/f16.obj"
 grep -q '^f ' "$MODEL_ROOT/f16.obj"
 
-echo "Staged JSBSim F-16, stable yaw control law, terrain texture and pinned F-16 render mesh"
+echo "Staged JSBSim F-16 with upstream yaw damping, modest pedal feed-forward, terrain texture and pinned F-16 render mesh"
