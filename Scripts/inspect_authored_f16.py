@@ -11,6 +11,8 @@ out_path = Path(args[2])
 def clear_scene():
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
+    for action in list(bpy.data.actions):
+        bpy.data.actions.remove(action)
 
 
 def fmt_vec(v):
@@ -47,10 +49,15 @@ def inspect_fbx(path, title):
         elif obj.type == 'ARMATURE':
             lines.append(f'  armature bones={len(obj.data.bones)}')
             for bone in obj.data.bones:
-                lines.append(f'  BONE {bone.name} parent={bone.parent.name if bone.parent else "-"} head={fmt_vec(bone.head_local)} tail={fmt_vec(bone.tail_local)}')
-    if bpy.context.scene.animation_data and bpy.context.scene.animation_data.action:
-        lines.append(f'ACTION {bpy.context.scene.animation_data.action.name}')
-    lines.append('ACTIONS ' + ', '.join(sorted(a.name for a in bpy.data.actions)))
+                lines.append(f'  BONE {bone.name} parent={bone.parent.name if bone.parent else "-"} head={fmt_vec(bone.head_local)} tail={fmt_vec(bone.tail_local)} roll={bone.roll:.6f}')
+
+    for action in sorted(bpy.data.actions, key=lambda a: a.name):
+        lines.append(f'ACTION {action.name} frames={tuple(round(v, 4) for v in action.frame_range)}')
+        for curve in sorted(action.fcurves, key=lambda f: (f.data_path, f.array_index)):
+            if 'pose.bones' not in curve.data_path:
+                continue
+            values = ', '.join(f'{kp.co.x:.3f}:{kp.co.y:.6f}' for kp in curve.keyframe_points)
+            lines.append(f'  FCURVE {curve.data_path}[{curve.array_index}] {values}')
     lines.append('')
     return lines
 
