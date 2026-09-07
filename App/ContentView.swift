@@ -60,7 +60,7 @@ struct ContentView: View {
             Text("FULL AUTHORITY")
                 .font(.system(size: 17, weight: .black, design: .rounded))
 
-            Text("STAGE 006 · F-15 · VISUAL PASS")
+            Text("STAGE 007 · F-16A · DIRECT FDM")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(.secondary)
 
@@ -77,8 +77,8 @@ struct ContentView: View {
     private var enginePanel: some View {
         HStack(spacing: 12) {
             telemetryItem("THR", String(format: "%.0f%%", simulation.controls.throttle * 100))
-            telemetryItem("FDM", "F-15")
-            telemetryItem("CAM", "CLOSE")
+            telemetryItem("FDM", "F-16A")
+            telemetryItem("FCS", "FBW")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
