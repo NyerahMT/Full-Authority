@@ -362,6 +362,12 @@ final class FlightSimulation: ObservableObject {
         state.ambientPressurePSF = max(0, finiteFloat("atmosphere/P-psf", fallback: 2_116.22))
         state.airDensitySlugsPerCubicFoot = max(0, finiteFloat("atmosphere/rho-slugs_ft3", fallback: 0.0023769))
         state.engineFuelFlowPoundsPerSecond = max(0, finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0))
+        state.engineN1Percent = max(0, finiteFloat("propulsion/engine[0]/n1", fallback: 0))
+        state.engineN2Percent = max(0, finiteFloat("propulsion/engine[0]/n2", fallback: 0))
+        // The upstream JSBSim FGTurbine method-1 augmentation logic engages
+        // above 99% throttle once N2 exceeds 97%. Mirror that engine-state
+        // condition for visuals/audio only; JSBSim still owns actual thrust.
+        state.afterburnerActive = controls.throttle > 0.99 && state.engineN2Percent > 97.0
         state.aircraftMassKg = max(1, finiteFloat("inertia/weight-lbs", fallback: 20_944) * 0.45359237)
         let windNorth = finiteFloat("atmosphere/total-wind-north-fps", fallback: 0) * feetToMeters
         let windEast = finiteFloat("atmosphere/total-wind-east-fps", fallback: 0) * feetToMeters
