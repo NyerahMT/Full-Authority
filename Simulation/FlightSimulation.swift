@@ -275,7 +275,14 @@ final class FlightSimulation: ObservableObject {
     private func applyControls() {
         let aileron = clamp(trimAileronCommand - Double(controls.roll), min: -1, max: 1)
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
-        let rudder = clamp(trimRudderCommand + Double(controls.rudder), min: -1, max: 1)
+
+        // Full Authority's touch control is screen-centric: dragging right means
+        // right pedal / nose-right. The F-16 JSBSim model's rudder/steer command
+        // convention is opposite to that UI convention, so convert once here at
+        // the simulation boundary. This keeps airborne rudder and NWS consistent.
+        let pilotYawCommand = -Double(controls.rudder)
+        let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
+
         let throttle = clamp(Double(controls.throttle), min: 0, max: 1)
         let brake = clamp(Double(controls.wheelBrake), min: 0, max: 1)
 
@@ -291,7 +298,7 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/center-brake-cmd-norm", value: brake)
 
         let steering = state.weightOnWheels && state.gearPosition > 0.8
-            ? clamp(Double(controls.rudder), min: -1, max: 1)
+            ? clamp(pilotYawCommand, min: -1, max: 1)
             : 0
         bridge.setProperty("fcs/steer-cmd-norm", value: steering)
     }
@@ -350,10 +357,20 @@ final class FlightSimulation: ObservableObject {
         state.gearPosition = clampFloat(finiteFloat("gear/gear-pos-norm", fallback: 0), min: 0, max: 1)
         state.speedbrakePosition = clampFloat(finiteFloat("fcs/speedbrake-pos-norm", fallback: 0), min: 0, max: 1)
         state.weightOnWheels = finiteFloat("gear/wow", fallback: 0) > 0.5
+
         state.leftAileronPosition = clampFloat(finiteFloat("fcs/left-aileron-pos-norm", fallback: 0), min: -1, max: 1)
         state.rightAileronPosition = clampFloat(finiteFloat("fcs/right-aileron-pos-norm", fallback: 0), min: -1, max: 1)
         state.elevatorPosition = clampFloat(finiteFloat("fcs/elevator-pos-norm", fallback: 0), min: -1, max: 1)
         state.rudderPosition = clampFloat(finiteFloat("fcs/rudder-pos-norm", fallback: 0), min: -1, max: 1)
+
+        // Use the model's actual surface angles for animation. In particular the
+        // F-16 mixes roll command into the differential horizontal tails, so a
+        // single generic elevator value cannot correctly animate both stabilators.
+        state.leftAileronRadians = finiteFloat("fcs/left-aileron-pos-rad", fallback: 0)
+        state.rightAileronRadians = finiteFloat("fcs/right-aileron-pos-rad", fallback: 0)
+        state.leftStabilatorRadians = finiteFloat("fcs/dht-left-pos-rad", fallback: 0)
+        state.rightStabilatorRadians = finiteFloat("fcs/dht-right-pos-rad", fallback: 0)
+        state.rudderRadians = finiteFloat("fcs/rudder-pos-rad", fallback: 0)
 
         state.mainRotorRPM = 0
         state.tailRotorRPM = 0

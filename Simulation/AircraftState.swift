@@ -36,11 +36,19 @@ struct AircraftState: Equatable, Sendable {
     var speedbrakePosition: Float = 0
     var weightOnWheels = false
 
-    /// Normalized surface positions used only to animate the visual model.
+    /// Legacy normalized surface values retained for presentation compatibility.
     var leftAileronPosition: Float = 0
     var rightAileronPosition: Float = 0
     var elevatorPosition: Float = 0
     var rudderPosition: Float = 0
+
+    /// Actual F-16 surface angles from the JSBSim FCS. These are the values the
+    /// renderer should use for hinge animation instead of guessed multipliers.
+    var leftAileronRadians: Float = 0
+    var rightAileronRadians: Float = 0
+    var leftStabilatorRadians: Float = 0
+    var rightStabilatorRadians: Float = 0
+    var rudderRadians: Float = 0
 
     // Retained for the helicopter path when Full Authority returns to rotary wing.
     var mainRotorRPM: Float = 0
