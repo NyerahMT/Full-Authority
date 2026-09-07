@@ -18,6 +18,10 @@ struct PrototypeSceneView: View {
     @ObservedObject var simulation: FlightSimulation
     @State private var cameraMode: CameraMode = .chase
     @StateObject private var runtime = Stage2SceneRuntime()
+    @State private var orbitYawRadians: Float = 0
+    @State private var orbitPitchRadians: Float = 0
+    @State private var orbitGestureOrigin = SIMD2<Float>.zero
+    @State private var orbitGestureActive = false
 
     private enum CameraMode: String, CaseIterable {
         case chase = "CHASE"
@@ -109,6 +113,10 @@ struct PrototypeSceneView: View {
             }
             .background(stage2Sky)
 
+            if !simulation.isPaused && cameraMode != .cockpit {
+                orbitGestureSurface
+            }
+
             if !simulation.isPaused {
                 cameraSelector
             }
@@ -137,8 +145,31 @@ struct PrototypeSceneView: View {
 
     private var cameraSelector: some View {
         VStack {
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
+
+                if cameraHasOrbitOffset && cameraMode != .cockpit {
+                    Button {
+                        orbitYawRadians = 0
+                        orbitPitchRadians = 0
+                        orbitGestureActive = false
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "scope")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("RECENTER")
+                                .font(.system(size: 9, weight: .black, design: .monospaced))
+                                .tracking(0.45)
+                        }
+                        .foregroundStyle(.white.opacity(0.90))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .background(.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Button {
                     cameraMode = cameraMode.next
                 } label: {
@@ -161,6 +192,46 @@ struct PrototypeSceneView: View {
             .padding(.top, 50)
             Spacer()
         }
+    }
+
+    private var cameraHasOrbitOffset: Bool {
+        abs(orbitYawRadians) > 0.008 || abs(orbitPitchRadians) > 0.008
+    }
+
+    private var orbitGestureSurface: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: geometry.size.width * 0.56, height: geometry.size.height * 0.50)
+                .position(x: geometry.size.width * 0.50, y: geometry.size.height * 0.48)
+                .gesture(
+                    DragGesture(minimumDistance: 4)
+                        .onChanged { value in
+                            if !orbitGestureActive {
+                                orbitGestureOrigin = SIMD2<Float>(orbitYawRadians, orbitPitchRadians)
+                                orbitGestureActive = true
+                            }
+                            let sensitivity: Float = 0.0045
+                            orbitYawRadians = wrappedAngle(
+                                orbitGestureOrigin.x - Float(value.translation.width) * sensitivity
+                            )
+                            orbitPitchRadians = clamp(
+                                orbitGestureOrigin.y + Float(value.translation.height) * sensitivity,
+                                -0.72,
+                                0.62
+                            )
+                        }
+                        .onEnded { _ in orbitGestureActive = false }
+                )
+        }
+        .allowsHitTesting(true)
+    }
+
+    private func wrappedAngle(_ value: Float) -> Float {
+        var angle = value.truncatingRemainder(dividingBy: 2 * Float.pi)
+        if angle > Float.pi { angle -= 2 * Float.pi }
+        if angle < -Float.pi { angle += 2 * Float.pi }
+        return angle
     }
 
     @ViewBuilder
@@ -199,6 +270,8 @@ struct PrototypeSceneView: View {
                         cameraMode = .chase
                         runtime.cameraInitialized = false
                         runtime.cameraModeKey = ""
+                        orbitYawRadians = 0
+                        orbitPitchRadians = 0
                     } label: {
                         Text("RESET TO RUNWAY")
                             .font(.system(size: 11, weight: .black, design: .monospaced))
@@ -282,6 +355,12 @@ struct PrototypeSceneView: View {
 
         localCameraOffset.z -= runtime.chasePullbackMeters * pullbackScale
 
+        if cameraMode != .cockpit && cameraHasOrbitOffset {
+            let yawOrbit = simd_quatf(angle: orbitYawRadians, axis: [0, 1, 0])
+            let pitchOrbit = simd_quatf(angle: orbitPitchRadians, axis: [1, 0, 0])
+            localCameraOffset = simd_act(yawOrbit * pitchOrbit, localCameraOffset)
+        }
+
         camera.components.set(PerspectiveCameraComponent(
             near: cameraMode == .cockpit ? 0.02 : 0.08,
             far: 62_000,
@@ -350,22 +429,22 @@ struct PrototypeSceneView: View {
 
         // Drive each visual hinge from the actual JSBSim FCS surface angle.
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftAileronName) {
-            left.orientation = simd_quatf(angle: state.leftAileronRadians, axis: [1, 0, 0])
+            left.orientation = simd_quatf(angle: state.leftAileronRadians, axis: PrototypeAircraftFactory.leftAileronVisualAxis)
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightAileronName) {
-            right.orientation = simd_quatf(angle: state.rightAileronRadians, axis: [1, 0, 0])
+            right.orientation = simd_quatf(angle: state.rightAileronRadians, axis: PrototypeAircraftFactory.rightAileronVisualAxis)
         }
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftElevatorName) {
             // JSBSim's differential-tail left/right outputs use mirrored local
             // surface conventions. Our two visual hinges share +X, so the left
             // tail must invert its angle to represent the same physical motion.
-            left.orientation = simd_quatf(angle: -state.leftStabilatorRadians, axis: [1, 0, 0])
+            left.orientation = simd_quatf(angle: -state.leftStabilatorRadians, axis: PrototypeAircraftFactory.leftStabilatorVisualAxis)
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightElevatorName) {
-            right.orientation = simd_quatf(angle: state.rightStabilatorRadians, axis: [1, 0, 0])
+            right.orientation = simd_quatf(angle: state.rightStabilatorRadians, axis: PrototypeAircraftFactory.rightStabilatorVisualAxis)
         }
         if let rudder = aircraft.findEntity(named: PrototypeAircraftFactory.rudderName) {
-            rudder.orientation = simd_quatf(angle: -state.rudderRadians, axis: [0, 1, 0])
+            rudder.orientation = simd_quatf(angle: -state.rudderRadians, axis: PrototypeAircraftFactory.rudderVisualAxis)
         }
 
         updateGear(aircraft, position: state.gearPosition)

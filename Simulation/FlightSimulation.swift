@@ -362,6 +362,7 @@ final class FlightSimulation: ObservableObject {
         state.ambientPressurePSF = max(0, finiteFloat("atmosphere/P-psf", fallback: 2_116.22))
         state.airDensitySlugsPerCubicFoot = max(0, finiteFloat("atmosphere/rho-slugs_ft3", fallback: 0.0023769))
         state.engineFuelFlowPoundsPerSecond = max(0, finiteFloat("propulsion/engine[0]/fuel-flow-rate-pps", fallback: 0))
+        state.aircraftMassKg = max(1, finiteFloat("inertia/weight-lbs", fallback: 20_944) * 0.45359237)
         let windNorth = finiteFloat("atmosphere/total-wind-north-fps", fallback: 0) * feetToMeters
         let windEast = finiteFloat("atmosphere/total-wind-east-fps", fallback: 0) * feetToMeters
         let windDown = finiteFloat("atmosphere/total-wind-down-fps", fallback: 0) * feetToMeters
