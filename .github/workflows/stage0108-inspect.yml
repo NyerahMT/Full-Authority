@@ -1,0 +1,45 @@
+name: Stage 010.8 inspect authored F-16
+
+on:
+  push:
+    branches: [stage-010-8-authored-f16-audio]
+    paths:
+      - Scripts/inspect_authored_f16.py
+      - .github/workflows/stage0108-inspect.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage-010-8-authored-f16-audio
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs blender
+          git lfs install
+      - name: Clone authored MIT F-16 project
+        run: |
+          git clone --depth 1 https://github.com/vazgriz/FlightSim_F16.git /tmp/FlightSim_F16
+          cd /tmp/FlightSim_F16
+          git lfs pull --include="Assets/Models/F16.fbx,Assets/Models/afterburner.fbx,Assets/Textures/f16.png,Assets/Textures/afterburner.png"
+          test $(stat -c%s Assets/Models/F16.fbx) -gt 1000000
+          test $(stat -c%s Assets/Models/afterburner.fbx) -gt 100000
+      - name: Inspect FBX hierarchy
+        run: |
+          blender -b --python Scripts/inspect_authored_f16.py -- \
+            /tmp/FlightSim_F16/Assets/Models/F16.fbx \
+            /tmp/FlightSim_F16/Assets/Models/afterburner.fbx \
+            Tests/AuthoredF16Inspection.txt
+      - name: Commit inspection report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Tests/AuthoredF16Inspection.txt
+          git diff --cached --quiet || git commit -m "Inspect authored F-16 mesh hierarchy"
+          git push origin HEAD:stage-010-8-authored-f16-audio
