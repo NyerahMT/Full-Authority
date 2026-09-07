@@ -33,8 +33,8 @@ cp "$SOURCE_ROOT/COPYING" "$RESOURCE_ROOT/licenses/JSBSim-COPYING.txt"
 
 # Keep the upstream yaw controller intact and add only a small feed-forward term
 # in the final rudder scheduler. The stock yaw PID still owns yaw-rate and
-# lateral-load damping; this adds 12% of pedal command after that loop so touch
-# input has a little more authority without creating another feedback system.
+# lateral-load damping; this adds 28% of pedal command after that loop so touch
+# input has meaningfully more authority without creating another feedback system.
 python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
 from pathlib import Path
 import sys
@@ -42,7 +42,7 @@ import sys
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
 needle = '''   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>'''
-replacement = '''   <!-- Full Authority: stock JSBSim yaw controller + modest pedal feed-forward. -->\n   <pure_gain name="fcs/fa-pedal-feedforward">\n    <input>fcs/rudder-cmd-norm</input>\n    <gain>0.12</gain>\n   </pure_gain>\n\n   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>\n     <input>fcs/fa-pedal-feedforward</input>'''
+replacement = '''   <!-- Full Authority: stock JSBSim yaw controller + stronger pedal feed-forward. -->\n   <pure_gain name="fcs/fa-pedal-feedforward">\n    <input>fcs/rudder-cmd-norm</input>\n    <gain>0.28</gain>\n   </pure_gain>\n\n   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>\n     <input>fcs/fa-pedal-feedforward</input>'''
 if text.count(needle) != 1:
     raise SystemExit(f"expected one upstream F-16 yaw scheduler, found {text.count(needle)}")
 text = text.replace(needle, replacement, 1)
@@ -126,4 +126,4 @@ done
 grep -q '^o f16' "$MODEL_ROOT/f16.obj"
 grep -q '^f ' "$MODEL_ROOT/f16.obj"
 
-echo "Staged JSBSim F-16 with upstream yaw damping, modest pedal feed-forward, terrain texture and pinned F-16 render mesh"
+echo "Staged JSBSim F-16 with upstream yaw damping, stronger pedal feed-forward, terrain texture and pinned F-16 render mesh"

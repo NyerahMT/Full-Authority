@@ -149,13 +149,12 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addAnimatedSurfaces(to root: Entity) {
-        // The staged OBJ is a welded airframe, so animated surfaces are separate
-        // overlays. Stage 010.3b uses actual planform-shaped meshes rooted on the
-        // hinge lines instead of center-rotated boxes floating near the airplane.
+        // Stage 010.5: these overlays are laid out around the rendered OBJ's
+        // trailing-edge geometry instead of generic F-16 dimensions. The source
+        // OBJ is welded, so the movable panels remain separate hinge children,
+        // but their pivots now sit on the visible wing/tail planform.
         let panelColor = UIColor(red: 0.335, green: 0.35, blue: 0.36, alpha: 1)
 
-        // F-16 speedbrakes sit on the aft fuselage. Keep one named hinge root so
-        // the scene can animate the pair together while the panels remain split.
         let speedbrake = Entity()
         speedbrake.name = speedbrakeName
         speedbrake.position = [0, -0.16, -4.00]
@@ -175,64 +174,67 @@ enum PrototypeAircraftFactory {
         }
         root.addChild(speedbrake)
 
+        // Flaperons: the previous hinge at z=-2.12 sat visibly forward of the
+        // OBJ trailing edge. Move the hinge aft and use the measured taper of the
+        // rendered wing so deflection reads as part of the airplane, not a flap
+        // floating over the wing.
         root.addChild(horizontalHingedSurface(
             name: leftAileronName,
-            hingePosition: [-3.40, -1.00, -2.12],
+            hingePosition: [-3.42, -1.00, -3.58],
             outline: [
-                [-0.86, 0.00],
-                [0.82, 0.00],
-                [0.65, -0.49],
-                [-0.72, -0.42]
+                [-0.90, 0.00],
+                [0.78, 0.00],
+                [0.61, -0.69],
+                [-0.82, -0.57]
             ],
             color: panelColor
         ))
         root.addChild(horizontalHingedSurface(
             name: rightAileronName,
-            hingePosition: [3.40, -1.00, -2.12],
+            hingePosition: [3.42, -1.00, -3.58],
             outline: [
-                [-0.82, 0.00],
-                [0.86, 0.00],
-                [0.72, -0.42],
-                [-0.65, -0.49]
+                [-0.78, 0.00],
+                [0.90, 0.00],
+                [0.82, -0.57],
+                [-0.61, -0.69]
             ],
             color: panelColor
         ))
 
-        // Horizontal tails are intentionally larger than the old boxes and are
-        // centered around the actual aft planform. Their root is the hinge axis.
+        // The F-16 uses all-moving horizontal tails. Root the complete tail
+        // panels on their hinge line and let the JSBSim differential-tail output
+        // rotate the entire surface.
         root.addChild(horizontalHingedSurface(
             name: leftElevatorName,
-            hingePosition: [-1.66, -0.82, -4.47],
+            hingePosition: [-1.55, -0.82, -5.05],
             outline: [
-                [-1.30, 0.00],
-                [0.94, 0.00],
-                [0.70, -1.23],
-                [-0.95, -1.04]
+                [-1.58, 0.00],
+                [0.90, 0.00],
+                [0.58, -1.60],
+                [-1.25, -1.34]
             ],
             color: panelColor
         ))
         root.addChild(horizontalHingedSurface(
             name: rightElevatorName,
-            hingePosition: [1.66, -0.82, -4.47],
+            hingePosition: [1.55, -0.82, -5.05],
             outline: [
-                [-0.94, 0.00],
-                [1.30, 0.00],
-                [0.95, -1.04],
-                [-0.70, -1.23]
+                [-0.90, 0.00],
+                [1.58, 0.00],
+                [1.25, -1.34],
+                [-0.58, -1.60]
             ],
             color: panelColor
         ))
 
-        // Rudder plane is Y/Z with a true vertical hinge axis. The panel tapers
-        // with the fin instead of rotating a rectangular block through the tail.
         root.addChild(verticalHingedSurface(
             name: rudderName,
-            hingePosition: [0, 0.16, -5.03],
+            hingePosition: [0, 0.14, -5.62],
             outline: [
-                [0.00, 0.00],
-                [1.82, 0.12],
-                [1.50, -0.83],
-                [0.16, -0.92]
+                [0.04, 0.00],
+                [2.00, 0.08],
+                [1.70, -1.02],
+                [0.18, -1.10]
             ],
             color: panelColor
         ))
