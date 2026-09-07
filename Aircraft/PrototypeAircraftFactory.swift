@@ -6,6 +6,8 @@ import simd
 @MainActor
 enum PrototypeAircraftFactory {
     static let aircraftName = "FA.aircraft"
+    static let afterburnerName = "FA.aircraft.afterburner"
+    static let nozzleName = "FA.aircraft.nozzle"
 
     private struct OBJVertexKey: Hashable {
         let position: Int
@@ -23,13 +25,15 @@ enum PrototypeAircraftFactory {
 
         do {
             let mesh = try loadF16Mesh()
-            let material = SimpleMaterial(
-                color: UIColor(red: 0.45, green: 0.49, blue: 0.52, alpha: 1),
-                isMetallic: true
+            let airframeMaterial = SimpleMaterial(
+                color: UIColor(red: 0.43, green: 0.46, blue: 0.47, alpha: 1),
+                isMetallic: false
             )
-            let model = ModelEntity(mesh: mesh, materials: [material])
+            let model = ModelEntity(mesh: mesh, materials: [airframeMaterial])
             model.name = "FA.aircraft.f16.mesh"
             root.addChild(model)
+
+            addVisualDetail(to: root)
         } catch {
             // This should only appear if CI failed to stage the pinned mesh.
             // Keep the scene alive and make a missing asset immediately obvious.
@@ -42,6 +46,120 @@ enum PrototypeAircraftFactory {
         }
 
         return root
+    }
+
+    private static func addVisualDetail(to root: Entity) {
+        // The source OBJ has a strong silhouette but no material separation. These
+        // inexpensive overlays restore the features that matter most from chase view.
+        let canopy = ellipsoid(
+            radii: [0.62, 0.38, 1.50],
+            color: UIColor(red: 0.055, green: 0.12, blue: 0.15, alpha: 0.93),
+            metallic: true
+        )
+        canopy.name = "FA.aircraft.canopy"
+        canopy.position = [0, -0.18, 2.78]
+        root.addChild(canopy)
+
+        let radome = ellipsoid(
+            radii: [0.34, 0.28, 0.88],
+            color: UIColor(red: 0.18, green: 0.20, blue: 0.20, alpha: 1),
+            metallic: false
+        )
+        radome.name = "FA.aircraft.radome"
+        radome.position = [0, -1.02, 6.82]
+        root.addChild(radome)
+
+        let nozzle = cylinder(
+            length: 0.70,
+            radius: 0.66,
+            color: UIColor(red: 0.17, green: 0.16, blue: 0.15, alpha: 1),
+            metallic: true
+        )
+        nozzle.name = nozzleName
+        nozzle.position = [0, -1.14, -7.13]
+        root.addChild(nozzle)
+
+        let nozzleCore = cylinder(
+            length: 0.76,
+            radius: 0.43,
+            color: UIColor(red: 0.025, green: 0.025, blue: 0.028, alpha: 1),
+            metallic: false
+        )
+        nozzleCore.position = [0, -1.14, -7.27]
+        root.addChild(nozzleCore)
+
+        // This is deliberately geometry rather than a fake force effect. The scene
+        // controller only scales it from the real throttle command.
+        let afterburner = ellipsoid(
+            radii: [0.40, 0.40, 1.65],
+            color: UIColor(red: 1.0, green: 0.43, blue: 0.08, alpha: 0.72),
+            metallic: false
+        )
+        afterburner.name = afterburnerName
+        afterburner.position = [0, -1.14, -8.25]
+        afterburner.isEnabled = false
+        root.addChild(afterburner)
+
+        addNavigationLight(
+            to: root,
+            name: "FA.aircraft.nav.left",
+            position: [-5.03, -1.34, -2.35],
+            color: UIColor(red: 0.96, green: 0.12, blue: 0.10, alpha: 1)
+        )
+        addNavigationLight(
+            to: root,
+            name: "FA.aircraft.nav.right",
+            position: [5.03, -1.34, -2.35],
+            color: UIColor(red: 0.14, green: 0.95, blue: 0.30, alpha: 1)
+        )
+        addNavigationLight(
+            to: root,
+            name: "FA.aircraft.nav.tail",
+            position: [0, -0.40, -7.25],
+            color: UIColor(white: 0.98, alpha: 1)
+        )
+    }
+
+    private static func addNavigationLight(
+        to root: Entity,
+        name: String,
+        position: SIMD3<Float>,
+        color: UIColor
+    ) {
+        let light = ModelEntity(
+            mesh: .generateSphere(radius: 0.11),
+            materials: [SimpleMaterial(color: color, isMetallic: false)]
+        )
+        light.name = name
+        light.position = position
+        root.addChild(light)
+    }
+
+    private static func ellipsoid(
+        radii: SIMD3<Float>,
+        color: UIColor,
+        metallic: Bool
+    ) -> ModelEntity {
+        let entity = ModelEntity(
+            mesh: .generateSphere(radius: 1),
+            materials: [SimpleMaterial(color: color, isMetallic: metallic)]
+        )
+        entity.scale = radii
+        return entity
+    }
+
+    private static func cylinder(
+        length: Float,
+        radius: Float,
+        color: UIColor,
+        metallic: Bool
+    ) -> ModelEntity {
+        let entity = ModelEntity(
+            mesh: .generateCylinder(height: length, radius: radius),
+            materials: [SimpleMaterial(color: color, isMetallic: metallic)]
+        )
+        entity.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+        return entity
     }
 
     /// Loads the pinned MIT-licensed F-16 OBJ staged by CI and converts it into
@@ -86,8 +204,7 @@ enum PrototypeAircraftFactory {
         guard !sourcePositions.isEmpty else { throw OBJError.invalidGeometry }
 
         // The mesh source is unitless. Scale its measured nose-to-tail Z extent
-        // to the real F-16A length (49 ft 4 in / 15.03 m). We intentionally keep
-        // the source origin because it is already close to the aircraft center.
+        // to the real F-16A length (49 ft 4 in / 15.03 m).
         var minZ = Float.greatestFiniteMagnitude
         var maxZ = -Float.greatestFiniteMagnitude
         for position in sourcePositions {
