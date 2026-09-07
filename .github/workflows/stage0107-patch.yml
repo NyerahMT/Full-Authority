@@ -1,0 +1,38 @@
+name: Stage 010.7 patch
+
+on:
+  push:
+    branches:
+      - stage-010-7-orbit-mesh-contrails
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage-010-7-orbit-mesh-contrails
+          fetch-depth: 0
+
+      - name: Apply Stage 010.7 source patches
+        run: |
+          set -euo pipefail
+          python3 tools/stage0107_factory.py
+          python3 tools/stage0107_scene.py
+          python3 tools/stage0107_effects.py
+          python3 tools/stage0107_telemetry.py
+          rm -f tools/stage0107_factory.py tools/stage0107_scene.py tools/stage0107_effects.py tools/stage0107_telemetry.py
+          rm -f .github/workflows/stage0107-patch.yml
+
+      - name: Commit patched source
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Stage 010.7: orbit camera, source-mesh controls, wake contrails"
+          git push origin HEAD:stage-010-7-orbit-mesh-contrails
