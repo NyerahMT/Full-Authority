@@ -82,7 +82,7 @@ jobs:
             DEVELOPMENT_TEAM='' \
             build
 
-      - name: Stage F-16 calibration data and mesh
+      - name: Stage F-16 calibration data and verify authored visual assets
         run: |
           set -euo pipefail
           APP_PATH="$PWD/build/device/Build/Products/Release-iphoneos/FullAuthority.app"
@@ -92,7 +92,15 @@ jobs:
           test -s "$APP_PATH/JSBSim/aircraft/f16/Systems/hook.xml"
           test -s "$APP_PATH/JSBSim/engine/F100-PW-229.xml"
           test -s "$APP_PATH/JSBSim/engine/direct.xml"
-          test -s "$APP_PATH/Models/f16.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/f16_static.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/left_flaperon.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/right_flaperon.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/left_stabilator.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/right_stabilator.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/rudder.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/afterburner_plume.obj"
+          test -s "$APP_PATH/JSBSim/visuals/f16/manifest.json"
+          test -s "$APP_PATH/JSBSim/visuals/f16/LICENSE-FlightSim_F16.txt"
 
       - name: Package unsigned IPA
         run: |
@@ -107,7 +115,7 @@ jobs:
           cd "$PWD/package"
           zip -qry "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" Payload
           test -s "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa"
-          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | grep -E 'Payload/FullAuthority.app/(JSBSim/aircraft/f16/f16.xml|JSBSim/engine/F100-PW-229.xml|JSBSim/engine/direct.xml|Models/f16.obj|FullAuthority)' | head -20
+          unzip -l "$GITHUB_WORKSPACE/FullAuthority-unsigned.ipa" | grep -E 'Payload/FullAuthority.app/(JSBSim/aircraft/f16/f16.xml|JSBSim/engine/F100-PW-229.xml|JSBSim/engine/direct.xml|JSBSim/visuals/f16/f16_static.obj|JSBSim/visuals/f16/afterburner_plume.obj|FullAuthority)' | head -20
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
