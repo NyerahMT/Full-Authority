@@ -6,8 +6,22 @@ import simd
 @MainActor
 enum PrototypeAircraftFactory {
     static let aircraftName = "FA.aircraft"
+    static let meshName = "FA.aircraft.f16.mesh"
     static let afterburnerName = "FA.aircraft.afterburner"
     static let nozzleName = "FA.aircraft.nozzle"
+    static let speedbrakeName = "FA.aircraft.speedbrake"
+    static let leftAileronName = "FA.aircraft.aileron.left"
+    static let rightAileronName = "FA.aircraft.aileron.right"
+    static let leftElevatorName = "FA.aircraft.elevator.left"
+    static let rightElevatorName = "FA.aircraft.elevator.right"
+    static let rudderName = "FA.aircraft.rudder"
+    static let noseGearName = "FA.aircraft.gear.nose"
+    static let leftGearName = "FA.aircraft.gear.left"
+    static let rightGearName = "FA.aircraft.gear.right"
+    static let vaporLeftName = "FA.aircraft.vapor.left"
+    static let vaporRightName = "FA.aircraft.vapor.right"
+    static let contrailLeftName = "FA.aircraft.contrail.left"
+    static let contrailRightName = "FA.aircraft.contrail.right"
 
     private struct OBJVertexKey: Hashable {
         let position: Int
@@ -26,17 +40,18 @@ enum PrototypeAircraftFactory {
         do {
             let mesh = try loadF16Mesh()
             let airframeMaterial = SimpleMaterial(
-                color: UIColor(red: 0.43, green: 0.46, blue: 0.47, alpha: 1),
+                color: UIColor(red: 0.46, green: 0.48, blue: 0.48, alpha: 1),
                 isMetallic: false
             )
             let model = ModelEntity(mesh: mesh, materials: [airframeMaterial])
-            model.name = "FA.aircraft.f16.mesh"
+            model.name = meshName
             root.addChild(model)
 
             addVisualDetail(to: root)
+            addAnimatedSurfaces(to: root)
+            addLandingGear(to: root)
+            addFlightEffects(to: root)
         } catch {
-            // This should only appear if CI failed to stage the pinned mesh.
-            // Keep the scene alive and make a missing asset immediately obvious.
             let fallback = ModelEntity(
                 mesh: .generateBox(size: [4, 1, 10], cornerRadius: 0.2),
                 materials: [SimpleMaterial(color: .red, isMetallic: false)]
@@ -49,11 +64,9 @@ enum PrototypeAircraftFactory {
     }
 
     private static func addVisualDetail(to root: Entity) {
-        // The source OBJ has a strong silhouette but no material separation. These
-        // inexpensive overlays restore the features that matter most from chase view.
         let canopy = ellipsoid(
             radii: [0.62, 0.38, 1.50],
-            color: UIColor(red: 0.055, green: 0.12, blue: 0.15, alpha: 0.93),
+            color: UIColor(red: 0.045, green: 0.105, blue: 0.135, alpha: 0.94),
             metallic: true
         )
         canopy.name = "FA.aircraft.canopy"
@@ -62,7 +75,7 @@ enum PrototypeAircraftFactory {
 
         let radome = ellipsoid(
             radii: [0.34, 0.28, 0.88],
-            color: UIColor(red: 0.18, green: 0.20, blue: 0.20, alpha: 1),
+            color: UIColor(red: 0.16, green: 0.18, blue: 0.18, alpha: 1),
             metallic: false
         )
         radome.name = "FA.aircraft.radome"
@@ -72,31 +85,31 @@ enum PrototypeAircraftFactory {
         let nozzle = cylinder(
             length: 0.70,
             radius: 0.66,
-            color: UIColor(red: 0.17, green: 0.16, blue: 0.15, alpha: 1),
-            metallic: true
+            color: UIColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1),
+            metallic: true,
+            axisAlongZ: true
         )
         nozzle.name = nozzleName
         nozzle.position = [0, -1.14, -7.13]
         root.addChild(nozzle)
 
         let nozzleCore = cylinder(
-            length: 0.76,
-            radius: 0.43,
-            color: UIColor(red: 0.025, green: 0.025, blue: 0.028, alpha: 1),
-            metallic: false
+            length: 0.80,
+            radius: 0.42,
+            color: UIColor(red: 0.022, green: 0.022, blue: 0.025, alpha: 1),
+            metallic: false,
+            axisAlongZ: true
         )
-        nozzleCore.position = [0, -1.14, -7.27]
+        nozzleCore.position = [0, -1.14, -7.31]
         root.addChild(nozzleCore)
 
-        // This is deliberately geometry rather than a fake force effect. The scene
-        // controller only scales it from the real throttle command.
         let afterburner = ellipsoid(
             radii: [0.40, 0.40, 1.65],
-            color: UIColor(red: 1.0, green: 0.43, blue: 0.08, alpha: 0.72),
+            color: UIColor(red: 1.0, green: 0.38, blue: 0.055, alpha: 0.72),
             metallic: false
         )
         afterburner.name = afterburnerName
-        afterburner.position = [0, -1.14, -8.25]
+        afterburner.position = [0, -1.14, -8.45]
         afterburner.isEnabled = false
         root.addChild(afterburner)
 
@@ -104,13 +117,13 @@ enum PrototypeAircraftFactory {
             to: root,
             name: "FA.aircraft.nav.left",
             position: [-5.03, -1.34, -2.35],
-            color: UIColor(red: 0.96, green: 0.12, blue: 0.10, alpha: 1)
+            color: UIColor(red: 0.98, green: 0.08, blue: 0.08, alpha: 1)
         )
         addNavigationLight(
             to: root,
             name: "FA.aircraft.nav.right",
             position: [5.03, -1.34, -2.35],
-            color: UIColor(red: 0.14, green: 0.95, blue: 0.30, alpha: 1)
+            color: UIColor(red: 0.08, green: 0.96, blue: 0.24, alpha: 1)
         )
         addNavigationLight(
             to: root,
@@ -118,6 +131,162 @@ enum PrototypeAircraftFactory {
             position: [0, -0.40, -7.25],
             color: UIColor(white: 0.98, alpha: 1)
         )
+    }
+
+    private static func addAnimatedSurfaces(to root: Entity) {
+        let panelColor = UIColor(red: 0.37, green: 0.39, blue: 0.39, alpha: 1)
+
+        let speedbrake = ModelEntity(
+            mesh: .generateBox(size: [1.12, 0.055, 1.25], cornerRadius: 0.06),
+            materials: [SimpleMaterial(color: panelColor, isMetallic: false)]
+        )
+        speedbrake.name = speedbrakeName
+        speedbrake.position = [0, 0.08, -2.38]
+        root.addChild(speedbrake)
+
+        let leftAileron = surfacePanel(
+            name: leftAileronName,
+            size: [1.85, 0.05, 0.52],
+            position: [-3.55, -1.02, -2.55],
+            color: panelColor
+        )
+        root.addChild(leftAileron)
+
+        let rightAileron = surfacePanel(
+            name: rightAileronName,
+            size: [1.85, 0.05, 0.52],
+            position: [3.55, -1.02, -2.55],
+            color: panelColor
+        )
+        root.addChild(rightAileron)
+
+        let leftElevator = surfacePanel(
+            name: leftElevatorName,
+            size: [1.95, 0.055, 0.72],
+            position: [-1.72, -0.88, -5.02],
+            color: panelColor
+        )
+        root.addChild(leftElevator)
+
+        let rightElevator = surfacePanel(
+            name: rightElevatorName,
+            size: [1.95, 0.055, 0.72],
+            position: [1.72, -0.88, -5.02],
+            color: panelColor
+        )
+        root.addChild(rightElevator)
+
+        let rudder = ModelEntity(
+            mesh: .generateBox(size: [0.07, 1.45, 0.78], cornerRadius: 0.04),
+            materials: [SimpleMaterial(color: panelColor, isMetallic: false)]
+        )
+        rudder.name = rudderName
+        rudder.position = [0, 0.12, -5.45]
+        root.addChild(rudder)
+    }
+
+    private static func addLandingGear(to root: Entity) {
+        let strutColor = UIColor(red: 0.68, green: 0.69, blue: 0.67, alpha: 1)
+        let tireColor = UIColor(red: 0.035, green: 0.035, blue: 0.035, alpha: 1)
+
+        root.addChild(gearAssembly(
+            name: noseGearName,
+            rootPosition: [0, -0.45, 3.45],
+            strutHeight: 1.12,
+            wheelRadius: 0.25,
+            strutColor: strutColor,
+            tireColor: tireColor
+        ))
+        root.addChild(gearAssembly(
+            name: leftGearName,
+            rootPosition: [-1.35, -0.48, -1.05],
+            strutHeight: 1.00,
+            wheelRadius: 0.31,
+            strutColor: strutColor,
+            tireColor: tireColor
+        ))
+        root.addChild(gearAssembly(
+            name: rightGearName,
+            rootPosition: [1.35, -0.48, -1.05],
+            strutHeight: 1.00,
+            wheelRadius: 0.31,
+            strutColor: strutColor,
+            tireColor: tireColor
+        ))
+    }
+
+    private static func addFlightEffects(to root: Entity) {
+        let vaporColor = UIColor(red: 0.92, green: 0.96, blue: 1.0, alpha: 0.24)
+
+        let leftVapor = ellipsoid(radii: [0.22, 0.08, 2.4], color: vaporColor, metallic: false)
+        leftVapor.name = vaporLeftName
+        leftVapor.position = [-3.75, -1.0, -4.5]
+        leftVapor.isEnabled = false
+        root.addChild(leftVapor)
+
+        let rightVapor = ellipsoid(radii: [0.22, 0.08, 2.4], color: vaporColor, metallic: false)
+        rightVapor.name = vaporRightName
+        rightVapor.position = [3.75, -1.0, -4.5]
+        rightVapor.isEnabled = false
+        root.addChild(rightVapor)
+
+        let contrailColor = UIColor(red: 0.95, green: 0.97, blue: 1.0, alpha: 0.18)
+        let leftContrail = ellipsoid(radii: [0.12, 0.12, 7.0], color: contrailColor, metallic: false)
+        leftContrail.name = contrailLeftName
+        leftContrail.position = [-1.15, -1.10, -13.3]
+        leftContrail.isEnabled = false
+        root.addChild(leftContrail)
+
+        let rightContrail = ellipsoid(radii: [0.12, 0.12, 7.0], color: contrailColor, metallic: false)
+        rightContrail.name = contrailRightName
+        rightContrail.position = [1.15, -1.10, -13.3]
+        rightContrail.isEnabled = false
+        root.addChild(rightContrail)
+    }
+
+    private static func surfacePanel(
+        name: String,
+        size: SIMD3<Float>,
+        position: SIMD3<Float>,
+        color: UIColor
+    ) -> ModelEntity {
+        let panel = ModelEntity(
+            mesh: .generateBox(size: size, cornerRadius: 0.04),
+            materials: [SimpleMaterial(color: color, isMetallic: false)]
+        )
+        panel.name = name
+        panel.position = position
+        return panel
+    }
+
+    private static func gearAssembly(
+        name: String,
+        rootPosition: SIMD3<Float>,
+        strutHeight: Float,
+        wheelRadius: Float,
+        strutColor: UIColor,
+        tireColor: UIColor
+    ) -> Entity {
+        let assembly = Entity()
+        assembly.name = name
+        assembly.position = rootPosition
+
+        let strut = ModelEntity(
+            mesh: .generateCylinder(height: strutHeight, radius: 0.055),
+            materials: [SimpleMaterial(color: strutColor, isMetallic: true)]
+        )
+        strut.position = [0, -strutHeight * 0.5, 0]
+        assembly.addChild(strut)
+
+        let wheel = ModelEntity(
+            mesh: .generateCylinder(height: 0.18, radius: wheelRadius),
+            materials: [SimpleMaterial(color: tireColor, isMetallic: false)]
+        )
+        wheel.position = [0, -strutHeight, 0]
+        wheel.orientation = simd_quatf(angle: .pi / 2, axis: [0, 0, 1])
+        assembly.addChild(wheel)
+
+        return assembly
     }
 
     private static func addNavigationLight(
@@ -152,19 +321,21 @@ enum PrototypeAircraftFactory {
         length: Float,
         radius: Float,
         color: UIColor,
-        metallic: Bool
+        metallic: Bool,
+        axisAlongZ: Bool
     ) -> ModelEntity {
         let entity = ModelEntity(
             mesh: .generateCylinder(height: length, radius: radius),
             materials: [SimpleMaterial(color: color, isMetallic: metallic)]
         )
-        entity.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+        if axisAlongZ {
+            entity.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+        }
         return entity
     }
 
     /// Loads the pinned MIT-licensed F-16 OBJ staged by CI and converts it into
-    /// one RealityKit mesh. The OBJ was exported by Blender with Y-up and the
-    /// fuselage running along Z, which matches Full Authority's visual axes.
+    /// one RealityKit mesh. The mesh is scaled to the real F-16A length.
     private static func loadF16Mesh() throws -> MeshResource {
         guard let url = Bundle.main.url(
             forResource: "f16",
@@ -203,8 +374,6 @@ enum PrototypeAircraftFactory {
 
         guard !sourcePositions.isEmpty else { throw OBJError.invalidGeometry }
 
-        // The mesh source is unitless. Scale its measured nose-to-tail Z extent
-        // to the real F-16A length (49 ft 4 in / 15.03 m).
         var minZ = Float.greatestFiniteMagnitude
         var maxZ = -Float.greatestFiniteMagnitude
         for position in sourcePositions {
