@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setDeltaTime:(double)deltaTime;
 - (BOOL)loadModel:(NSString *)modelName error:(NSError * _Nullable * _Nullable)error;
 - (BOOL)runInitialConditions:(NSError * _Nullable * _Nullable)error;
+- (BOOL)trimFull:(NSError * _Nullable * _Nullable)error;
 - (BOOL)step:(NSError * _Nullable * _Nullable)error;
 - (void)setProperty:(NSString *)property value:(double)value;
 - (double)valueForProperty:(NSString *)property;

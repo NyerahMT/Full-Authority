@@ -23,6 +23,12 @@ final class FlightSimulation: ObservableObject {
     private var originLatitudeRadians: Double?
     private var originLongitudeRadians: Double?
 
+    // JSBSim's trim solution becomes the neutral stick position. Player input is
+    // layered on top of these values rather than replacing the trimmed state.
+    private var trimAileronCommand: Double = 0
+    private var trimElevatorCommand: Double = 0
+    private var trimRudderCommand: Double = 0
+
     init() {
         let resourceRoot = Bundle.main.resourceURL?
             .appendingPathComponent("JSBSim", isDirectory: true)
@@ -32,18 +38,29 @@ final class FlightSimulation: ObservableObject {
         bridge.setDeltaTime(fixedStep)
         backendStatus = .bridgeReady(version: bridge.version)
 
-        _ = loadModel(named: "f15")
+        _ = loadModel(named: "f16")
     }
 
     func loadModel(named modelName: String) -> Bool {
         do {
             try bridge.loadModel(modelName)
             activeModel = modelName
+            resetTrimCommands()
             configureInitialConditions(for: modelName)
             configureModelSystems(for: modelName)
-            applyControls()
+            applyRawNeutralControls()
             try bridge.runInitialConditions()
             configureModelSystems(for: modelName)
+
+            // Ask JSBSim itself to find a steady 6-DOF solution. A failed trim is
+            // non-fatal: the real FDM still runs, but neutral begins untrimmed.
+            do {
+                try bridge.trimFull()
+                captureTrimCommands()
+            } catch {
+                resetTrimCommands()
+            }
+
             applyControls()
         } catch {
             activeModel = nil
@@ -89,42 +106,89 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("ic/terrain-elevation-ft", value: 0)
         bridge.setProperty("ic/phi-deg", value: 0)
         bridge.setProperty("ic/psi-true-deg", value: 0)
+        bridge.setProperty("ic/beta-deg", value: 0)
+        bridge.setProperty("ic/gamma-deg", value: 0)
 
-        if modelName == "f15" {
-            // Stage 006 deliberately starts lower and a little slower so nearby
-            // terrain produces useful parallax and closure-rate cues on a phone.
-            bridge.setProperty("ic/h-agl-ft", value: 900)
-            bridge.setProperty("ic/vg-fps", value: 430)
-            bridge.setProperty("ic/theta-deg", value: 2)
-            bridge.setProperty("ic/gamma-deg", value: 0)
+        if modelName == "f16" {
+            // A normal low-altitude cruise condition gives the F-16 flight-control
+            // system plenty of dynamic pressure while keeping terrain motion clear.
+            bridge.setProperty("ic/h-agl-ft", value: 1_500)
+            bridge.setProperty("ic/vc-kts", value: 350)
+            bridge.setProperty("ic/alpha-deg", value: 2)
         } else {
             bridge.setProperty("ic/h-agl-ft", value: 1_000)
-            bridge.setProperty("ic/vg-fps", value: 350)
-            bridge.setProperty("ic/theta-deg", value: 0)
+            bridge.setProperty("ic/vc-kts", value: 250)
+            bridge.setProperty("ic/alpha-deg", value: 2)
         }
     }
 
     private func configureModelSystems(for modelName: String) {
-        guard modelName == "f15" else { return }
+        guard modelName == "f16" else { return }
 
+        // Let the aircraft XML own aerodynamics, control laws and propulsion.
+        // These are configuration commands only; no forces are synthesized here.
         bridge.setProperty("propulsion/set-running", value: -1)
         bridge.setProperty("gear/gear-cmd-norm", value: 0)
-        bridge.setProperty("fcs/flap-cmd-norm", value: 0)
         bridge.setProperty("fcs/speedbrake-cmd-norm", value: 0)
+        bridge.setProperty("fcs/fbw-override", value: 0)
+        bridge.setProperty("fcs/pitch-trim-cmd-norm", value: 0)
+        bridge.setProperty("fcs/roll-trim-cmd-norm", value: 0)
+        bridge.setProperty("fcs/yaw-trim-cmd-norm", value: 0)
+    }
+
+    private func applyRawNeutralControls() {
+        bridge.setProperty("fcs/aileron-cmd-norm", value: 0)
+        bridge.setProperty("fcs/elevator-cmd-norm", value: 0)
+        bridge.setProperty("fcs/rudder-cmd-norm", value: 0)
+        bridge.setProperty("fcs/throttle-cmd-norm", value: Double(controls.throttle))
+        bridge.setProperty("fcs/throttle-cmd-norm[0]", value: Double(controls.throttle))
+    }
+
+    private func captureTrimCommands() {
+        trimAileronCommand = clamp(
+            bridge.value(forProperty: "fcs/aileron-cmd-norm"),
+            min: -1,
+            max: 1
+        )
+        trimElevatorCommand = clamp(
+            bridge.value(forProperty: "fcs/elevator-cmd-norm"),
+            min: -1,
+            max: 0.44
+        )
+        trimRudderCommand = clamp(
+            bridge.value(forProperty: "fcs/rudder-cmd-norm"),
+            min: -1,
+            max: 1
+        )
+
+        let trimmedThrottle = bridge.value(forProperty: "fcs/throttle-cmd-norm[0]")
+        if trimmedThrottle.isFinite, trimmedThrottle >= 0, trimmedThrottle <= 1 {
+            var initialControls = controls
+            initialControls.throttle = Float(trimmedThrottle)
+            controls = initialControls
+        }
+    }
+
+    private func resetTrimCommands() {
+        trimAileronCommand = 0
+        trimElevatorCommand = 0
+        trimRudderCommand = 0
     }
 
     private func applyControls() {
-        // The Stage 005 screen-to-FDM mapping was backwards on both stick axes.
-        // Keep the UI conventional (right = right roll, pull down = nose up) and
-        // correct the sign at the JSBSim boundary so every future input device
-        // shares the same Full Authority control convention.
-        bridge.setProperty("fcs/aileron-cmd-norm", value: -Double(controls.roll))
-        bridge.setProperty("fcs/elevator-cmd-norm", value: -Double(controls.pitch))
-        bridge.setProperty("fcs/rudder-cmd-norm", value: Double(controls.rudder))
+        // Full Authority's UI convention is right = right roll and pull = nose up.
+        // The sign conversion is only an input-coordinate translation; the F-16
+        // XML performs the actual roll-rate and G-command flight-control laws.
+        let aileron = clamp(trimAileronCommand - Double(controls.roll), min: -1, max: 1)
+        let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
+        let rudder = clamp(trimRudderCommand + Double(controls.rudder), min: -1, max: 1)
+        let throttle = clamp(Double(controls.throttle), min: 0, max: 1)
 
-        bridge.setProperty("fcs/throttle-cmd-norm", value: Double(controls.throttle))
-        bridge.setProperty("fcs/throttle-cmd-norm[0]", value: Double(controls.throttle))
-        bridge.setProperty("fcs/throttle-cmd-norm[1]", value: Double(controls.throttle))
+        bridge.setProperty("fcs/aileron-cmd-norm", value: aileron)
+        bridge.setProperty("fcs/elevator-cmd-norm", value: elevator)
+        bridge.setProperty("fcs/rudder-cmd-norm", value: rudder)
+        bridge.setProperty("fcs/throttle-cmd-norm", value: throttle)
+        bridge.setProperty("fcs/throttle-cmd-norm[0]", value: throttle)
     }
 
     private func readStateFromJSBSim() {
@@ -183,5 +247,9 @@ final class FlightSimulation: ObservableObject {
 
         state.positionMeters.x = Float(eastMeters)
         state.positionMeters.z = Float(northMeters)
+    }
+
+    private func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {
+        Swift.min(Swift.max(value, minimum), maximum)
     }
 }

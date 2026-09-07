@@ -8,6 +8,7 @@
 #endif
 
 #include <FGFDMExec.h>
+#include <initialization/FGTrim.h>
 #include <simgear/misc/sg_path.hxx>
 
 #include <exception>
@@ -95,6 +96,26 @@ void SetBridgeError(NSError **error, NSString *message) {
         return success;
     } catch (const std::exception& exception) {
         SetBridgeError(error, [NSString stringWithUTF8String:exception.what()] ?: @"JSBSim initialization failed.");
+        return NO;
+    }
+}
+
+- (BOOL)trimFull:(NSError **)error {
+    if (!_exec || !_modelLoaded) {
+        SetBridgeError(error, @"No JSBSim aircraft model is loaded.");
+        return NO;
+    }
+
+    try {
+        JSBSim::FGTrim trim(_exec.get(), JSBSim::tFull);
+        trim.SetGammaFallback(true);
+        const bool success = trim.DoTrim();
+        if (!success) {
+            SetBridgeError(error, @"JSBSim could not find a full steady-flight trim for the requested condition.");
+        }
+        return success;
+    } catch (const std::exception& exception) {
+        SetBridgeError(error, [NSString stringWithUTF8String:exception.what()] ?: @"JSBSim trim failed.");
         return NO;
     }
 }
