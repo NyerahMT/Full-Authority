@@ -338,7 +338,7 @@ struct PrototypeSceneView: View {
             speedbrake.orientation = simd_quatf(angle: -state.speedbrakePosition * 0.88, axis: [1, 0, 0])
         }
 
-        // Drive the visual hinges with the model's actual FCS surface angles.
+        // Drive each visual hinge from the actual JSBSim FCS surface angle.
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftAileronName) {
             left.orientation = simd_quatf(angle: state.leftAileronRadians, axis: [1, 0, 0])
         }
@@ -346,7 +346,10 @@ struct PrototypeSceneView: View {
             right.orientation = simd_quatf(angle: state.rightAileronRadians, axis: [1, 0, 0])
         }
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftElevatorName) {
-            left.orientation = simd_quatf(angle: state.leftStabilatorRadians, axis: [1, 0, 0])
+            // JSBSim's differential-tail left/right outputs use mirrored local
+            // surface conventions. Our two visual hinges share +X, so the left
+            // tail must invert its angle to represent the same physical motion.
+            left.orientation = simd_quatf(angle: -state.leftStabilatorRadians, axis: [1, 0, 0])
         }
         if let right = aircraft.findEntity(named: PrototypeAircraftFactory.rightElevatorName) {
             right.orientation = simd_quatf(angle: state.rightStabilatorRadians, axis: [1, 0, 0])
