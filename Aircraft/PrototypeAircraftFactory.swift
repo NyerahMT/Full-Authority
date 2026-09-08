@@ -792,9 +792,9 @@ enum PrototypeAircraftFactory {
                     // The front of the coarse canopy turns through a steeper
                     // facet than the side glass. Let that local crown continue
                     // while the hard sill still blocks the flood elsewhere.
-                    let forwardBubble = p.z > 3.05 && p.y > 0.58 && abs(p.x) < 0.88
+                    let forwardBubble = p.z > 3.00 && p.y > 0.40 && abs(p.x) < 0.80
                     let localTangentCosine = forwardBubble
-                        ? cos(Float.pi * 52.0 / 180.0)
+                        ? cos(Float.pi * 64.0 / 180.0)
                         : smoothTangentCosine
                     guard tangentCosine >= localTangentCosine else {
                         continue
