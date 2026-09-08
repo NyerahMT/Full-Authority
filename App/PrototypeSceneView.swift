@@ -93,8 +93,22 @@ struct PrototypeSceneView: View {
 
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
-                    aircraft.isEnabled = cameraMode != .cockpit
+                    aircraft.isEnabled = true
                     updateAircraftPresentation(aircraft)
+
+                    let cockpitMode = cameraMode == .cockpit
+                    aircraft.findEntity(named: PrototypeAircraftFactory.visualRootName)?.isEnabled = !cockpitMode
+                    aircraft.findEntity(named: PrototypeAircraftFactory.cockpitRootName)?.isEnabled = cockpitMode
+                    aircraft.findEntity(named: Stage2FlightEffects.attachedRootName)?.isEnabled = !cockpitMode
+                    if cockpitMode {
+                        for name in [
+                            PrototypeAircraftFactory.noseGearName,
+                            PrototypeAircraftFactory.leftGearName,
+                            PrototypeAircraftFactory.rightGearName
+                        ] {
+                            aircraft.findEntity(named: name)?.isEnabled = false
+                        }
+                    }
                     runtime.jetAudio.update(
                         state: simulation.state,
                         isPaused: simulation.isPaused,
@@ -129,11 +143,6 @@ struct PrototypeSceneView: View {
 
             if !simulation.isPaused {
                 cameraSelector
-            }
-
-            if cameraMode == .cockpit && !simulation.isPaused {
-                CockpitFrameOverlay()
-                    .allowsHitTesting(false)
             }
 
             flightConditionOverlay
@@ -366,7 +375,7 @@ struct PrototypeSceneView: View {
             // not the eyepoint, so the runway does not slide around the cockpit.
             localCameraOffset = [0, 0.88, 3.64]
             localLookPoint = [0, 0.88, 90]
-            fieldOfView = 68
+            fieldOfView = 66
             pullbackScale = 0
         }
 

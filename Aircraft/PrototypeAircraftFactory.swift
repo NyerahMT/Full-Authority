@@ -7,6 +7,7 @@ import simd
 enum PrototypeAircraftFactory {
     static let aircraftName = "FA.aircraft"
     static let visualRootName = "FA.aircraft.visual-root"
+    static let cockpitRootName = PrototypeCockpitFactory.rootName
     static let meshName = "FA.aircraft.f16.mesh"
     static let afterburnerName = "FA.aircraft.afterburner"
     static let afterburnerInnerName = "FA.aircraft.afterburner.inner"
@@ -156,6 +157,9 @@ enum PrototypeAircraftFactory {
 
             try addAfterburner(to: visualRoot)
             addLandingGear(to: aircraft)
+
+            let cockpit = PrototypeCockpitFactory.make()
+            aircraft.addChild(cockpit)
         } catch {
             let fallback = ModelEntity(
                 mesh: .generateBox(size: [4, 1, 10], cornerRadius: 0.2),
