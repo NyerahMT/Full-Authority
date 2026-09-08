@@ -75,7 +75,7 @@ struct PrototypeSceneView: View {
                     sun.components.set([
                         DirectionalLightComponent(
                             color: UIColor(red: 1.0, green: 0.95, blue: 0.87, alpha: 1),
-                            intensity: 12_600
+                            intensity: 7_800
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
@@ -86,7 +86,7 @@ struct PrototypeSceneView: View {
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
                         color: UIColor(red: 0.50, green: 0.66, blue: 0.90, alpha: 1),
-                        intensity: 520
+                        intensity: 340
                     ))
                     fill.look(at: .zero, from: [6_500, 5_200, 6_200], relativeTo: nil)
                     content.add(fill)

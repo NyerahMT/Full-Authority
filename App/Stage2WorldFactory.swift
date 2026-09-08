@@ -28,7 +28,7 @@ enum Stage2WorldFactory {
         // The FDM and renderer continue to share Stage2TerrainProfile. This is a
         // denser render of the exact JSBSim contact surface, not a decorative hill layer.
         let tileSize: Float = 6_000
-        let resolution = 49
+        let resolution = 81
         let texture = try? TextureResource.load(named: "terrain_albedo")
 
         for tileX in -4..<4 {
@@ -66,10 +66,12 @@ enum Stage2WorldFactory {
 
     private static func terrainMaterial(texture: TextureResource?, selector: Int) -> PhysicallyBasedMaterial {
         let tints: [UIColor] = [
-            UIColor(red: 0.86, green: 0.91, blue: 0.80, alpha: 1),
-            UIColor(red: 0.93, green: 0.91, blue: 0.79, alpha: 1),
-            UIColor(red: 0.80, green: 0.88, blue: 0.76, alpha: 1),
-            UIColor(red: 0.90, green: 0.86, blue: 0.73, alpha: 1)
+            UIColor(red: 0.48, green: 0.56, blue: 0.34, alpha: 1),
+            UIColor(red: 0.57, green: 0.57, blue: 0.35, alpha: 1),
+            UIColor(red: 0.39, green: 0.50, blue: 0.30, alpha: 1),
+            UIColor(red: 0.59, green: 0.52, blue: 0.31, alpha: 1),
+            UIColor(red: 0.43, green: 0.47, blue: 0.28, alpha: 1),
+            UIColor(red: 0.53, green: 0.60, blue: 0.39, alpha: 1)
         ]
 
         var material = PhysicallyBasedMaterial()
@@ -80,19 +82,20 @@ enum Stage2WorldFactory {
             )
         } else {
             material.baseColor = PhysicallyBasedMaterial.BaseColor(
-                tint: UIColor(red: 0.25, green: 0.34, blue: 0.17, alpha: 1)
+                tint: UIColor(red: 0.24, green: 0.32, blue: 0.16, alpha: 1)
             )
         }
-        material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.97)
+        material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)
         material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
         return material
     }
 
     private static func rockMaterial(selector: Int) -> PhysicallyBasedMaterial {
         let rocks: [UIColor] = [
-            UIColor(red: 0.29, green: 0.29, blue: 0.26, alpha: 1),
-            UIColor(red: 0.34, green: 0.32, blue: 0.27, alpha: 1),
-            UIColor(red: 0.27, green: 0.30, blue: 0.27, alpha: 1)
+            UIColor(red: 0.24, green: 0.235, blue: 0.21, alpha: 1),
+            UIColor(red: 0.31, green: 0.285, blue: 0.235, alpha: 1),
+            UIColor(red: 0.225, green: 0.25, blue: 0.225, alpha: 1),
+            UIColor(red: 0.36, green: 0.325, blue: 0.255, alpha: 1)
         ]
         var material = PhysicallyBasedMaterial()
         material.baseColor = PhysicallyBasedMaterial.BaseColor(tint: rocks[selector % rocks.count])
@@ -226,6 +229,23 @@ enum Stage2WorldFactory {
             addRunwayLight(to: root, position: [0, 0.24, -450 - Float(index) * 55], color: .white)
         }
 
+        // Subtle rubber, seams and repaired slabs keep the runway from reading
+        // like one giant perfect gray rectangle at low altitude.
+        let rubber = UIColor(red: 0.026, green: 0.028, blue: 0.030, alpha: 1)
+        for z: Float in [-250, -120, 3_980, 4_110] {
+            for x: Float in [-5.4, -2.0, 2.0, 5.4] {
+                let skid = block(size: [1.4, 0.012, 84], color: rubber, roughness: 0.99, cornerRadius: 0.05)
+                skid.position = [x, 0.126, z]
+                root.addChild(skid)
+            }
+        }
+        let seam = UIColor(red: 0.075, green: 0.078, blue: 0.080, alpha: 1)
+        for z in stride(from: -300, through: 4_300, by: 240) {
+            let joint = block(size: [62, 0.010, 0.18], color: seam, roughness: 0.99, cornerRadius: 0)
+            joint.position = [0, 0.126, Float(z)]
+            root.addChild(joint)
+        }
+
         let parallelTaxiway = block(size: [30, 0.07, 3_050], color: asphalt, roughness: 0.96, cornerRadius: 1.5)
         parallelTaxiway.position = [320, 0.045, 1_650]
         root.addChild(parallelTaxiway)
@@ -306,7 +326,11 @@ enum Stage2WorldFactory {
             [[-5_500, -1_200], [-2_500, -400], [1_300, -650], [5_500, 500], [8_500, 2_400]],
             [[-3_500, 5_500], [-1_400, 3_800], [-900, 1_200], [-1_100, -2_500]],
             [[1_800, 4_200], [3_000, 2_800], [4_500, 1_900], [7_000, 1_500]],
-            [[2_100, 7_000], [2_400, 4_800], [3_500, 3_000], [5_800, 2_500]]
+            [[2_100, 7_000], [2_400, 4_800], [3_500, 3_000], [5_800, 2_500]],
+            [[-8_000, 6_000], [-5_800, 4_900], [-4_200, 2_300], [-2_900, 300]],
+            [[-7_200, 8_200], [-4_500, 7_500], [-1_800, 7_900], [1_200, 7_200]],
+            [[4_600, -3_800], [3_200, -1_800], [2_100, 400], [1_900, 2_600]],
+            [[6_500, 6_400], [5_400, 5_000], [4_900, 3_600], [5_800, 2_500]]
         ]
 
         for road in roads {
@@ -377,14 +401,14 @@ enum Stage2WorldFactory {
             UIColor(red: 0.37, green: 0.36, blue: 0.33, alpha: 1)
         ]
 
-        for row in 0..<6 {
-            for column in 0..<8 {
-                let selector = row * 8 + column
+        for row in 0..<8 {
+            for column in 0..<10 {
+                let selector = row * 10 + column
                 let height = Float(16 + (selector * 13) % 52)
                 let width = Float(32 + (selector * 7) % 30)
                 let depth = Float(30 + (selector * 11) % 28)
-                let x = 2_700 + Float(column) * 112
-                let z = 3_000 + Float(row) * 118
+                let x = 2_650 + Float(column) * 108
+                let z = 2_900 + Float(row) * 112
                 let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
 
                 let building = block(
@@ -423,12 +447,12 @@ enum Stage2WorldFactory {
             UIColor(red: 0.090, green: 0.205, blue: 0.055, alpha: 1)
         ]
 
-        for belt in 0..<15 {
-            let baseX = Float(-7_400 + belt * 980)
-            let baseZ = Float(1_100 + (belt % 5) * 1_280)
-            for treeIndex in 0..<11 {
-                let x = baseX + Float(treeIndex) * 78 + sin(Float(belt + treeIndex) * 1.91) * 32
-                let z = baseZ + sin(Float(treeIndex) * 0.82 + Float(belt)) * 155
+        for belt in 0..<28 {
+            let baseX = Float(-9_200 + belt * 690)
+            let baseZ = Float(-1_600 + (belt % 7) * 1_280)
+            for treeIndex in 0..<16 {
+                let x = baseX + Float(treeIndex) * 64 + sin(Float(belt + treeIndex) * 1.91) * 42
+                let z = baseZ + sin(Float(treeIndex) * 0.82 + Float(belt)) * 230
                 let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
                 let height = Float(11 + ((belt * 17 + treeIndex * 7) % 15))
                 let foliage = SimpleMaterial(

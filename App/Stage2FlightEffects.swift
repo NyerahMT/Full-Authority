@@ -273,8 +273,8 @@ enum Stage2FlightEffects {
             altitudeFeet: state.altitudeFeetMSL
         )
         let moisture = clamp((iceRH - 0.62) / 0.38, 0, 1)
-        let gIntensity = clamp((abs(state.loadFactorG) - 2.4) / 4.8, 0, 1)
-        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 6.8) / 13.5, 0, 1)
+        let gIntensity = clamp((abs(state.loadFactorG) - 2.8) / 5.2, 0, 1)
+        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 14.0, 0, 1)
         let qbarIntensity = clamp((state.dynamicPressurePSF - 115) / 560.0, 0, 1)
         let vaporIntensity = max(gIntensity, alphaIntensity) * qbarIntensity * moisture
         let vaporEnabled = vaporIntensity > 0.065 && state.calibratedAirspeedKnots > 165
@@ -288,17 +288,17 @@ enum Stage2FlightEffects {
         if let left = root.findEntity(named: leftWingVaporName) as? ModelEntity {
             left.isEnabled = vaporEnabled
             left.orientation = flowOrientation
-            left.position = [-3.62, -0.08 + 0.008 * sin(Float(simulationTime) * 24.0), -1.72]
-            left.scale = [0.68 + vaporIntensity * 0.52, 0.62 + vaporIntensity * 0.34, 0.72 + vaporIntensity * 1.18]
-            setEffectAlpha(left, alpha: 0.020 + vaporIntensity * 0.155)
+            left.position = [-3.42, -0.04 + 0.006 * sin(Float(simulationTime) * 24.0), -1.35]
+            left.scale = [0.34 + vaporIntensity * 0.26, 0.24 + vaporIntensity * 0.20, 0.32 + vaporIntensity * 0.54]
+            setEffectAlpha(left, alpha: 0.004 + vaporIntensity * 0.038)
         }
 
         if let right = root.findEntity(named: rightWingVaporName) as? ModelEntity {
             right.isEnabled = vaporEnabled
             right.orientation = flowOrientation
-            right.position = [3.62, -0.08 + 0.008 * sin(Float(simulationTime) * 25.0 + 0.8), -1.72]
-            right.scale = [0.68 + vaporIntensity * 0.52, 0.62 + vaporIntensity * 0.34, 0.72 + vaporIntensity * 1.18]
-            setEffectAlpha(right, alpha: 0.020 + vaporIntensity * 0.155)
+            right.position = [3.42, -0.04 + 0.006 * sin(Float(simulationTime) * 25.0 + 0.8), -1.35]
+            right.scale = [0.34 + vaporIntensity * 0.26, 0.24 + vaporIntensity * 0.20, 0.32 + vaporIntensity * 0.54]
+            setEffectAlpha(right, alpha: 0.004 + vaporIntensity * 0.038)
         }
     }
 
@@ -311,36 +311,36 @@ enum Stage2FlightEffects {
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
-        let moisture = clamp((iceRH - 0.64) / 0.40, 0, 1)
+        let moisture = clamp((iceRH - 0.68) / 0.36, 0, 1)
         let mach = state.mach
-        let transonicPeak = exp(-pow((mach - 1.005) / 0.038, 2))
+        let transonicPeak = exp(-pow((mach - 1.000) / 0.034, 2))
         let qbarFactor = clamp((state.dynamicPressurePSF - 180) / 650.0, 0, 1)
         let alphaPenalty = 1 - 0.45 * clamp(abs(state.angleOfAttackDegrees) / 18.0, 0, 1)
         let intensity = transonicPeak * qbarFactor * moisture * alphaPenalty
-        let visible = mach > 0.955 && mach < 1.085 && intensity > 0.025
+        let visible = mach > 0.958 && mach < 1.070 && intensity > 0.040
 
         for layer in 0..<3 {
             guard let cloud = root.findEntity(named: "\(transonicCloudPrefix).\(layer)") as? ModelEntity else {
                 continue
             }
             let phase = Float(layer) * 1.73
-            let flutter = 1 + 0.018 * sin(Float(simulationTime) * (18 + Float(layer) * 2.4) + phase)
-            let layerScale = 0.92 + Float(layer) * 0.08
+            let flutter = 1 + 0.012 * sin(Float(simulationTime) * (18 + Float(layer) * 2.4) + phase)
+            let layerScale = 0.72 + Float(layer) * 0.065
             cloud.isEnabled = visible
             cloud.scale = [
                 layerScale * flutter,
                 layerScale * (0.94 + 0.02 * sin(Float(simulationTime) * 13 + phase)),
-                0.94 + intensity * 0.22
+                0.72 + intensity * 0.12
             ]
-            cloud.position.y = -0.02 + 0.04 * sin(Float(simulationTime) * 11 + phase)
-            setEffectAlpha(cloud, alpha: (0.050 - Float(layer) * 0.010) * intensity)
+            cloud.position.y = -0.04 + 0.018 * sin(Float(simulationTime) * 11 + phase)
+            setEffectAlpha(cloud, alpha: (0.012 - Float(layer) * 0.0025) * intensity)
         }
     }
 
     // MARK: - Geometry
 
     private static func makeWingVaporMesh(phase: Float) -> MeshResource? {
-        let segments = 22
+        let segments = 18
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
@@ -354,10 +354,10 @@ enum Stage2FlightEffects {
 
             for index in 0..<segments {
                 let t = Float(index) / Float(segments - 1)
-                let z = -0.10 - 7.4 * t
+                let z = -0.08 - 4.4 * t
                 let envelope = sin(.pi * min(1, t * 1.16)) * (1 - 0.50 * t)
-                let width = 0.08 + 0.56 * envelope
-                let ripple = sin(t * 17.0 + phase + Float(sheet)) * 0.045 * t
+                let width = 0.055 + 0.34 * envelope
+                let ripple = sin(t * 17.0 + phase + Float(sheet)) * 0.026 * t
                 let a = SIMD2<Float>(-width, ripple)
                 let b = SIMD2<Float>(width, -ripple)
                 positions.append([a.x * c - a.y * s, a.x * s + a.y * c, z])
@@ -390,9 +390,9 @@ enum Stage2FlightEffects {
         // transonic vapor photography is a condensation cloud, not the shockwave.
         for axial in 0...axialSegments {
             let t = Float(axial) / Float(axialSegments)
-            let z = 2.7 - 6.2 * t
+            let z = 1.75 - 3.9 * t
             let center = exp(-pow((t - 0.48) / 0.23, 2))
-            let baseRadius = 0.72 + 3.25 * center
+            let baseRadius = 0.48 + 1.95 * center
 
             for radial in 0..<radialSegments {
                 let angle = Float(radial) / Float(radialSegments) * 2 * .pi
@@ -402,7 +402,7 @@ enum Stage2FlightEffects {
                 let radius = baseRadius * irregular
                 positions.append([
                     cos(angle) * radius,
-                    sin(angle) * radius * 0.72,
+                    sin(angle) * radius * 0.54,
                     z
                 ])
             }
@@ -605,7 +605,7 @@ enum Stage2FlightEffects {
     }
 
     private static func effectMaterial(alpha: Float) -> UnlitMaterial {
-        UnlitMaterial(color: UIColor(white: 0.985, alpha: CGFloat(clamp(alpha, 0, 1))))
+        UnlitMaterial(color: UIColor(red: 0.86, green: 0.92, blue: 0.98, alpha: CGFloat(clamp(alpha, 0, 1))))
     }
 
     private static func clamp(_ value: Float, _ minimum: Float, _ maximum: Float) -> Float {
