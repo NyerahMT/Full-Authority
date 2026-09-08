@@ -467,9 +467,7 @@ private struct F16HUD: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("NAV")
                                 Text(String(format: "G %.1f", state.loadFactorG))
-                                if state.mach >= 0.50 {
-                                    Text(String(format: "M %.2f", state.mach))
-                                }
+                                Text(String(format: "M %.2f", state.mach))
                             }
                             .font(.system(size: 10, weight: .black, design: .monospaced))
                             .monospacedDigit()
@@ -558,18 +556,16 @@ private struct F16VelocityScale: View {
 
                 Rectangle().frame(width: 18, height: 1.2)
             }
-            .offset(x: 5)
+            // Current KCAS readout sits beside the tape pointer, not over the
+            // scrolling ladder.
+            .offset(x: -47)
 
             Text("C")
                 .font(.system(size: 8, weight: .black, design: .monospaced))
                 .offset(x: 35, y: -17)
 
-            Text(String(format: "M %.2f", state.mach))
-                .font(.system(size: 8, weight: .black, design: .monospaced))
-                .monospacedDigit()
-                .offset(y: 92)
         }
-        .frame(width: 86, height: 210)
+        .frame(width: 150, height: 210)
         .foregroundStyle(color)
         .clipped()
     }
@@ -613,7 +609,9 @@ private struct F16AltitudeScale: View {
                     .padding(.horizontal, 3)
                     .background(.black.opacity(0.16))
             }
-            .offset(x: -3)
+            // Mirror the airspeed side: keep the current altitude readout clear
+            // of the scrolling ladder.
+            .offset(x: 49)
 
             Text(String(format: "R %.0f", (radarAltitude / 10).rounded() * 10))
                 .font(.system(size: 8, weight: .black, design: .monospaced))
@@ -622,7 +620,7 @@ private struct F16AltitudeScale: View {
                 .overlay(Rectangle().stroke(color.opacity(0.72), lineWidth: 1))
                 .offset(y: 92)
         }
-        .frame(width: 92, height: 210)
+        .frame(width: 158, height: 210)
         .foregroundStyle(color)
         .clipped()
     }
