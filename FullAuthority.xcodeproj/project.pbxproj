@@ -11,6 +11,7 @@
 		FA0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000012 /* ContentView.swift */; };
 		FA0000000000000000000003 /* PrototypeSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000013 /* PrototypeSceneView.swift */; };
 		FA0000000000000000000004 /* PrototypeAircraftFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000014 /* PrototypeAircraftFactory.swift */; };
+		FA000000000000000000000C /* PrototypeCockpitFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001E /* PrototypeCockpitFactory.swift */; };
 		FA0000000000000000000005 /* FlightControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000015 /* FlightControls.swift */; };
 		FA0000000000000000000006 /* AircraftState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000016 /* AircraftState.swift */; };
 		FA0000000000000000000007 /* FlightSimulation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000017 /* FlightSimulation.swift */; };
@@ -35,6 +36,7 @@
 		FA000000000000000000001B /* JSBSim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JSBSim; path = Assets/JSBSim; sourceTree = "<group>"; };
 		FA000000000000000000001C /* Stage2WorldFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage2WorldFactory.swift; sourceTree = "<group>"; };
 		FA000000000000000000001D /* Stage2FlightEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage2FlightEffects.swift; sourceTree = "<group>"; };
+		FA000000000000000000001E /* PrototypeCockpitFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrototypeCockpitFactory.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +85,7 @@
 			isa = PBXGroup;
 			children = (
 				FA0000000000000000000014 /* PrototypeAircraftFactory.swift */,
+				FA000000000000000000001E /* PrototypeCockpitFactory.swift */,
 			);
 			path = Aircraft;
 			sourceTree = "<group>";
@@ -183,6 +186,7 @@
 				FA000000000000000000000A /* Stage2WorldFactory.swift in Sources */,
 				FA000000000000000000000B /* Stage2FlightEffects.swift in Sources */,
 				FA0000000000000000000004 /* PrototypeAircraftFactory.swift in Sources */,
+				FA000000000000000000000C /* PrototypeCockpitFactory.swift in Sources */,
 				FA0000000000000000000005 /* FlightControls.swift in Sources */,
 				FA0000000000000000000006 /* AircraftState.swift in Sources */,
 				FA0000000000000000000007 /* FlightSimulation.swift in Sources */,

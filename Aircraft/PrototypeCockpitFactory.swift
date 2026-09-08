@@ -14,32 +14,26 @@ enum PrototypeCockpitFactory {
 
         let charcoal = SimpleMaterial(
             color: UIColor(red: 0.055, green: 0.060, blue: 0.062, alpha: 1),
-            roughness: 0.82,
             isMetallic: false
         )
         let darkPanel = SimpleMaterial(
             color: UIColor(red: 0.075, green: 0.080, blue: 0.082, alpha: 1),
-            roughness: 0.74,
             isMetallic: false
         )
         let console = SimpleMaterial(
             color: UIColor(red: 0.095, green: 0.100, blue: 0.100, alpha: 1),
-            roughness: 0.68,
             isMetallic: false
         )
         let frame = SimpleMaterial(
             color: UIColor(red: 0.025, green: 0.028, blue: 0.030, alpha: 1),
-            roughness: 0.44,
             isMetallic: true
         )
         let seatCushion = SimpleMaterial(
             color: UIColor(red: 0.145, green: 0.155, blue: 0.135, alpha: 1),
-            roughness: 0.92,
             isMetallic: false
         )
         let belt = SimpleMaterial(
             color: UIColor(red: 0.55, green: 0.52, blue: 0.42, alpha: 1),
-            roughness: 0.88,
             isMetallic: false
         )
         let screen = UnlitMaterial(color: UIColor(
@@ -333,7 +327,6 @@ enum PrototypeCockpitFactory {
 
         let buttonMaterial = SimpleMaterial(
             color: UIColor(red: 0.16, green: 0.17, blue: 0.17, alpha: 1),
-            roughness: 0.74,
             isMetallic: false
         )
         for i in 0..<5 {
