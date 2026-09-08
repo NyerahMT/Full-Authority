@@ -1,0 +1,51 @@
+name: One-shot F-16 winding repair
+
+on:
+  push:
+    branches:
+      - stage-010-9-2-f16-winding-fix
+    paths:
+      - .github/workflows/one-shot-fix-f16-winding.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: stage-010-9-2-f16-winding-fix
+
+      - name: Correct handedness-induced triangle winding
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          factory = Path('Aircraft/PrototypeAircraftFactory.swift')
+          text = factory.read_text()
+          old = 'let triangle = [face[0], face[i], face[i + 1]]'
+          new = '''// The authored FBX conversion swaps source Y/Z, which changes handedness.\n                // Reverse winding so RealityKit front-face culling still sees the exterior shell.\n                let triangle = [face[0], face[i + 1], face[i]]'''
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one runtime triangle pattern, found {text.count(old)}')
+          factory.write_text(text.replace(old, new, 1))
+
+          importer = Path('Scripts/import_authored_f16.py')
+          text = importer.read_text()
+          old = '        faces.append(face)'
+          new = '''        # to_fa() swaps Y/Z and therefore flips handedness. Reverse the\n        # triangle winding so exported OBJ front faces remain outward-facing.\n        faces.append([face[0], face[2], face[1]])'''
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'Expected two exporter face patterns, found {count}')
+          importer.write_text(text.replace(old, new))
+          PY
+
+      - name: Commit repair
+        run: |
+          git config user.name "NyerahMT"
+          git config user.email "68287092+NyerahMT@users.noreply.github.com"
+          git add Aircraft/PrototypeAircraftFactory.swift Scripts/import_authored_f16.py
+          git commit -m "Stage 010.9.2: correct authored F-16 face winding"
+          git push origin HEAD:stage-010-9-2-f16-winding-fix
