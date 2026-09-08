@@ -36,7 +36,9 @@ struct ContentView: View {
 
     private var flightInterface: some View {
         ZStack {
-            if cameraMode == .cockpit || hmdEnabled {
+            // HMD is a real user toggle in every camera mode. Cockpit no longer
+            // forces the symbology back on after the pilot turns it off.
+            if hmdEnabled {
                 F16HUD(state: simulation.state, controls: simulation.controls)
                     .allowsHitTesting(false)
             }
@@ -449,9 +451,6 @@ private struct F16HUD: View {
                             .offset(x: fpmX - 48, y: aoaBracketY)
                     }
 
-                    // Keep the primary airspeed/altitude presentations well outside
-                    // the flight-path/pitch-ladder field. The previous offsets packed
-                    // both tapes against the center of the HUD on iPhone.
                     F16VelocityScale(state: state, color: hudColor)
                         .offset(x: -hudWidth * 0.68)
 
@@ -556,8 +555,6 @@ private struct F16VelocityScale: View {
 
                 Rectangle().frame(width: 18, height: 1.2)
             }
-            // Current KCAS readout sits beside the tape pointer, not over the
-            // scrolling ladder.
             .offset(x: -47)
 
             Text("C")
@@ -609,8 +606,6 @@ private struct F16AltitudeScale: View {
                     .padding(.horizontal, 3)
                     .background(.black.opacity(0.16))
             }
-            // Mirror the airspeed side: keep the current altitude readout clear
-            // of the scrolling ladder.
             .offset(x: 49)
 
             Text(String(format: "R %.0f", (radarAltitude / 10).rounded() * 10))
@@ -941,7 +936,6 @@ private struct GForceVignette: View {
         .allowsHitTesting(false)
     }
 }
-
 
 private struct CompactThrottleControl: View {
     let value: Float
