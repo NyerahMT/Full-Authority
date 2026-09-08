@@ -1,0 +1,31 @@
+name: Stage014WorldPass
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/stage014-world-pass.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply Stage 014 visual pass
+        run: python3 Scripts/stage014_world_pass.py
+
+      - name: Commit Stage 014
+        run: |
+          rm -f .github/workflows/stage014-world-pass.yml Scripts/stage014_world_pass.py
+          git config user.name "NyerahMT"
+          git config user.email "68287092+NyerahMT@users.noreply.github.com"
+          git add -A
+          git commit -m "Stage 014: overhaul terrain and aerodynamic visuals"
+          git push
