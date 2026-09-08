@@ -371,10 +371,11 @@ struct PrototypeSceneView: View {
             pullbackScale = 0.55
 
         case .cockpit:
-            // Fixed eyepoint in the F-16 seat. Free-look below rotates the head,
-            // not the eyepoint, so the runway does not slide around the cockpit.
-            localCameraOffset = [0, 0.88, 3.64]
-            localLookPoint = [0, 0.88, 90]
+            // Pilot eyepoint sits near the top of the seat/headrest, not up against
+            // the instrument panel. Free-look rotates the head around this fixed
+            // seated position so the cockpit has believable depth and parallax.
+            localCameraOffset = [0, 1.08, 3.05]
+            localLookPoint = [0, 1.08, 90]
             fieldOfView = 66
             pullbackScale = 0
         }
