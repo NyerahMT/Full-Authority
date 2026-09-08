@@ -817,10 +817,10 @@ enum PrototypeAircraftFactory {
         // a clear drop in Y, so the walk terminates there without painting the
         // fuselage. This follows the mesh's actual canopy loop instead of
         // inventing another ellipsoid/height mask.
-        var frontClosureQueue = selected.filter { index in
+        var frontClosureQueue = Array(selected.filter { index in
             let p = centroids[index]
             return abs(p.x) < 0.55 && p.z > 4.72 && p.y > 0.28
-        }
+        })
         var frontClosureCursor = 0
 
         while frontClosureCursor < frontClosureQueue.count {
