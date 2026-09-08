@@ -61,6 +61,8 @@ enum PrototypeAircraftFactory {
         case canopy = 3
         case exhaust = 4
         case intake = 5
+        case side = 6
+        case control = 7
     }
 
     private struct ParsedVertex {
@@ -87,7 +89,7 @@ enum PrototypeAircraftFactory {
             body.name = meshName
             visualRoot.addChild(body)
 
-            let controlMaterial = materials[Int(Paint.upper.rawValue)]
+            let controlMaterial = materials[Int(Paint.control.rawValue)]
             try addMovingPart(
                 to: visualRoot,
                 name: leftAileronName,
@@ -184,13 +186,18 @@ enum PrototypeAircraftFactory {
             return result
         }
 
+        // Keep the Hill Gray family, but give the model enough tonal and
+        // roughness separation that its actual facets and moving surfaces read
+        // under directional light instead of collapsing into one flat gray mass.
         return [
-            material(UIColor(red: 0.33, green: 0.35, blue: 0.36, alpha: 1), roughness: 0.74, metallic: 0.02),
-            material(UIColor(red: 0.50, green: 0.52, blue: 0.53, alpha: 1), roughness: 0.78, metallic: 0.01),
-            material(UIColor(red: 0.22, green: 0.23, blue: 0.23, alpha: 1), roughness: 0.82, metallic: 0.00),
-            material(UIColor(red: 0.075, green: 0.105, blue: 0.125, alpha: 1), roughness: 0.10, metallic: 0.24),
-            material(UIColor(red: 0.20, green: 0.19, blue: 0.17, alpha: 1), roughness: 0.34, metallic: 0.92),
-            material(UIColor(red: 0.42, green: 0.44, blue: 0.45, alpha: 1), roughness: 0.68, metallic: 0.02)
+            material(UIColor(red: 0.305, green: 0.325, blue: 0.335, alpha: 1), roughness: 0.60, metallic: 0.025),
+            material(UIColor(red: 0.455, green: 0.475, blue: 0.485, alpha: 1), roughness: 0.66, metallic: 0.015),
+            material(UIColor(red: 0.165, green: 0.175, blue: 0.180, alpha: 1), roughness: 0.79, metallic: 0.000),
+            material(UIColor(red: 0.045, green: 0.072, blue: 0.090, alpha: 1), roughness: 0.075, metallic: 0.34),
+            material(UIColor(red: 0.135, green: 0.125, blue: 0.110, alpha: 1), roughness: 0.28, metallic: 0.95),
+            material(UIColor(red: 0.335, green: 0.355, blue: 0.365, alpha: 1), roughness: 0.56, metallic: 0.025),
+            material(UIColor(red: 0.255, green: 0.275, blue: 0.285, alpha: 1), roughness: 0.63, metallic: 0.020),
+            material(UIColor(red: 0.275, green: 0.295, blue: 0.305, alpha: 1), roughness: 0.56, metallic: 0.025)
         ]
     }
 
@@ -892,6 +899,16 @@ enum PrototypeAircraftFactory {
            centroid.z > -0.15,
            centroid.z < 3.35 {
             return Paint.intake.rawValue
+        }
+
+        // Real form definition comes from the mesh normals first. A slightly
+        // darker side tone preserves fuselage, vertical-tail and leading-edge
+        // shape even against a bright sky; it is still subtle enough to read as
+        // one painted airframe rather than a patchwork skin.
+        if abs(averageNormal.y) < 0.42,
+           centroid.y > -0.55,
+           centroid.z < 5.15 {
+            return Paint.side.rawValue
         }
 
         // Hill Gray-style darker upper surfaces and lighter lower surfaces.
