@@ -48,12 +48,10 @@ enum PrototypeCockpitFactory {
             blue: 0.31,
             alpha: 1
         ))
-        let warning = UnlitMaterial(color: UIColor(
-            red: 0.82,
-            green: 0.23,
-            blue: 0.055,
-            alpha: 1
-        ))
+        let warning = SimpleMaterial(
+            color: UIColor(red: 0.82, green: 0.23, blue: 0.055, alpha: 1),
+            isMetallic: false
+        )
 
         // Cockpit tub and glareshield. The existing camera eyepoint is
         // [0, 0.88, 3.64], so every piece is built directly in the same authored
