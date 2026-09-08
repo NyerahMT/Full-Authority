@@ -1,0 +1,120 @@
+name: Stage0164VFXVolume
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stage0164-vfx-volume.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fix vapor alignment visibility and contrail volume
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('App/Stage2FlightEffects.swift')
+          s = p.read_text()
+
+          def replace_once(old, new):
+              global s
+              if old not in s:
+                  raise SystemExit('Expected block not found:\n' + old[:260])
+              s = s.replace(old, new, 1)
+
+          replace_once(
+          '''    private static let transonicPrefix = "FA.effects.particles.transonic"\n    private static let transonicRegionCount = 10\n    private static let contrailCoreName = "FA.effects.particles.contrail.core"\n    private static let contrailDiffuseName = "FA.effects.particles.contrail.diffuse"\n''',
+          '''    private static let transonicPrefix = "FA.effects.particles.transonic"\n    private static let transonicRegionCount = 12\n    private static let contrailCoreName = "FA.effects.particles.contrail.core"\n    private static let contrailDiffuseName = "FA.effects.particles.contrail.diffuse"\n    private static let contrailDiffuseUpperName = "FA.effects.particles.contrail.diffuse.upper"\n    private static let contrailDiffuseLowerName = "FA.effects.particles.contrail.diffuse.lower"\n''')
+
+          replace_once(
+          '''            for name in [contrailCoreName, contrailDiffuseName] {\n''',
+          '''            for name in [contrailCoreName, contrailDiffuseName, contrailDiffuseUpperName, contrailDiffuseLowerName] {\n''')
+
+          replace_once(
+          '''            [-0.70,  0.36,  0.12],\n            [-1.45, -0.28, -0.20],\n            [ 1.45, -0.28, -0.20],\n            [ 0.70,  0.36,  0.12],\n''',
+          '''            [-0.70,  0.36,  0.12],\n            [ 0.00,  0.58,  0.16],\n            [-1.45, -0.28, -0.20],\n            [ 0.00, -0.34, -0.14],\n            [ 1.45, -0.28, -0.20],\n            [ 0.70,  0.36,  0.12],\n''')
+
+          replace_once(
+          '''        root.addChild(makeContrailEmitter(name: contrailCoreName, diffuse: false))\n        root.addChild(makeContrailEmitter(name: contrailDiffuseName, diffuse: true))\n        return root\n''',
+          '''        root.addChild(makeContrailEmitter(name: contrailCoreName, diffuse: false))\n        root.addChild(makeContrailEmitter(name: contrailDiffuseName, diffuse: true))\n        root.addChild(makeContrailEmitter(name: contrailDiffuseUpperName, diffuse: true))\n        root.addChild(makeContrailEmitter(name: contrailDiffuseLowerName, diffuse: true))\n        return root\n''')
+
+          replace_once(
+          '''        configureContrailEmitter(\n            root: root,\n            name: contrailDiffuseName,\n            from: previous,\n            to: exhaustPoint,\n            emitting: formsContrail && persistence > 0.02,\n            strength: formationStrength,\n            persistence: persistence,\n            driftDirection: driftDirection,\n            driftSpeed: driftSpeed,\n            diffuse: true\n        )\n\n        runtime.previousExhaustPoint = formsContrail ? exhaustPoint : nil\n''',
+          '''        configureContrailEmitter(\n            root: root,\n            name: contrailDiffuseName,\n            from: previous,\n            to: exhaustPoint,\n            emitting: formsContrail && persistence > 0.02,\n            strength: formationStrength,\n            persistence: persistence,\n            driftDirection: driftDirection,\n            driftSpeed: driftSpeed,\n            diffuse: true,\n            verticalDrift: 0\n        )\n        configureContrailEmitter(\n            root: root,\n            name: contrailDiffuseUpperName,\n            from: previous,\n            to: exhaustPoint,\n            emitting: formsContrail && persistence > 0.05,\n            strength: formationStrength * 0.72,\n            persistence: persistence,\n            driftDirection: driftDirection,\n            driftSpeed: driftSpeed,\n            diffuse: true,\n            verticalDrift: 0.45 + 0.45 * persistence\n        )\n        configureContrailEmitter(\n            root: root,\n            name: contrailDiffuseLowerName,\n            from: previous,\n            to: exhaustPoint,\n            emitting: formsContrail && persistence > 0.05,\n            strength: formationStrength * 0.72,\n            persistence: persistence,\n            driftDirection: driftDirection,\n            driftSpeed: driftSpeed,\n            diffuse: true,\n            verticalDrift: -(0.65 + 0.70 * persistence)\n        )\n\n        runtime.previousExhaustPoint = formsContrail ? exhaustPoint : nil\n''')
+
+          # Pass the aircraft state into each maneuver-vapor emitter so its aft
+          # velocity can be expressed explicitly in world space every frame.
+          s = s.replace('''            vortexSign: 1\n        )''', '''            vortexSign: 1,\n            state: state\n        )''', 3)
+          s = s.replace('''            vortexSign: -1\n        )''', '''            vortexSign: -1,\n            state: state\n        )''', 3)
+
+          replace_once(
+          '''        enabled: Bool,\n        intensity: Float,\n        vortexSign: Float\n    ) {\n''',
+          '''        enabled: Bool,\n        intensity: Float,\n        vortexSign: Float,\n        state: AircraftState\n    ) {\n''')
+
+          replace_once(
+          '''        let i = clamp(intensity, 0, 1)\n        particles.isEmitting = enabled\n\n        // The aircraft's motion through global simulation space makes the wake.\n        // Keep particle self-velocity small and strictly aft so the near-field\n        // filament stays on the F-16's local -Z axis instead of spraying sideways.\n        particles.speed = 0.35 + 1.25 * i\n        particles.speedVariation = 0.15 + 0.45 * i\n        particles.mainEmitter.birthRate = enabled ? 900 + 4_600 * i : 0\n        particles.mainEmitter.lifeSpan = Double(0.42 + 0.88 * i)\n        particles.mainEmitter.lifeSpanVariation = Double(0.08 + 0.16 * i)\n        particles.mainEmitter.size = 0.085 + 0.145 * i\n        particles.mainEmitter.sizeVariation = 0.025 + 0.055 * i\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.35 + 0.85 * i\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.40\n        particles.mainEmitter.noiseStrength = 0.035 + 0.16 * i\n        particles.mainEmitter.noiseScale = 0.30 + 0.28 * i\n        particles.mainEmitter.noiseAnimationSpeed = 0.55 + 0.70 * i\n        particles.mainEmitter.vortexStrength = vortexSign * (3.0 + 13.0 * i)\n''',
+          '''        let i = clamp(intensity, 0, 1)\n        particles.isEmitting = enabled\n\n        // Lock the initial flow to the F-16's actual aft axis in WORLD space.\n        // This removes the sideways fan-out that could occur when a local birth\n        // vector was combined with global particle simulation.\n        let worldAft = simd_normalize(simd_act(state.orientation, SIMD3<Float>(0, 0, -1)))\n        particles.birthDirection = .world\n        particles.emissionDirection = worldAft\n\n        // Aircraft translation creates almost all of the visible trail. Keep\n        // particle self-motion tiny so the vapor stays attached to the wake,\n        // then let mild turbulence/vorticity roll it up farther downstream.\n        particles.speed = 0.08 + 0.42 * i\n        particles.speedVariation = 0.04 + 0.12 * i\n        particles.mainEmitter.birthRate = enabled ? 1_500 + 6_500 * i : 0\n        particles.mainEmitter.lifeSpan = Double(0.58 + 1.12 * i)\n        particles.mainEmitter.lifeSpanVariation = Double(0.10 + 0.20 * i)\n        particles.mainEmitter.size = 0.095 + 0.155 * i\n        particles.mainEmitter.sizeVariation = 0.025 + 0.060 * i\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.30 + 0.75 * i\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.45\n        particles.mainEmitter.noiseStrength = 0.018 + 0.075 * i\n        particles.mainEmitter.noiseScale = 0.34 + 0.30 * i\n        particles.mainEmitter.noiseAnimationSpeed = 0.40 + 0.55 * i\n        let isLeading = name.contains(".leading.")\n        let isTip = name.contains(".tip.")\n        let vortexMagnitude: Float = isLeading\n            ? (0.35 + 1.8 * i)\n            : (isTip ? (1.4 + 6.5 * i) : (0.8 + 3.8 * i))\n        particles.mainEmitter.vortexStrength = vortexSign * vortexMagnitude\n''')
+
+          replace_once(
+          '''        let moisture = clamp((iceRH - 0.54) / 0.46, 0, 1)\n        let mach = state.mach\n        let machPeak = exp(-pow((mach - 0.995) / 0.055, 2))\n        let qbar = clamp((state.dynamicPressurePSF - 120) / 520.0, 0, 1)\n        let alphaFactor = 0.82 + 0.18 * clamp(abs(state.angleOfAttackDegrees) / 12.0, 0, 1)\n        let intensity = machPeak\n            * (0.22 + 0.78 * qbar)\n            * (0.18 + 0.82 * moisture)\n            * alphaFactor\n        let visible = mach > 0.93 && mach < 1.09 && intensity > 0.016\n''',
+          '''        let moisture = clamp((iceRH - 0.45) / 0.50, 0, 1)\n        let mach = state.mach\n        let machPeak = exp(-pow((mach - 0.995) / 0.072, 2))\n        let qbar = clamp((state.dynamicPressurePSF - 80) / 460.0, 0, 1)\n        let alphaFactor = 0.86 + 0.14 * clamp(abs(state.angleOfAttackDegrees) / 12.0, 0, 1)\n        let intensity = machPeak\n            * (0.38 + 0.62 * qbar)\n            * (0.32 + 0.68 * moisture)\n            * alphaFactor\n        let visible = mach > 0.90 && mach < 1.12 && intensity > 0.006\n''')
+
+          replace_once(
+          '''            let localBias = 0.96 + 0.04 * sin(Float(index) * 1.71 + Float(simulationTime) * 6.5)\n            let i = clamp(intensity * localBias, 0, 1)\n            particles.isEmitting = visible\n            particles.speed = 0.20 + 1.05 * i\n            particles.speedVariation = 0.25 + 0.55 * i\n            particles.mainEmitter.birthRate = visible ? 1_000 + 4_100 * i : 0\n            particles.mainEmitter.lifeSpan = Double(0.20 + 0.40 * i)\n            particles.mainEmitter.lifeSpanVariation = Double(0.045 + 0.085 * i)\n            particles.mainEmitter.size = 0.20 + 0.34 * i\n            particles.mainEmitter.sizeVariation = 0.075 + 0.14 * i\n            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.38 + 0.52 * i\n            particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.20\n            particles.mainEmitter.noiseStrength = 0.10 + 0.24 * i\n            particles.mainEmitter.noiseScale = 0.34 + 0.28 * i\n            particles.mainEmitter.noiseAnimationSpeed = 0.60 + 0.75 * i\n''',
+          '''            let localBias = 0.985 + 0.015 * sin(Float(index) * 1.71 + Float(simulationTime) * 5.0)\n            let i = clamp(intensity * localBias, 0, 1)\n            particles.isEmitting = visible\n            let worldAft = simd_normalize(simd_act(state.orientation, SIMD3<Float>(0, 0, -1)))\n            particles.birthDirection = .world\n            particles.emissionDirection = worldAft\n            particles.speed = 0.08 + 0.42 * i\n            particles.speedVariation = 0.10 + 0.25 * i\n            particles.mainEmitter.birthRate = visible ? 2_800 + 9_000 * i : 0\n            particles.mainEmitter.lifeSpan = Double(0.38 + 0.72 * i)\n            particles.mainEmitter.lifeSpanVariation = Double(0.08 + 0.14 * i)\n            particles.mainEmitter.size = 0.30 + 0.52 * i\n            particles.mainEmitter.sizeVariation = 0.10 + 0.18 * i\n            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.30 + 0.48 * i\n            particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.18\n            particles.mainEmitter.noiseStrength = 0.055 + 0.14 * i\n            particles.mainEmitter.noiseScale = 0.40 + 0.32 * i\n            particles.mainEmitter.noiseAnimationSpeed = 0.42 + 0.55 * i\n''')
+
+          replace_once(
+          '''        particles.emitterShapeSize = isLERX\n            ? SIMD3<Float>(0.16, 0.10, 1.30)\n            : (isTip\n                ? SIMD3<Float>(0.11, 0.08, 0.82)\n                : SIMD3<Float>(0.14, 0.09, 1.08))\n''',
+          '''        particles.emitterShapeSize = isLERX\n            ? SIMD3<Float>(0.18, 0.11, 1.95)\n            : (isTip\n                ? SIMD3<Float>(0.12, 0.09, 1.15)\n                : SIMD3<Float>(0.16, 0.10, 1.65))\n''')
+
+          replace_once(
+          '''        particles.emitterShapeSize = [1.35, 0.56, 0.42]\n''',
+          '''        particles.emitterShapeSize = [1.72, 0.82, 0.68]\n''')
+          replace_once(
+          '''        particles.mainEmitter.size = 0.27\n        particles.mainEmitter.sizeVariation = 0.12\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.50\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.20\n        particles.mainEmitter.opacityCurve = .quickFadeInOut\n''',
+          '''        particles.mainEmitter.size = 0.36\n        particles.mainEmitter.sizeVariation = 0.15\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.42\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.18\n        particles.mainEmitter.opacityCurve = .gradualFadeInOut\n''')
+          replace_once(
+          '''            start: .single(UIColor(red: 0.94, green: 0.97, blue: 1.0, alpha: 0.48)),\n''',
+          '''            start: .single(UIColor(red: 0.95, green: 0.98, blue: 1.0, alpha: 0.68)),\n''')
+
+          replace_once(
+          '''        particles.mainEmitter.color = .evolving(\n            start: .single(UIColor(\n                red: 0.97,\n                green: 0.985,\n                blue: 1.0,\n                alpha: diffuse ? 0.13 : 0.42\n            )),\n''',
+          '''        let spreadLayer = name == contrailDiffuseUpperName || name == contrailDiffuseLowerName\n        particles.mainEmitter.color = .evolving(\n            start: .single(UIColor(\n                red: 0.97,\n                green: 0.985,\n                blue: 1.0,\n                alpha: diffuse ? (spreadLayer ? 0.085 : 0.15) : 0.42\n            )),\n''')
+
+          replace_once(
+          '''        driftSpeed: Float,\n        diffuse: Bool\n    ) {\n''',
+          '''        driftSpeed: Float,\n        diffuse: Bool,\n        verticalDrift: Float = 0\n    ) {\n''')
+
+          replace_once(
+          '''                particles.emitterShapeSize = diffuse\n                    ? SIMD3<Float>(0.42 + 0.25 * p, 0.42 + 0.25 * p, max(length, 0.42))\n                    : SIMD3<Float>(0.15 + 0.08 * s, 0.15 + 0.08 * s, max(length, 0.15))\n''',
+          '''                let spreadLayer = name == contrailDiffuseUpperName || name == contrailDiffuseLowerName\n                particles.emitterShapeSize = diffuse\n                    ? SIMD3<Float>(\n                        0.52 + 0.34 * p,\n                        0.72 + 0.62 * p + (spreadLayer ? 0.34 : 0),\n                        max(length, 0.42)\n                    )\n                    : SIMD3<Float>(0.15 + 0.08 * s, 0.18 + 0.10 * s, max(length, 0.15))\n''')
+
+          replace_once(
+          '''        particles.isEmitting = emitting\n        particles.birthDirection = .world\n        particles.emissionDirection = driftDirection\n        // Fresh ice stays tight for a few seconds; the older persistent\n        // population takes the full wind/wake drift and survives long enough to\n        // leave an actual maneuver trace across the sky.\n        particles.speed = diffuse\n            ? max(0.03, driftSpeed)\n            : max(0.02, driftSpeed * 0.22)\n''',
+          '''        particles.isEmitting = emitting\n        particles.birthDirection = .world\n        let baseVelocity = driftDirection * max(driftSpeed, 0.03)\n        let volumeVelocity = baseVelocity + SIMD3<Float>(0, verticalDrift, 0)\n        let volumeSpeed = simd_length(volumeVelocity)\n        particles.emissionDirection = volumeSpeed > 0.001\n            ? volumeVelocity / volumeSpeed\n            : SIMD3<Float>(0, -1, 0)\n        // Fresh ice stays tight for a few seconds. The three persistent layers\n        // fan vertically at different rates so the wake grows into a volume\n        // instead of remaining a flat ribbon of billboard particles.\n        particles.speed = diffuse\n            ? max(0.03, volumeSpeed)\n            : max(0.02, driftSpeed * 0.22)\n''')
+
+          replace_once(
+          '''        if diffuse {\n            particles.mainEmitter.birthRate = emitting ? 150 + 500 * s * (0.35 + 0.65 * p) : 0\n            particles.mainEmitter.lifeSpan = Double(40 + 80 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(5.0 + 12.0 * p)\n            particles.mainEmitter.size = 0.34 + 0.30 * s\n''',
+          '''        if diffuse {\n            let spreadLayer = name == contrailDiffuseUpperName || name == contrailDiffuseLowerName\n            let densityScale: Float = spreadLayer ? 0.44 : 1.0\n            particles.mainEmitter.birthRate = emitting\n                ? densityScale * (150 + 500 * s * (0.35 + 0.65 * p))\n                : 0\n            particles.mainEmitter.lifeSpan = Double((spreadLayer ? 45 : 55) + (spreadLayer ? 65 : 80) * p)\n            particles.mainEmitter.lifeSpanVariation = Double(6.0 + 14.0 * p)\n            particles.mainEmitter.size = (spreadLayer ? 0.30 : 0.34) + 0.30 * s\n''')
+
+          replace_once(
+          '''        } else {\n            particles.mainEmitter.birthRate = emitting ? 650 + 1_850 * s : 0\n            particles.mainEmitter.lifeSpan = Double(7.0 + 13.0 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(0.9 + 2.0 * p)\n''',
+          '''        } else {\n            particles.mainEmitter.birthRate = emitting ? 650 + 1_850 * s : 0\n            // Keep the recognizable bright core around long enough to draw a\n            // 20-30+ second maneuver streak before the diffuse population owns it.\n            particles.mainEmitter.lifeSpan = Double(22.0 + 16.0 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(2.0 + 4.0 * p)\n''')
+
+          p.write_text(s)
+          PY
+
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add App/Stage2FlightEffects.swift
+          git commit -m 'Stage 016.4: fix vapor direction and volumetric persistence'
+          git push origin HEAD:main
