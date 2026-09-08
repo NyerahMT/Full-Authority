@@ -8,12 +8,12 @@ enum Stage2FlightEffects {
     static let attachedRootName = "FA.effects.attached"
     static let trailRootName = "FA.effects.trails"
 
-    private static let lerxLeftName = "FA.effects.particles.lerx.left"
-    private static let lerxRightName = "FA.effects.particles.lerx.right"
-    private static let tipLeftName = "FA.effects.particles.tip.left"
-    private static let tipRightName = "FA.effects.particles.tip.right"
-    private static let leadingLeftName = "FA.effects.particles.leading.left"
-    private static let leadingRightName = "FA.effects.particles.leading.right"
+    private static let lerxLeftName = "FA.effects.vapor.lerx.left"
+    private static let lerxRightName = "FA.effects.vapor.lerx.right"
+    private static let tipLeftName = "FA.effects.vapor.tip.left"
+    private static let tipRightName = "FA.effects.vapor.tip.right"
+    private static let leadingLeftName = "FA.effects.vapor.leading.left"
+    private static let leadingRightName = "FA.effects.vapor.leading.right"
 
     private static let transonicShellName = "FA.effects.transonic.shell"
     private static let transonicHaloName = "FA.effects.transonic.halo"
@@ -27,6 +27,7 @@ enum Stage2FlightEffects {
         var simulationTime: TimeInterval
         var strength: Float
         var persistence: Float
+        var lifeSeconds: Float
         var segment: Int
     }
 
@@ -60,44 +61,70 @@ enum Stage2FlightEffects {
         let root = Entity()
         root.name = attachedRootName
 
-        root.addChild(makeAirframeEmitter(
+        // Maneuver vapor is intentionally attached geometry rather than free
+        // particles. The whole streamer always points down the authored F-16's
+        // local -Z (aft) axis, so a roll/yaw can never make the leading-edge
+        // vapor shoot sideways or forward across the airplane.
+        root.addChild(makeVaporStreamer(
             name: lerxLeftName,
             position: [-1.34, 0.21, 1.45],
-            vortexStrength: 3.4
+            width: 0.48,
+            height: 0.20,
+            length: 4.6,
+            opacity: 0.20
         ))
-        root.addChild(makeAirframeEmitter(
+        root.addChild(makeVaporStreamer(
             name: lerxRightName,
             position: [1.34, 0.21, 1.45],
-            vortexStrength: -3.4
+            width: 0.48,
+            height: 0.20,
+            length: 4.6,
+            opacity: 0.20
         ))
-        root.addChild(makeAirframeEmitter(
-            name: tipLeftName,
-            position: [-4.68, -0.04, -1.22],
-            vortexStrength: 5.2
-        ))
-        root.addChild(makeAirframeEmitter(
-            name: tipRightName,
-            position: [4.68, -0.04, -1.22],
-            vortexStrength: -5.2
-        ))
-        root.addChild(makeAirframeEmitter(
+        root.addChild(makeVaporStreamer(
             name: leadingLeftName,
             position: [-2.78, 0.08, 0.38],
-            vortexStrength: 2.5
+            width: 0.62,
+            height: 0.14,
+            length: 4.2,
+            opacity: 0.18
         ))
-        root.addChild(makeAirframeEmitter(
+        root.addChild(makeVaporStreamer(
             name: leadingRightName,
             position: [2.78, 0.08, 0.38],
-            vortexStrength: -2.5
+            width: 0.62,
+            height: 0.14,
+            length: 4.2,
+            opacity: 0.18
+        ))
+        root.addChild(makeVaporStreamer(
+            name: tipLeftName,
+            position: [-4.68, -0.04, -1.22],
+            width: 0.17,
+            height: 0.17,
+            length: 6.8,
+            opacity: 0.17
+        ))
+        root.addChild(makeVaporStreamer(
+            name: tipRightName,
+            position: [4.68, -0.04, -1.22],
+            width: 0.17,
+            height: 0.17,
+            length: 6.8,
+            opacity: 0.17
         ))
 
+        // Two nested low-poly cones make the transonic cloud read as a cone
+        // rather than the old oval/collar. Both end on the same flat aft plane.
         root.addChild(makeTransonicVaporEntity(
             name: transonicHaloName,
-            opacity: 0.03
+            opacity: 0.025,
+            radialScale: 1.09
         ))
         root.addChild(makeTransonicVaporEntity(
             name: transonicShellName,
-            opacity: 0.08
+            opacity: 0.070,
+            radialScale: 1.00
         ))
 
         return root
@@ -127,7 +154,6 @@ enum Stage2FlightEffects {
         state: AircraftState,
         simulationTime: TimeInterval
     ) {
-        // Permanently retire the old primitive Stage 010 vapor geometry.
         for oldName in [
             PrototypeAircraftFactory.vaporLeftName,
             PrototypeAircraftFactory.vaporRightName,
@@ -138,8 +164,16 @@ enum Stage2FlightEffects {
         }
 
         guard let root = aircraft.findEntity(named: attachedRootName) else { return }
-        updateWingCondensation(root: root, state: state)
-        updateTransonicVapor(root: root, state: state, simulationTime: simulationTime)
+        updateWingCondensation(
+            root: root,
+            state: state,
+            simulationTime: simulationTime
+        )
+        updateTransonicVapor(
+            root: root,
+            state: state,
+            simulationTime: simulationTime
+        )
     }
 
     static func updateWorldTrails(
@@ -161,29 +195,59 @@ enum Stage2FlightEffects {
             pressurePSF: state.ambientPressurePSF
         )
         let temperatureMargin = criticalTemperatureC - state.ambientTemperatureC
-        let temperatureFactor = clamp((temperatureMargin + 1.0) / 8.0, 0, 1)
-        let humidityFormation = clamp((iceRH - 0.70) / 0.30, 0, 1)
         let fuelFlow = state.engineFuelFlowPoundsPerSecond
-        let exhaustWater = clamp((fuelFlow - 0.015) / 0.65, 0, 1)
-        let formationStrength = temperatureFactor
+
+        // Keep the real Schmidt-Appleman gate as the primary source of long,
+        // persistent ice trails, but widen the edge slightly so the synthetic
+        // humidity field does not make valid contrails vanish between cells.
+        let temperatureFactor = clamp((temperatureMargin + 2.0) / 9.0, 0, 1)
+        let humidityFormation = clamp((iceRH - 0.62) / 0.38, 0, 1)
+        let exhaustWater = clamp((fuelFlow - 0.010) / 0.62, 0, 1)
+        let physicalStrength = temperatureFactor
             * humidityFormation
-            * (0.30 + 0.70 * exhaustWater)
-        let persistence = clamp((iceRH - 0.82) / 0.35, 0, 1)
+            * (0.32 + 0.68 * exhaustWater)
+        let physicalPersistence = clamp((iceRH - 0.76) / 0.38, 0, 1)
 
-        let formsContrail = temperatureMargin > -0.5
-            && iceRH > 0.70
-            && fuelFlow > 0.012
-            && formationStrength > 0.025
+        let formsPersistentContrail = temperatureMargin > -2.0
+            && iceRH > 0.62
+            && fuelFlow > 0.010
+            && physicalStrength > 0.012
 
-        // Start the ice trail behind the nozzle so there is a clean hot-mixing
-        // gap instead of a white plug attached directly to the airplane.
-        let exhaustPoint = worldPoint(local: [0, -0.04, -8.55], state: state)
+        // A short humid exhaust-condensation trail is allowed at high power
+        // even below the persistent-contrail layer. It lasts only a few seconds,
+        // so it cannot masquerade as a 30k-ft ice contrail, but it guarantees
+        // the exhaust does not visually disappear in the exact high-power
+        // low-altitude tests we use while tuning the game.
+        let highPowerMoisture = clamp((iceRH - 0.54) / 0.38, 0, 1)
+        let highPowerSpeed = clamp((state.airspeedMetersPerSecond - 135) / 120, 0, 1)
+        let highPowerFuel = clamp((fuelFlow - 0.28) / 0.95, 0, 1)
+        let highPowerStrength = highPowerMoisture * highPowerSpeed * highPowerFuel
+        let formsShortExhaustTrail = state.afterburnerActive
+            && highPowerStrength > 0.04
+
+        let formsTrail = formsPersistentContrail || formsShortExhaustTrail
+        let trailStrength = formsPersistentContrail
+            ? physicalStrength
+            : max(0.26, highPowerStrength * 0.72)
+        let trailPersistence = formsPersistentContrail
+            ? physicalPersistence
+            : clamp(highPowerMoisture * 0.30, 0.05, 0.28)
+        let trailLife: Float = formsPersistentContrail
+            ? (24.0 + 28.0 * trailPersistence)
+            : (4.0 + 3.5 * trailPersistence)
+
+        // F-16 nozzle lip is near z=-7.02 m. A 1.25 m mixing gap keeps the
+        // trail from looking like a white plug glued to the engine.
+        let exhaustPoint = worldPoint(
+            local: [0, -0.04, -8.30],
+            state: state
+        )
 
         let wakeDescent = initialWakeDescentRate(state: state)
         let driftVelocity = state.windMetersPerSecond
-            + SIMD3<Float>(0, -0.30 * wakeDescent, 0)
+            + SIMD3<Float>(0, -0.28 * wakeDescent, 0)
 
-        if formsContrail {
+        if formsTrail {
             if !runtime.wasForming {
                 runtime.segment += 1
                 runtime.lastSamplePosition = nil
@@ -195,16 +259,14 @@ enum Stage2FlightEffects {
                 simd_length(exhaustPoint - $0)
             } ?? .greatestFiniteMagnitude
 
-            // The mesh connects samples, so it does not need particle-density
-            // hacks at fighter speed. 12 m / 0.07 s keeps turns smooth without
-            // rebuilding thousands of vertices every frame on an iPhone.
-            if elapsed >= 0.07 || distance >= 12.0 {
+            if elapsed >= 0.050 || distance >= 8.0 {
                 runtime.samples.append(TrailSample(
                     position: exhaustPoint,
                     driftVelocity: driftVelocity,
                     simulationTime: simulationTime,
-                    strength: formationStrength,
-                    persistence: persistence,
+                    strength: trailStrength,
+                    persistence: trailPersistence,
+                    lifeSeconds: trailLife,
                     segment: runtime.segment
                 ))
                 runtime.lastSamplePosition = exhaustPoint
@@ -214,21 +276,20 @@ enum Stage2FlightEffects {
             runtime.lastSamplePosition = nil
         }
 
-        runtime.wasForming = formsContrail
+        runtime.wasForming = formsTrail
 
-        // Keep enough history to make a real maneuvering trail while bounding
-        // the dynamic mesh cost. Old samples taper before they are discarded.
-        let oldestTime = simulationTime - 42.0
-        runtime.samples.removeAll { $0.simulationTime < oldestTime }
-        if runtime.samples.count > 700 {
-            runtime.samples.removeFirst(runtime.samples.count - 700)
+        let oldestTime = simulationTime - 55.0
+        runtime.samples.removeAll {
+            $0.simulationTime < oldestTime
+                || Float(simulationTime - $0.simulationTime) > $0.lifeSeconds + 1.0
+        }
+        if runtime.samples.count > 900 {
+            runtime.samples.removeFirst(runtime.samples.count - 900)
         }
 
-        // Dynamic MeshResource generation is substantially cheaper than a
-        // dense particle cloud, but it still does real geometry work. Refresh
-        // the slow-moving vapor geometry at ~12.5 Hz instead of every display
-        // frame; the aircraft/camera remain 60 Hz.
-        if simulationTime - runtime.lastMeshUpdateTime < 0.08 {
+        // 15 Hz is still cheap enough on iPhone while making curved trails look
+        // noticeably smoother than the previous 12.5 Hz rebuild cadence.
+        if simulationTime - runtime.lastMeshUpdateTime < 0.066 {
             return
         }
         runtime.lastMeshUpdateTime = simulationTime
@@ -238,152 +299,256 @@ enum Stage2FlightEffects {
             name: contrailDiffuseName,
             samples: runtime.samples,
             simulationTime: simulationTime,
-            maxAge: 42,
-            radialSides: 6,
-            baseRadius: 0.40,
-            radialGrowthPerSecond: 0.052,
-            driftScale: 0.72,
-            opacity: 0.115
+            layerMaxAge: 55,
+            radialSides: 7,
+            baseRadius: 0.46,
+            radialGrowthPerSecond: 0.060,
+            driftScale: 0.78,
+            opacity: 0.18
         )
         updateTrailEntity(
             root: root,
             name: contrailCoreName,
             samples: runtime.samples,
             simulationTime: simulationTime,
-            maxAge: 13,
-            radialSides: 6,
-            baseRadius: 0.16,
-            radialGrowthPerSecond: 0.026,
-            driftScale: 0.22,
-            opacity: 0.34
+            layerMaxAge: 14,
+            radialSides: 7,
+            baseRadius: 0.205,
+            radialGrowthPerSecond: 0.028,
+            driftScale: 0.24,
+            opacity: 0.48
         )
     }
 
-    // MARK: - Wing / LERX condensation
+    // MARK: - Maneuver vapor
 
-    private static func updateWingCondensation(root: Entity, state: AircraftState) {
+    private static func updateWingCondensation(
+        root: Entity,
+        state: AircraftState,
+        simulationTime: TimeInterval
+    ) {
         let iceRH = iceRelativeHumidity(
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
+
         let absG = abs(state.loadFactorG)
         let absAlpha = abs(state.angleOfAttackDegrees)
-        let ambientMoisture = clamp((iceRH - 0.50) / 0.50, 0, 1)
-        let gDemand = clamp((absG - 1.8) / 5.8, 0, 1)
-        let alphaDemand = clamp((absAlpha - 5.0) / 12.0, 0, 1)
-        let qbar = clamp((state.dynamicPressurePSF - 80) / 520.0, 0, 1)
+        let ambientMoisture = clamp((iceRH - 0.46) / 0.54, 0, 1)
+        let gDemand = clamp((absG - 1.7) / 5.6, 0, 1)
+        let alphaDemand = clamp((absAlpha - 4.5) / 12.0, 0, 1)
+        let qbar = clamp((state.dynamicPressurePSF - 75) / 520.0, 0, 1)
         let liftDemand = max(gDemand, alphaDemand)
-        let pressureDrop = clamp(liftDemand * (0.38 + 0.62 * qbar), 0, 1)
-        let localSaturation = clamp(ambientMoisture + 0.58 * pressureDrop, 0, 1)
+        let pressureDrop = clamp(
+            liftDemand * (0.36 + 0.64 * qbar),
+            0,
+            1
+        )
+        let localSaturation = clamp(
+            ambientMoisture + 0.60 * pressureDrop,
+            0,
+            1
+        )
 
-        let lerxDemand = max(alphaDemand, gDemand * 0.58)
-        let lerxIntensity = lerxDemand * (0.34 + 0.66 * pressureDrop) * localSaturation
-        let leadingIntensity = max(alphaDemand * 0.78, gDemand * 0.62) * qbar * localSaturation
-        let tipIntensity = gDemand * qbar * localSaturation
-        let hardManeuver = absG > 4.0 || absAlpha > 10.0
+        let lerxIntensity = max(alphaDemand, gDemand * 0.58)
+            * (0.32 + 0.68 * pressureDrop)
+            * localSaturation
+        let leadingIntensity = max(alphaDemand * 0.76, gDemand * 0.64)
+            * qbar
+            * localSaturation
+        let tipIntensity = gDemand
+            * qbar
+            * localSaturation
 
-        let lerxOn = state.calibratedAirspeedKnots > 135
-            && (lerxIntensity > 0.025 || (hardManeuver && localSaturation > 0.20))
-        let leadingOn = state.calibratedAirspeedKnots > 145
-            && (leadingIntensity > 0.030 || (hardManeuver && localSaturation > 0.24))
-        let tipOn = state.calibratedAirspeedKnots > 155
-            && (tipIntensity > 0.035 || (absG > 4.5 && localSaturation > 0.25))
+        let hardManeuver = absG > 3.8 || absAlpha > 9.5
+        let lerx = max(
+            lerxIntensity,
+            hardManeuver ? localSaturation * 0.26 : 0
+        )
+        let leading = max(
+            leadingIntensity,
+            hardManeuver ? localSaturation * 0.22 : 0
+        )
+        let tip = max(
+            tipIntensity,
+            absG > 4.3 ? localSaturation * 0.20 : 0
+        )
 
-        updateAirframeEmitter(
+        let lerxOn = state.calibratedAirspeedKnots > 135 && lerx > 0.035
+        let leadingOn = state.calibratedAirspeedKnots > 145 && leading > 0.040
+        let tipOn = state.calibratedAirspeedKnots > 155 && tip > 0.045
+
+        updateVaporStreamer(
             root: root,
             name: lerxLeftName,
             enabled: lerxOn,
-            intensity: max(lerxIntensity, hardManeuver ? localSaturation * 0.28 : 0),
-            vortexSign: 1,
-            state: state
+            intensity: lerx,
+            simulationTime: simulationTime,
+            phase: 0.0
         )
-        updateAirframeEmitter(
+        updateVaporStreamer(
             root: root,
             name: lerxRightName,
             enabled: lerxOn,
-            intensity: max(lerxIntensity, hardManeuver ? localSaturation * 0.28 : 0),
-            vortexSign: -1,
-            state: state
+            intensity: lerx,
+            simulationTime: simulationTime,
+            phase: 1.1
         )
-        updateAirframeEmitter(
+        updateVaporStreamer(
             root: root,
             name: leadingLeftName,
             enabled: leadingOn,
-            intensity: max(leadingIntensity, hardManeuver ? localSaturation * 0.24 : 0),
-            vortexSign: 1,
-            state: state
+            intensity: leading,
+            simulationTime: simulationTime,
+            phase: 2.0
         )
-        updateAirframeEmitter(
+        updateVaporStreamer(
             root: root,
             name: leadingRightName,
             enabled: leadingOn,
-            intensity: max(leadingIntensity, hardManeuver ? localSaturation * 0.24 : 0),
-            vortexSign: -1,
-            state: state
+            intensity: leading,
+            simulationTime: simulationTime,
+            phase: 2.8
         )
-        updateAirframeEmitter(
+        updateVaporStreamer(
             root: root,
             name: tipLeftName,
             enabled: tipOn,
-            intensity: tipIntensity * 0.78,
-            vortexSign: 1,
-            state: state
+            intensity: tip,
+            simulationTime: simulationTime,
+            phase: 3.6
         )
-        updateAirframeEmitter(
+        updateVaporStreamer(
             root: root,
             name: tipRightName,
             enabled: tipOn,
-            intensity: tipIntensity * 0.78,
-            vortexSign: -1,
-            state: state
+            intensity: tip,
+            simulationTime: simulationTime,
+            phase: 4.4
         )
     }
 
-    private static func updateAirframeEmitter(
+    private static func makeVaporStreamer(
+        name: String,
+        position: SIMD3<Float>,
+        width: Float,
+        height: Float,
+        length: Float,
+        opacity: Float
+    ) -> ModelEntity {
+        let entity = ModelEntity()
+        entity.name = name
+        entity.position = position
+        entity.isEnabled = false
+
+        if let mesh = makeVaporStreamerMesh() {
+            entity.model = ModelComponent(
+                mesh: mesh,
+                materials: [makeVaporMaterial(opacity: opacity)]
+            )
+        }
+
+        entity.scale = [width, height, length]
+        return entity
+    }
+
+    private static func updateVaporStreamer(
         root: Entity,
         name: String,
         enabled: Bool,
         intensity: Float,
-        vortexSign: Float,
-        state: AircraftState
+        simulationTime: TimeInterval,
+        phase: Float
     ) {
-        guard let entity = root.findEntity(named: name),
-              var particles = entity.components[ParticleEmitterComponent.self] else {
+        guard let entity = root.findEntity(named: name) as? ModelEntity else {
             return
         }
 
         let i = clamp(intensity, 0, 1)
-        particles.isEmitting = enabled
+        entity.isEnabled = enabled
+        guard enabled else { return }
 
-        let worldAft = simd_normalize(
-            simd_act(state.orientation, SIMD3<Float>(0, 0, -1))
-        )
-        particles.birthDirection = .world
-        particles.emissionDirection = worldAft
-        particles.speed = 0.06 + 0.24 * i
-        particles.speedVariation = 0.03 + 0.08 * i
+        let time = Float(simulationTime)
+        let shimmer = 1.0
+            + 0.025 * sin(time * 8.0 + phase)
+            + 0.010 * sin(time * 17.0 + phase * 0.7)
 
-        particles.mainEmitter.birthRate = enabled ? 520 + 2_450 * i : 0
-        particles.mainEmitter.lifeSpan = Double(0.26 + 0.54 * i)
-        particles.mainEmitter.lifeSpanVariation = Double(0.04 + 0.10 * i)
-        particles.mainEmitter.size = 0.052 + 0.078 * i
-        particles.mainEmitter.sizeVariation = 0.018 + 0.034 * i
-        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.55 + 0.55 * i
-        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.35
-        particles.mainEmitter.noiseStrength = 0.018 + 0.045 * i
-        particles.mainEmitter.noiseScale = 0.24 + 0.18 * i
-        particles.mainEmitter.noiseAnimationSpeed = 0.50 + 0.45 * i
-
-        let isLeading = name.contains(".leading.")
         let isTip = name.contains(".tip.")
-        let vortexMagnitude: Float = isLeading
-            ? (0.20 + 0.90 * i)
-            : (isTip ? (0.75 + 3.2 * i) : (0.45 + 1.8 * i))
-        particles.mainEmitter.vortexStrength = vortexSign * vortexMagnitude
-        entity.components.set(particles)
+        let isLeading = name.contains(".leading.")
+
+        if isTip {
+            entity.scale = [
+                (0.13 + 0.09 * i) * shimmer,
+                (0.13 + 0.07 * i) * shimmer,
+                4.6 + 4.8 * i
+            ]
+        } else if isLeading {
+            entity.scale = [
+                (0.42 + 0.32 * i) * shimmer,
+                (0.095 + 0.055 * i) * shimmer,
+                2.5 + 3.6 * i
+            ]
+        } else {
+            entity.scale = [
+                (0.34 + 0.28 * i) * shimmer,
+                (0.13 + 0.09 * i) * shimmer,
+                2.8 + 4.0 * i
+            ]
+        }
+
+        setVaporOpacity(
+            entity: entity,
+            opacity: (isTip ? 0.055 : 0.075) + (isTip ? 0.15 : 0.24) * i
+        )
     }
 
-    // MARK: - Transonic condensation shell
+    private static func makeVaporStreamerMesh() -> MeshResource? {
+        // Unit-length faceted spindle aligned down local -Z. The leading cross
+        // section begins almost at zero radius, blooms immediately behind the
+        // wing, then tapers out. This gives a clean attached wake with no
+        // forward-facing emission vector at all.
+        let rings: [(z: Float, rx: Float, ry: Float)] = [
+            ( 0.00, 0.05, 0.05),
+            (-0.12, 0.72, 0.60),
+            (-0.38, 1.00, 0.82),
+            (-0.68, 0.72, 0.60),
+            (-1.00, 0.08, 0.07)
+        ]
+        let sides = 8
+
+        var positions: [SIMD3<Float>] = []
+        var indices: [UInt32] = []
+        positions.reserveCapacity(rings.count * sides)
+
+        for ring in rings {
+            for side in 0..<sides {
+                let theta = 2 * Float.pi * Float(side) / Float(sides)
+                positions.append([
+                    cos(theta) * ring.rx,
+                    sin(theta) * ring.ry,
+                    ring.z
+                ])
+            }
+        }
+
+        for ring in 0..<(rings.count - 1) {
+            for side in 0..<sides {
+                let next = (side + 1) % sides
+                let a = UInt32(ring * sides + side)
+                let b = UInt32(ring * sides + next)
+                let c = UInt32((ring + 1) * sides + side)
+                let d = UInt32((ring + 1) * sides + next)
+                indices.append(contentsOf: [a, c, b, b, c, d])
+            }
+        }
+
+        var descriptor = MeshDescriptor(name: "FA.maneuver-vapor-streamer")
+        descriptor.positions = .init(positions)
+        descriptor.primitives = .triangles(indices)
+        return try? MeshResource.generate(from: [descriptor])
+    }
+
+    // MARK: - Transonic Mach cone
 
     private static func updateTransonicVapor(
         root: Entity,
@@ -394,36 +559,34 @@ enum Stage2FlightEffects {
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
-        let moisture = clamp((iceRH - 0.45) / 0.50, 0, 1)
+        let moisture = clamp((iceRH - 0.43) / 0.52, 0, 1)
         let mach = state.mach
-        let machPeak = exp(-pow((mach - 0.995) / 0.058, 2))
-        let qbar = clamp((state.dynamicPressurePSF - 90) / 500.0, 0, 1)
-        let alphaFactor = 0.88
-            + 0.12 * clamp(abs(state.angleOfAttackDegrees) / 12.0, 0, 1)
+        let machPeak = exp(-pow((mach - 0.995) / 0.060, 2))
+        let qbar = clamp((state.dynamicPressurePSF - 85) / 500.0, 0, 1)
         let intensity = clamp(
             machPeak
-                * (0.40 + 0.60 * qbar)
-                * (0.34 + 0.66 * moisture)
-                * alphaFactor,
+                * (0.42 + 0.58 * qbar)
+                * (0.36 + 0.64 * moisture),
             0,
             1
         )
-        let visible = mach > 0.90 && mach < 1.11 && intensity > 0.018
+
+        let visible = mach > 0.90
+            && mach < 1.115
+            && intensity > 0.016
+
         let time = Float(simulationTime)
+        let uniformPulse = 1.0 + 0.010 * sin(time * 8.2)
 
         if let halo = root.findEntity(named: transonicHaloName) {
             halo.isEnabled = visible
             if visible {
-                let pulse = 1.0 + 0.030 * sin(time * 7.3)
-                halo.scale = [
-                    (1.055 + 0.055 * intensity) * pulse,
-                    (1.08 + 0.040 * intensity) * pulse,
-                    1.02 + 0.08 * intensity
-                ]
-                halo.position = [0, 0.02, -0.12]
+                let radial = (1.03 + 0.055 * intensity) * uniformPulse
+                halo.scale = [radial, radial, 1.0]
+                halo.position = [0, 0.01, -0.08]
                 setVaporOpacity(
                     entity: halo,
-                    opacity: 0.018 + 0.055 * intensity
+                    opacity: 0.014 + 0.040 * intensity
                 )
             }
         }
@@ -431,16 +594,12 @@ enum Stage2FlightEffects {
         if let shell = root.findEntity(named: transonicShellName) {
             shell.isEnabled = visible
             if visible {
-                let pulse = 1.0 + 0.018 * sin(time * 10.7 + 0.8)
-                shell.scale = [
-                    (0.98 + 0.045 * intensity) * pulse,
-                    (1.00 + 0.035 * intensity) * pulse,
-                    0.96 + 0.09 * intensity
-                ]
+                let radial = (0.97 + 0.035 * intensity) * uniformPulse
+                shell.scale = [radial, radial, 1.0]
                 shell.position = [0, 0, 0]
                 setVaporOpacity(
                     entity: shell,
-                    opacity: 0.055 + 0.145 * intensity
+                    opacity: 0.045 + 0.125 * intensity
                 )
             }
         }
@@ -448,13 +607,14 @@ enum Stage2FlightEffects {
 
     private static func makeTransonicVaporEntity(
         name: String,
-        opacity: Float
+        opacity: Float,
+        radialScale: Float
     ) -> ModelEntity {
         let entity = ModelEntity()
         entity.name = name
         entity.isEnabled = false
 
-        if let mesh = makeTransonicShellMesh() {
+        if let mesh = makeMachConeMesh(radialScale: radialScale) {
             entity.model = ModelComponent(
                 mesh: mesh,
                 materials: [makeVaporMaterial(opacity: opacity)]
@@ -463,51 +623,74 @@ enum Stage2FlightEffects {
         return entity
     }
 
-    private static func makeTransonicShellMesh() -> MeshResource? {
-        // A faceted, hollow pressure-condensation collar. It deliberately has
-        // no end caps: the viewer sees a thin translucent shell, not a white cone
-        // or a stack of opaque particle billboards.
-        let rings: [(z: Float, rx: Float, ry: Float)] = [
-            ( 2.20, 0.42, 0.24),
-            ( 1.25, 1.45, 0.78),
-            ( 0.30, 3.15, 1.72),
-            (-0.65, 4.05, 2.22),
-            (-1.55, 3.65, 1.95),
-            (-2.55, 2.40, 1.20),
-            (-3.35, 0.95, 0.46)
-        ]
-        let sides = 18
+    private static func makeMachConeMesh(
+        radialScale: Float
+    ) -> MeshResource? {
+        // Local +Z is forward on the authored F-16. The cone apex therefore
+        // begins just ahead of the wing/nose pressure field and expands linearly
+        // aft toward a single FLAT cutoff plane. Nothing narrows again behind
+        // the base, which is what made the previous mesh look like a balloon.
+        let apexZ: Float = 3.85
+        let baseZ: Float = -3.65
+        let baseRX: Float = 4.15 * radialScale
+        let baseRY: Float = 2.22 * radialScale
+        let sides = 20
+        let ringCount = 6
 
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
-        positions.reserveCapacity(rings.count * sides)
 
-        for (ringIndex, ring) in rings.enumerated() {
+        for ring in 0..<ringCount {
+            let t = Float(ring) / Float(ringCount - 1)
+            // Tiny nonzero apex ring avoids degenerate triangles while still
+            // reading as a true cone from chase/side/rear views.
+            let radiusT = 0.035 + 0.965 * t
+            let z = apexZ + (baseZ - apexZ) * t
             for side in 0..<sides {
                 let theta = 2 * Float.pi * Float(side) / Float(sides)
-                let ripple = 1.0
-                    + 0.045 * sin(theta * 3.0 + Float(ringIndex) * 0.9)
-                    + 0.020 * sin(theta * 7.0 - Float(ringIndex) * 0.6)
                 positions.append([
-                    cos(theta) * ring.rx * ripple,
-                    sin(theta) * ring.ry * ripple,
-                    ring.z
+                    cos(theta) * baseRX * radiusT,
+                    sin(theta) * baseRY * radiusT,
+                    z
                 ])
             }
         }
 
-        for ring in 0..<(rings.count - 1) {
+        for ring in 0..<(ringCount - 1) {
             for side in 0..<sides {
-                let nextSide = (side + 1) % sides
+                let next = (side + 1) % sides
                 let a = UInt32(ring * sides + side)
-                let b = UInt32(ring * sides + nextSide)
+                let b = UInt32(ring * sides + next)
                 let c = UInt32((ring + 1) * sides + side)
-                let d = UInt32((ring + 1) * sides + nextSide)
+                let d = UInt32((ring + 1) * sides + next)
                 indices.append(contentsOf: [a, c, b, b, c, d])
             }
         }
 
-        var descriptor = MeshDescriptor(name: "FA.transonic-vapor-shell")
+        // A very thin rear rim on the flat base makes the cutoff read clearly
+        // without filling the whole base with a translucent disk.
+        let rimStart = positions.count
+        let rimDepth: Float = 0.08
+        for ringScale in [Float(1.00), Float(0.93)] {
+            for side in 0..<sides {
+                let theta = 2 * Float.pi * Float(side) / Float(sides)
+                positions.append([
+                    cos(theta) * baseRX * ringScale,
+                    sin(theta) * baseRY * ringScale,
+                    baseZ - (ringScale < 1 ? rimDepth : 0)
+                ])
+            }
+        }
+        for side in 0..<sides {
+            let next = (side + 1) % sides
+            let a = UInt32(rimStart + side)
+            let b = UInt32(rimStart + next)
+            let c = UInt32(rimStart + sides + side)
+            let d = UInt32(rimStart + sides + next)
+            indices.append(contentsOf: [a, c, b, b, c, d])
+        }
+
+        var descriptor = MeshDescriptor(name: "FA.transonic-mach-cone")
         descriptor.positions = .init(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
@@ -520,7 +703,7 @@ enum Stage2FlightEffects {
         name: String,
         samples: [TrailSample],
         simulationTime: TimeInterval,
-        maxAge: Float,
+        layerMaxAge: Float,
         radialSides: Int,
         baseRadius: Float,
         radialGrowthPerSecond: Float,
@@ -533,14 +716,15 @@ enum Stage2FlightEffects {
 
         let visibleSamples = samples.filter {
             let age = Float(simulationTime - $0.simulationTime)
-            return age >= 0 && age <= maxAge
+            let effectiveLife = min(layerMaxAge, $0.lifeSeconds)
+            return age >= 0 && age <= effectiveLife
         }
 
         guard visibleSamples.count >= 2,
               let mesh = makeTrailMesh(
                 samples: visibleSamples,
                 simulationTime: simulationTime,
-                maxAge: maxAge,
+                layerMaxAge: layerMaxAge,
                 radialSides: radialSides,
                 baseRadius: baseRadius,
                 radialGrowthPerSecond: radialGrowthPerSecond,
@@ -560,7 +744,7 @@ enum Stage2FlightEffects {
     private static func makeTrailMesh(
         samples: [TrailSample],
         simulationTime: TimeInterval,
-        maxAge: Float,
+        layerMaxAge: Float,
         radialSides: Int,
         baseRadius: Float,
         radialGrowthPerSecond: Float,
@@ -575,13 +759,16 @@ enum Stage2FlightEffects {
 
         for sample in samples {
             let age = max(0, Float(simulationTime - sample.simulationTime))
+            let effectiveLife = max(0.5, min(layerMaxAge, sample.lifeSeconds))
             let center = sample.position
                 + sample.driftVelocity * age * driftScale
+
             let growth = 1.0
                 + age * radialGrowthPerSecond * (0.55 + 0.45 * sample.persistence)
-            let birthRamp = clamp(age / 0.45, 0.20, 1.0)
-            let deathRamp = clamp((maxAge - age) / 3.5, 0.06, 1.0)
-            let strengthRadius = 0.72 + 0.45 * sample.strength
+            let birthRamp = clamp(age / 0.32, 0.28, 1.0)
+            let deathRamp = clamp((effectiveLife - age) / 2.4, 0.04, 1.0)
+            let strengthRadius = 0.78 + 0.42 * sample.strength
+
             centers.append(center)
             radii.append(
                 baseRadius
@@ -622,7 +809,8 @@ enum Stage2FlightEffects {
                 tangent = [0, 0, -1]
             }
 
-            let reference: SIMD3<Float> = abs(simd_dot(tangent, SIMD3<Float>(0, 1, 0))) < 0.92
+            let reference: SIMD3<Float> =
+                abs(simd_dot(tangent, SIMD3<Float>(0, 1, 0))) < 0.92
                 ? SIMD3<Float>(0, 1, 0)
                 : SIMD3<Float>(1, 0, 0)
             let side = safeNormalize(
@@ -652,7 +840,6 @@ enum Stage2FlightEffects {
                 let b = UInt32(index * radialSides + next)
                 let c = UInt32((index + 1) * radialSides + radial)
                 let d = UInt32((index + 1) * radialSides + next)
-
                 indices.append(contentsOf: [a, c, b, b, c, d])
             }
         }
@@ -663,56 +850,6 @@ enum Stage2FlightEffects {
         descriptor.positions = .init(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
-    }
-
-    // MARK: - Particle presets
-
-    private static func makeAirframeEmitter(
-        name: String,
-        position: SIMD3<Float>,
-        vortexStrength: Float
-    ) -> Entity {
-        let entity = Entity()
-        entity.name = name
-        entity.position = position
-
-        var particles = ParticleEmitterComponent()
-
-        let isLERX = name.contains(".lerx.")
-        let isTip = name.contains(".tip.")
-        particles.emitterShape = .box
-        particles.emitterShapeSize = isLERX
-            ? SIMD3<Float>(0.15, 0.075, 0.82)
-            : (isTip
-                ? SIMD3<Float>(0.075, 0.060, 0.55)
-                : SIMD3<Float>(0.13, 0.070, 0.72))
-        particles.birthLocation = .volume
-        particles.birthDirection = .local
-        particles.emissionDirection = [0, 0, -1]
-        particles.fieldSimulationSpace = .global
-        particles.particlesInheritTransform = false
-        particles.isEmitting = false
-        particles.speed = 0.20
-        particles.speedVariation = 0.08
-
-        particles.mainEmitter.birthRate = 0
-        particles.mainEmitter.lifeSpan = 0.30
-        particles.mainEmitter.lifeSpanVariation = 0.06
-        particles.mainEmitter.size = 0.065
-        particles.mainEmitter.sizeVariation = 0.020
-        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.65
-        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.30
-        particles.mainEmitter.opacityCurve = .gradualFadeInOut
-        particles.mainEmitter.noiseStrength = 0.05
-        particles.mainEmitter.noiseScale = 0.25
-        particles.mainEmitter.noiseAnimationSpeed = 0.75
-        particles.mainEmitter.vortexStrength = vortexStrength
-        particles.mainEmitter.color = .evolving(
-            start: .single(UIColor(white: 0.98, alpha: 0.48)),
-            end: .single(UIColor(red: 0.82, green: 0.88, blue: 0.92, alpha: 0.0))
-        )
-        entity.components.set(particles)
-        return entity
     }
 
     // MARK: - Materials
@@ -733,7 +870,10 @@ enum Stage2FlightEffects {
         return material
     }
 
-    private static func setVaporOpacity(entity: Entity, opacity: Float) {
+    private static func setVaporOpacity(
+        entity: Entity,
+        opacity: Float
+    ) {
         guard let modelEntity = entity as? ModelEntity,
               var model = modelEntity.model else {
             return
@@ -757,35 +897,52 @@ enum Stage2FlightEffects {
             * (waterEmissionIndex / ((1 - propulsionEfficiency) * fuelHeat))
         let argument = max(g - 0.053, 0.001)
         let logarithm = log(argument)
-        return Float(-46.46 + 9.43 * logarithm + 0.72 * logarithm * logarithm)
+        return Float(
+            -46.46 + 9.43 * logarithm + 0.72 * logarithm * logarithm
+        )
     }
 
-    private static func initialWakeDescentRate(state: AircraftState) -> Float {
+    private static func initialWakeDescentRate(
+        state: AircraftState
+    ) -> Float {
         let wingspan: Float = 9.96
         let b0 = Float.pi * wingspan / 4
-        let rhoKgM3 = max(0.08, state.airDensitySlugsPerCubicFoot * 515.3788)
+        let rhoKgM3 = max(
+            0.08,
+            state.airDensitySlugsPerCubicFoot * 515.3788
+        )
         let speed = max(90, state.airspeedMetersPerSecond)
         let weightN = max(5_000, state.aircraftMassKg) * 9.80665
-        let gamma0 = 4 * weightN / (Float.pi * rhoKgM3 * speed * wingspan)
-        return clamp(gamma0 / (2 * Float.pi * b0), 0.20, 4.5)
+        let gamma0 = 4 * weightN
+            / (Float.pi * rhoKgM3 * speed * wingspan)
+        return clamp(
+            gamma0 / (2 * Float.pi * b0),
+            0.20,
+            4.5
+        )
     }
 
     private static func iceRelativeHumidity(
         positionMeters: SIMD3<Float>,
         altitudeFeet: Float
     ) -> Float {
-        // JSBSim's standard atmosphere does not provide humidity here, so Full
-        // Authority keeps a deterministic visual-only moisture field.
         let x = positionMeters.x
         let z = positionMeters.z
         let h = altitudeFeet
-        let upperTroposphereBand = 0.24 * exp(-pow((h - 34_000) / 9_000, 2))
+
+        let upperTroposphereBand = 0.24
+            * exp(-pow((h - 34_000) / 9_000, 2))
         let synopticWave = 0.11 * sin(x / 7_400)
             + 0.09 * cos(z / 8_900)
             + 0.07 * sin((x + z) / 5_100)
-        let verticalWave = 0.06 * sin(h / 4_300 + x / 18_000)
+        let verticalWave = 0.06
+            * sin(h / 4_300 + x / 18_000)
+
         return clamp(
-            0.72 + upperTroposphereBand + synopticWave + verticalWave,
+            0.72
+                + upperTroposphereBand
+                + synopticWave
+                + verticalWave,
             0.42,
             1.32
         )
