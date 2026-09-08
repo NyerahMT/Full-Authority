@@ -67,25 +67,28 @@ struct PrototypeSceneView: View {
                     positionCamera(camera, forceSnap: true)
                     content.add(camera)
 
+                    // A stronger side-key and restrained sky fill keep the F-16's
+                    // real facets readable. The previous opposing lights filled nearly
+                    // every shadow and made the authored frame look flatter than it is.
                     let sun = Entity()
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.94, blue: 0.84, alpha: 1),
-                            intensity: 13_500
+                            color: UIColor(red: 1.0, green: 0.95, blue: 0.87, alpha: 1),
+                            intensity: 12_600
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
-                    sun.look(at: .zero, from: [-7_000, 10_000, -4_000], relativeTo: nil)
+                    sun.look(at: .zero, from: [-8_800, 9_600, -2_300], relativeTo: nil)
                     content.add(sun)
 
                     let fill = Entity()
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.58, green: 0.71, blue: 0.91, alpha: 1),
-                        intensity: 1_450
+                        color: UIColor(red: 0.50, green: 0.66, blue: 0.90, alpha: 1),
+                        intensity: 520
                     ))
-                    fill.look(at: .zero, from: [6_000, 4_500, 5_500], relativeTo: nil)
+                    fill.look(at: .zero, from: [6_500, 5_200, 6_200], relativeTo: nil)
                     content.add(fill)
                 } update: { content in
                     guard let aircraft = content.entities.first(where: { $0.name == PrototypeAircraftFactory.aircraftName }) else {
@@ -137,10 +140,10 @@ struct PrototypeSceneView: View {
     private var stage2Sky: some View {
         LinearGradient(
             stops: [
-                .init(color: Color(red: 0.030, green: 0.155, blue: 0.39), location: 0.00),
-                .init(color: Color(red: 0.10, green: 0.34, blue: 0.62), location: 0.44),
-                .init(color: Color(red: 0.49, green: 0.63, blue: 0.73), location: 0.74),
-                .init(color: Color(red: 0.71, green: 0.70, blue: 0.62), location: 1.00)
+                .init(color: Color(red: 0.022, green: 0.125, blue: 0.34), location: 0.00),
+                .init(color: Color(red: 0.075, green: 0.285, blue: 0.56), location: 0.44),
+                .init(color: Color(red: 0.42, green: 0.57, blue: 0.69), location: 0.74),
+                .init(color: Color(red: 0.68, green: 0.68, blue: 0.62), location: 1.00)
             ],
             startPoint: .top,
             endPoint: .bottom
