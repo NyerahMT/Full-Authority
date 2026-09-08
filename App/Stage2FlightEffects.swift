@@ -20,6 +20,7 @@ enum Stage2FlightEffects {
 
     private static let contrailCoreName = "FA.effects.contrail.core"
     private static let contrailDiffuseName = "FA.effects.contrail.diffuse"
+    private static let contrailMatureName = "FA.effects.contrail.mature"
 
     fileprivate struct TrailSample {
         var position: SIMD3<Float>
@@ -52,6 +53,7 @@ enum Stage2FlightEffects {
 
             root.findEntity(named: contrailCoreName)?.isEnabled = false
             root.findEntity(named: contrailDiffuseName)?.isEnabled = false
+            root.findEntity(named: contrailMatureName)?.isEnabled = false
         }
     }
 
@@ -134,6 +136,15 @@ enum Stage2FlightEffects {
         let root = Entity()
         root.name = trailRootName
 
+        // The long trail is age-layered. New ice starts as a thin translucent
+        // core, then a wider diffuse layer appears, then a mature plume overlays
+        // it farther downstream. The overlap is what makes the trail visibly gain
+        // opacity and volume as the wake mixes without needing per-vertex alpha.
+        let mature = ModelEntity()
+        mature.name = contrailMatureName
+        mature.isEnabled = false
+        root.addChild(mature)
+
         let diffuse = ModelEntity()
         diffuse.name = contrailDiffuseName
         diffuse.isEnabled = false
@@ -215,9 +226,7 @@ enum Stage2FlightEffects {
 
         // A short humid exhaust-condensation trail is allowed at high power
         // even below the persistent-contrail layer. It lasts only a few seconds,
-        // so it cannot masquerade as a 30k-ft ice contrail, but it guarantees
-        // the exhaust does not visually disappear in the exact high-power
-        // low-altitude tests we use while tuning the game.
+        // so it cannot masquerade as a high-altitude ice contrail.
         let highPowerMoisture = clamp((iceRH - 0.54) / 0.38, 0, 1)
         let highPowerSpeed = clamp((state.airspeedMetersPerSecond - 135) / 120, 0, 1)
         let highPowerFuel = clamp((fuelFlow - 0.28) / 0.95, 0, 1)
@@ -232,9 +241,13 @@ enum Stage2FlightEffects {
         let trailPersistence = formsPersistentContrail
             ? physicalPersistence
             : clamp(highPowerMoisture * 0.30, 0.05, 0.28)
+
+        // Persistent ice now survives for roughly 80-160 seconds. The sample
+        // cap below still bounds geometry, so this turns into a roughly 25-30 km
+        // maximum rendered streak at fighter cruise instead of an unbounded mesh.
         let trailLife: Float = formsPersistentContrail
-            ? (24.0 + 28.0 * trailPersistence)
-            : (4.0 + 3.5 * trailPersistence)
+            ? (80.0 + 80.0 * trailPersistence)
+            : (4.5 + 4.0 * trailPersistence)
 
         // F-16 nozzle lip is near z=-7.02 m. A 1.25 m mixing gap keeps the
         // trail from looking like a white plug glued to the engine.
@@ -259,7 +272,10 @@ enum Stage2FlightEffects {
                 simd_length(exhaustPoint - $0)
             } ?? .greatestFiniteMagnitude
 
-            if elapsed >= 0.050 || distance >= 8.0 {
+            // A slightly wider sample spacing buys much more total trail length
+            // while remaining visually smooth because the geometry interpolates
+            // continuously between samples.
+            if elapsed >= 0.075 || distance >= 14.0 {
                 runtime.samples.append(TrailSample(
                     position: exhaustPoint,
                     driftVelocity: driftVelocity,
@@ -278,45 +294,63 @@ enum Stage2FlightEffects {
 
         runtime.wasForming = formsTrail
 
-        let oldestTime = simulationTime - 55.0
+        let oldestTime = simulationTime - 160.0
         runtime.samples.removeAll {
             $0.simulationTime < oldestTime
-                || Float(simulationTime - $0.simulationTime) > $0.lifeSeconds + 1.0
+                || Float(simulationTime - $0.simulationTime) > $0.lifeSeconds + 3.0
         }
-        if runtime.samples.count > 900 {
-            runtime.samples.removeFirst(runtime.samples.count - 900)
+        if runtime.samples.count > 2_200 {
+            runtime.samples.removeFirst(runtime.samples.count - 2_200)
         }
 
-        // 15 Hz is still cheap enough on iPhone while making curved trails look
-        // noticeably smoother than the previous 12.5 Hz rebuild cadence.
-        if simulationTime - runtime.lastMeshUpdateTime < 0.066 {
+        // Longer history means more vertices, so rebuild the slowly evolving wake
+        // at 10 Hz. Aircraft/camera motion remains at display rate.
+        if simulationTime - runtime.lastMeshUpdateTime < 0.10 {
             return
         }
         runtime.lastMeshUpdateTime = simulationTime
 
+        // Farther downstream, three overlapping age bands progressively add
+        // both cross-section and alpha. This reads like an ice plume blooming
+        // and whitening as it mixes instead of a constant-width plastic tube.
+        updateTrailEntity(
+            root: root,
+            name: contrailMatureName,
+            samples: runtime.samples,
+            simulationTime: simulationTime,
+            layerMinAge: 2.0,
+            layerMaxAge: 160,
+            radialSides: 6,
+            baseRadius: 0.54,
+            radialGrowthPerSecond: 0.068,
+            driftScale: 0.84,
+            opacity: 0.16
+        )
         updateTrailEntity(
             root: root,
             name: contrailDiffuseName,
             samples: runtime.samples,
             simulationTime: simulationTime,
-            layerMaxAge: 55,
-            radialSides: 7,
-            baseRadius: 0.46,
-            radialGrowthPerSecond: 0.060,
-            driftScale: 0.78,
-            opacity: 0.18
+            layerMinAge: 0.55,
+            layerMaxAge: 130,
+            radialSides: 6,
+            baseRadius: 0.36,
+            radialGrowthPerSecond: 0.052,
+            driftScale: 0.80,
+            opacity: 0.10
         )
         updateTrailEntity(
             root: root,
             name: contrailCoreName,
             samples: runtime.samples,
             simulationTime: simulationTime,
-            layerMaxAge: 14,
-            radialSides: 7,
-            baseRadius: 0.205,
-            radialGrowthPerSecond: 0.028,
+            layerMinAge: 0,
+            layerMaxAge: 18,
+            radialSides: 6,
+            baseRadius: 0.17,
+            radialGrowthPerSecond: 0.020,
             driftScale: 0.24,
-            opacity: 0.48
+            opacity: 0.22
         )
     }
 
@@ -703,6 +737,7 @@ enum Stage2FlightEffects {
         name: String,
         samples: [TrailSample],
         simulationTime: TimeInterval,
+        layerMinAge: Float,
         layerMaxAge: Float,
         radialSides: Int,
         baseRadius: Float,
@@ -717,7 +752,7 @@ enum Stage2FlightEffects {
         let visibleSamples = samples.filter {
             let age = Float(simulationTime - $0.simulationTime)
             let effectiveLife = min(layerMaxAge, $0.lifeSeconds)
-            return age >= 0 && age <= effectiveLife
+            return age >= layerMinAge && age <= effectiveLife
         }
 
         guard visibleSamples.count >= 2,
@@ -763,10 +798,13 @@ enum Stage2FlightEffects {
             let center = sample.position
                 + sample.driftVelocity * age * driftScale
 
+            // Wake spreading is fast for the first minute, then saturates so a
+            // very old trail gets broad without turning into an absurd tunnel.
+            let growthAge = min(age, 70.0)
             let growth = 1.0
-                + age * radialGrowthPerSecond * (0.55 + 0.45 * sample.persistence)
-            let birthRamp = clamp(age / 0.32, 0.28, 1.0)
-            let deathRamp = clamp((effectiveLife - age) / 2.4, 0.04, 1.0)
+                + growthAge * radialGrowthPerSecond * (0.55 + 0.45 * sample.persistence)
+            let birthRamp = clamp(age / 0.42, 0.20, 1.0)
+            let deathRamp = clamp((effectiveLife - age) / 5.0, 0.035, 1.0)
             let strengthRadius = 0.78 + 0.42 * sample.strength
 
             centers.append(center)
