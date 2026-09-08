@@ -96,7 +96,9 @@ def write_part_obj(mesh_obj, part_name, path, pivot_source):
             uvs.append((float(uv[0]), float(uv[1])))
             normals.append(normal_to_fa(loop.normal))
             face.append(len(positions))
-        faces.append(face)
+        # to_fa() swaps Y/Z and therefore flips handedness. Reverse the
+        # triangle winding so exported OBJ front faces remain outward-facing.
+        faces.append([face[0], face[2], face[1]])
 
     with path.open('w', encoding='utf-8') as f:
         f.write('# Authored F-16 mesh extracted from vazgriz/FlightSim_F16 (MIT)\n')
@@ -183,7 +185,9 @@ def export_afterburner():
             uvs.append((float(uv[0]), float(uv[1])))
             normals.append(normal_to_fa(loop.normal))
             face.append(len(positions))
-        faces.append(face)
+        # to_fa() swaps Y/Z and therefore flips handedness. Reverse the
+        # triangle winding so exported OBJ front faces remain outward-facing.
+        faces.append([face[0], face[2], face[1]])
     path = out_dir / 'afterburner_plume.obj'
     with path.open('w', encoding='utf-8') as f:
         f.write('# Authored afterburner envelope from vazgriz/FlightSim_F16 (MIT)\n')
