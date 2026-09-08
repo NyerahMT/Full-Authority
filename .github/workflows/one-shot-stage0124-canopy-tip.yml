@@ -1,52 +1,35 @@
-name: One-shot Stage 012.4 canopy tip
-
+name: Stage 012.4 Canopy Tip
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
-      - '.github/workflows/one-shot-stage0124-canopy-tip.yml'
-
+      - .github/workflows/one-shot-stage0124-canopy-tip.yml
 permissions:
   contents: write
-
 jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extend canopy glass over forward windshield facets
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Patch
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('Aircraft/PrototypeAircraftFactory.swift')
           s = p.read_text()
-          old = '''                    let forwardBubble = p.z > 3.05 && p.y > 0.58 && abs(p.x) < 0.88
-                    let localTangentCosine = forwardBubble
-                        ? cos(Float.pi * 52.0 / 180.0)
-                        : smoothTangentCosine
-'''
-          new = '''                    // The last unpainted windshield facet sits lower and turns
-                    // more sharply than the crown on this coarse mesh. Expand only
-                    // the narrow forward glass region so we catch that facet without
-                    // letting the flood walk down onto the nose/fuselage.
-                    let forwardBubble = p.z > 3.00 && p.y > 0.40 && abs(p.x) < 0.80
-                    let localTangentCosine = forwardBubble
-                        ? cos(Float.pi * 64.0 / 180.0)
-                        : smoothTangentCosine
-'''
-          if old not in s:
-              raise SystemExit('canopy forward bubble anchor not found')
-          p.write_text(s.replace(old, new, 1))
+          s = s.replace('let forwardBubble = p.z > 3.05 && p.y > 0.58 && abs(p.x) < 0.88', 'let forwardBubble = p.z > 3.00 && p.y > 0.40 && abs(p.x) < 0.80', 1)
+          s = s.replace('? cos(Float.pi * 52.0 / 180.0)', '? cos(Float.pi * 64.0 / 180.0)', 1)
+          p.write_text(s)
           PY
-
-      - name: Commit to main
+      - name: Commit
+        shell: bash
         run: |
           rm .github/workflows/one-shot-stage0124-canopy-tip.yml
-          git config user.name "NyerahMT"
-          git config user.email "68287092+NyerahMT@users.noreply.github.com"
+          git config user.name NyerahMT
+          git config user.email 68287092+NyerahMT@users.noreply.github.com
           git add Aircraft/PrototypeAircraftFactory.swift .github/workflows/one-shot-stage0124-canopy-tip.yml
-          git commit -m "Stage 012.4: finish forward canopy glass"
+          git commit -m 'Stage 012.4: finish forward canopy glass'
           git push
