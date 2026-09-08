@@ -21,7 +21,7 @@ enum Stage2FlightEffects {
     private static let contrailCoreName = "FA.effects.contrail.core"
     private static let contrailDiffuseName = "FA.effects.contrail.diffuse"
 
-    private struct TrailSample {
+    fileprivate struct TrailSample {
         var position: SIMD3<Float>
         var driftVelocity: SIMD3<Float>
         var simulationTime: TimeInterval
