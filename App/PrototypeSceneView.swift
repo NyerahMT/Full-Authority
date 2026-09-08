@@ -16,26 +16,27 @@ private final class Stage2SceneRuntime: ObservableObject {
     let jetAudio = Stage0108JetAudio()
 }
 
+enum FlightCameraMode: String, CaseIterable {
+    case chase = "CHASE"
+    case close = "CLOSE"
+    case cockpit = "COCKPIT"
+
+    var next: FlightCameraMode {
+        let all = FlightCameraMode.allCases
+        guard let index = all.firstIndex(of: self) else { return .chase }
+        return all[(index + 1) % all.count]
+    }
+}
+
 struct PrototypeSceneView: View {
     @ObservedObject var simulation: FlightSimulation
-    @State private var cameraMode: CameraMode = .chase
+    @Binding var cameraMode: FlightCameraMode
     @StateObject private var runtime = Stage2SceneRuntime()
     @State private var orbitYawRadians: Float = 0
     @State private var orbitPitchRadians: Float = 0
     @State private var orbitGestureOrigin = SIMD2<Float>.zero
     @State private var orbitGestureActive = false
 
-    private enum CameraMode: String, CaseIterable {
-        case chase = "CHASE"
-        case close = "CLOSE"
-        case cockpit = "COCKPIT"
-
-        var next: CameraMode {
-            let all = CameraMode.allCases
-            guard let index = all.firstIndex(of: self) else { return .chase }
-            return all[(index + 1) % all.count]
-        }
-    }
 
     var body: some View {
         ZStack {
