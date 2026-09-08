@@ -4,8 +4,30 @@ on:
   push:
     branches: [real-3d-cockpit]
 
+permissions:
+  contents: write
+
 jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - run: echo cockpit-patch-workflow-ok
+      - uses: actions/checkout@v4
+        with:
+          ref: real-3d-cockpit
+          fetch-depth: 0
+
+      - name: Apply cockpit integration
+        run: python3 Scripts/patch_real_3d_cockpit.py
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Cockpit integration already applied."
+            exit 0
+          fi
+          git config user.name "Full Authority Build Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add Aircraft/PrototypeAircraftFactory.swift Aircraft/PrototypeCockpitFactory.swift App/PrototypeSceneView.swift FullAuthority.xcodeproj/project.pbxproj
+          git commit -m "Integrate real 3D cockpit"
+          git push origin HEAD:real-3d-cockpit
