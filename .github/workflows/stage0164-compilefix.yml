@@ -1,0 +1,35 @@
+name: Stage0164CompileFix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stage0164-compilefix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Normalize Float lifetime expression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('App/Stage2FlightEffects.swift')
+          s = p.read_text()
+          old = '''            particles.mainEmitter.lifeSpan = Double((spreadLayer ? 45 : 55) + (spreadLayer ? 65 : 80) * p)\n'''
+          new = '''            let baseLife: Float = spreadLayer ? 45 : 55\n            let persistenceLife: Float = spreadLayer ? 65 : 80\n            particles.mainEmitter.lifeSpan = Double(baseLife + persistenceLife * p)\n'''
+          if old not in s:
+              raise SystemExit('lifetime expression not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add App/Stage2FlightEffects.swift
+          git commit -m 'Stage 016.4: normalize contrail lifetime types'
+          git push origin HEAD:main
