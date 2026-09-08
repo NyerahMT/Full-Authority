@@ -12,7 +12,10 @@ enum Stage2FlightEffects {
     private static let lerxRightName = "FA.effects.particles.lerx.right"
     private static let tipLeftName = "FA.effects.particles.tip.left"
     private static let tipRightName = "FA.effects.particles.tip.right"
+    private static let leadingLeftName = "FA.effects.particles.leading.left"
+    private static let leadingRightName = "FA.effects.particles.leading.right"
     private static let transonicPrefix = "FA.effects.particles.transonic"
+    private static let transonicRegionCount = 10
     private static let contrailCoreName = "FA.effects.particles.contrail.core"
     private static let contrailDiffuseName = "FA.effects.particles.contrail.diffuse"
 
@@ -65,18 +68,32 @@ enum Stage2FlightEffects {
             position: [4.68, -0.04, -1.22],
             vortexStrength: -8
         ))
+        root.addChild(makeAirframeEmitter(
+            name: leadingLeftName,
+            position: [-2.78, 0.08, 0.38],
+            vortexStrength: 7
+        ))
+        root.addChild(makeAirframeEmitter(
+            name: leadingRightName,
+            position: [2.78, 0.08, 0.38],
+            vortexStrength: -7
+        ))
 
         // A real visible transonic event is a pressure-condensation volume, not
         // a solid geometric cone. Several short-lived emitters distributed over
         // the wing-root/fuselage pressure field make a broken collar that blooms
         // and evaporates instead of spawning a white hat around the airplane.
         let pressureRegions: [SIMD3<Float>] = [
-            [-2.75,  0.15, -0.12],
-            [-1.55,  0.48,  0.05],
-            [-1.70, -0.26, -0.18],
-            [ 1.70, -0.26, -0.18],
-            [ 1.55,  0.48,  0.05],
-            [ 2.75,  0.15, -0.12]
+            [-3.05,  0.10, -0.16],
+            [-2.35,  0.28, -0.02],
+            [-1.55,  0.50,  0.10],
+            [-0.70,  0.36,  0.12],
+            [-1.45, -0.28, -0.20],
+            [ 1.45, -0.28, -0.20],
+            [ 0.70,  0.36,  0.12],
+            [ 1.55,  0.50,  0.10],
+            [ 2.35,  0.28, -0.02],
+            [ 3.05,  0.10, -0.16]
         ]
         for (index, position) in pressureRegions.enumerated() {
             root.addChild(makeTransonicEmitter(
@@ -155,9 +172,10 @@ enum Stage2FlightEffects {
             && fuelFlow > 0.012
             && formationStrength > 0.025
 
-        // The authored F-16 nozzle lip is around z=-7.02 m. Condensation starts
-        // downstream after the hot exhaust has mixed enough with ambient air.
-        let exhaustPoint = worldPoint(local: [0, -0.04, -7.58], state: state)
+        // The authored F-16 nozzle lip is around z=-7.02 m. Leave a
+        // visible hot-exhaust mixing gap before ice crystals become optically
+        // dense; real engine contrails do not start as a white plug at the lip.
+        let exhaustPoint = worldPoint(local: [0, -0.04, -11.20], state: state)
         let previous = runtime.previousExhaustPoint
 
         let wakeDescent = initialWakeDescentRate(state: state)
@@ -202,48 +220,73 @@ enum Stage2FlightEffects {
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
-        // Restore the broader Stage 014/015 activation envelope. The new
-        // particle renderer should change how vapor looks, not make it harder
-        // to encounter in normal high-energy maneuvering.
-        let moisture = clamp((iceRH - 0.62) / 0.38, 0, 1)
-        let g = clamp((abs(state.loadFactorG) - 2.8) / 5.2, 0, 1)
-        let alpha = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 14.0, 0, 1)
-        let qbar = clamp((state.dynamicPressurePSF - 115) / 560.0, 0, 1)
+        // Treat maneuver condensation as local saturation caused by the
+        // pressure drop over a loaded wing, not as an ambient-humidity switch.
+        // A hard pull can therefore reach saturation in moderately dry air,
+        // while a lightly loaded wing still stays clean.
+        let absG = abs(state.loadFactorG)
+        let absAlpha = abs(state.angleOfAttackDegrees)
+        let ambientMoisture = clamp((iceRH - 0.50) / 0.50, 0, 1)
+        let gDemand = clamp((absG - 1.8) / 5.8, 0, 1)
+        let alphaDemand = clamp((absAlpha - 5.0) / 12.0, 0, 1)
+        let qbar = clamp((state.dynamicPressurePSF - 80) / 520.0, 0, 1)
+        let liftDemand = max(gDemand, alphaDemand)
+        let pressureDrop = clamp(liftDemand * (0.38 + 0.62 * qbar), 0, 1)
+        let localSaturation = clamp(ambientMoisture + 0.58 * pressureDrop, 0, 1)
 
-        // LERX vapor is mostly separation/alpha driven. Wingtip vapor tracks
-        // circulation/loading more strongly. Both require moisture and qbar.
-        let maneuverIntensity = max(g, alpha) * qbar * moisture
-        let lerxIntensity = max(alpha, maneuverIntensity * 0.82) * qbar * moisture
-        let tipIntensity = max(g * qbar, maneuverIntensity * 0.72) * moisture
-        let lerxOn = maneuverIntensity > 0.055 && state.calibratedAirspeedKnots > 155
-        let tipOn = maneuverIntensity > 0.065 && state.calibratedAirspeedKnots > 165
+        let lerxDemand = max(alphaDemand, gDemand * 0.58)
+        let lerxIntensity = lerxDemand * (0.34 + 0.66 * pressureDrop) * localSaturation
+        let leadingIntensity = max(alphaDemand * 0.78, gDemand * 0.62) * qbar * localSaturation
+        let tipIntensity = gDemand * qbar * localSaturation
+        let hardManeuver = absG > 4.0 || absAlpha > 10.0
+
+        let lerxOn = state.calibratedAirspeedKnots > 135
+            && (lerxIntensity > 0.025 || (hardManeuver && localSaturation > 0.20))
+        let leadingOn = state.calibratedAirspeedKnots > 145
+            && (leadingIntensity > 0.030 || (hardManeuver && localSaturation > 0.24))
+        let tipOn = state.calibratedAirspeedKnots > 155
+            && (tipIntensity > 0.035 || (absG > 4.5 && localSaturation > 0.25))
 
         updateAirframeEmitter(
             root: root,
             name: lerxLeftName,
             enabled: lerxOn,
-            intensity: lerxIntensity,
+            intensity: max(lerxIntensity, hardManeuver ? localSaturation * 0.28 : 0),
             vortexSign: 1
         )
         updateAirframeEmitter(
             root: root,
             name: lerxRightName,
             enabled: lerxOn,
-            intensity: lerxIntensity,
+            intensity: max(lerxIntensity, hardManeuver ? localSaturation * 0.28 : 0),
+            vortexSign: -1
+        )
+        updateAirframeEmitter(
+            root: root,
+            name: leadingLeftName,
+            enabled: leadingOn,
+            intensity: max(leadingIntensity, hardManeuver ? localSaturation * 0.24 : 0),
+            vortexSign: 1
+        )
+        updateAirframeEmitter(
+            root: root,
+            name: leadingRightName,
+            enabled: leadingOn,
+            intensity: max(leadingIntensity, hardManeuver ? localSaturation * 0.24 : 0),
             vortexSign: -1
         )
         updateAirframeEmitter(
             root: root,
             name: tipLeftName,
             enabled: tipOn,
-            intensity: tipIntensity * 0.72,
+            intensity: tipIntensity * 0.78,
             vortexSign: 1
         )
         updateAirframeEmitter(
             root: root,
             name: tipRightName,
             enabled: tipOn,
-            intensity: tipIntensity * 0.72,
+            intensity: tipIntensity * 0.78,
             vortexSign: -1
         )
     }
@@ -262,21 +305,23 @@ enum Stage2FlightEffects {
 
         let i = clamp(intensity, 0, 1)
         particles.isEmitting = enabled
-        particles.speed = 1.4 + 4.8 * i
-        particles.speedVariation = 0.7 + 1.7 * i
-        // Dense droplet field: individual particles should disappear into a
-        // continuous vapor sheet/filament rather than reading as sparse dots.
-        particles.mainEmitter.birthRate = enabled ? 650 + 4_900 * i : 0
-        particles.mainEmitter.lifeSpan = Double(0.24 + 0.62 * i)
-        particles.mainEmitter.lifeSpanVariation = Double(0.06 + 0.14 * i)
-        particles.mainEmitter.size = 0.055 + 0.115 * i
-        particles.mainEmitter.sizeVariation = 0.020 + 0.050 * i
-        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.45 + 1.05 * i
-        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.35
-        particles.mainEmitter.noiseStrength = 0.08 + 0.30 * i
-        particles.mainEmitter.noiseScale = 0.22 + 0.24 * i
-        particles.mainEmitter.noiseAnimationSpeed = 0.8 + 1.0 * i
-        particles.mainEmitter.vortexStrength = vortexSign * (7 + 30 * i)
+
+        // The aircraft's motion through global simulation space makes the wake.
+        // Keep particle self-velocity small and strictly aft so the near-field
+        // filament stays on the F-16's local -Z axis instead of spraying sideways.
+        particles.speed = 0.35 + 1.25 * i
+        particles.speedVariation = 0.15 + 0.45 * i
+        particles.mainEmitter.birthRate = enabled ? 900 + 4_600 * i : 0
+        particles.mainEmitter.lifeSpan = Double(0.42 + 0.88 * i)
+        particles.mainEmitter.lifeSpanVariation = Double(0.08 + 0.16 * i)
+        particles.mainEmitter.size = 0.085 + 0.145 * i
+        particles.mainEmitter.sizeVariation = 0.025 + 0.055 * i
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.35 + 0.85 * i
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.40
+        particles.mainEmitter.noiseStrength = 0.035 + 0.16 * i
+        particles.mainEmitter.noiseScale = 0.30 + 0.28 * i
+        particles.mainEmitter.noiseAnimationSpeed = 0.55 + 0.70 * i
+        particles.mainEmitter.vortexStrength = vortexSign * (3.0 + 13.0 * i)
         entity.components.set(particles)
     }
 
@@ -291,16 +336,21 @@ enum Stage2FlightEffects {
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
-        // Return to the earlier, wider transonic activation envelope.
-        let moisture = clamp((iceRH - 0.68) / 0.36, 0, 1)
+        // A visible transonic cloud is a broad pressure-field event.
+        // Keep humidity important, but do not multiply several hard gates until
+        // a physically valid Mach-1 pass becomes effectively invisible.
+        let moisture = clamp((iceRH - 0.54) / 0.46, 0, 1)
         let mach = state.mach
-        let machPeak = exp(-pow((mach - 1.000) / 0.034, 2))
-        let qbar = clamp((state.dynamicPressurePSF - 180) / 650.0, 0, 1)
-        let alphaPenalty = 1 - 0.45 * clamp(abs(state.angleOfAttackDegrees) / 18.0, 0, 1)
-        let intensity = machPeak * qbar * moisture * alphaPenalty
-        let visible = mach > 0.958 && mach < 1.070 && intensity > 0.040
+        let machPeak = exp(-pow((mach - 0.995) / 0.055, 2))
+        let qbar = clamp((state.dynamicPressurePSF - 120) / 520.0, 0, 1)
+        let alphaFactor = 0.82 + 0.18 * clamp(abs(state.angleOfAttackDegrees) / 12.0, 0, 1)
+        let intensity = machPeak
+            * (0.22 + 0.78 * qbar)
+            * (0.18 + 0.82 * moisture)
+            * alphaFactor
+        let visible = mach > 0.93 && mach < 1.09 && intensity > 0.016
 
-        for index in 0..<6 {
+        for index in 0..<transonicRegionCount {
             let name = "\(transonicPrefix).\(index)"
             guard let entity = root.findEntity(named: name),
                   var particles = entity.components[ParticleEmitterComponent.self] else {
@@ -310,21 +360,21 @@ enum Stage2FlightEffects {
             // Neighboring pressure regions do not all condense at exactly the
             // same instant. A tiny deterministic phase offset keeps the cloud's
             // edge alive without making it pulse like an animation loop.
-            let localBias = 0.88 + 0.12 * sin(Float(index) * 1.71 + Float(simulationTime) * 8.5)
+            let localBias = 0.96 + 0.04 * sin(Float(index) * 1.71 + Float(simulationTime) * 6.5)
             let i = clamp(intensity * localBias, 0, 1)
             particles.isEmitting = visible
-            particles.speed = 0.5 + 2.0 * i
-            particles.speedVariation = 0.7 + 1.2 * i
-            particles.mainEmitter.birthRate = visible ? 650 + 2_900 * i : 0
-            particles.mainEmitter.lifeSpan = Double(0.14 + 0.26 * i)
-            particles.mainEmitter.lifeSpanVariation = Double(0.035 + 0.070 * i)
-            particles.mainEmitter.size = 0.17 + 0.30 * i
-            particles.mainEmitter.sizeVariation = 0.070 + 0.13 * i
-            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.45 + 0.60 * i
+            particles.speed = 0.20 + 1.05 * i
+            particles.speedVariation = 0.25 + 0.55 * i
+            particles.mainEmitter.birthRate = visible ? 1_000 + 4_100 * i : 0
+            particles.mainEmitter.lifeSpan = Double(0.20 + 0.40 * i)
+            particles.mainEmitter.lifeSpanVariation = Double(0.045 + 0.085 * i)
+            particles.mainEmitter.size = 0.20 + 0.34 * i
+            particles.mainEmitter.sizeVariation = 0.075 + 0.14 * i
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.38 + 0.52 * i
             particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.20
-            particles.mainEmitter.noiseStrength = 0.20 + 0.38 * i
-            particles.mainEmitter.noiseScale = 0.28 + 0.26 * i
-            particles.mainEmitter.noiseAnimationSpeed = 0.9 + 1.1 * i
+            particles.mainEmitter.noiseStrength = 0.10 + 0.24 * i
+            particles.mainEmitter.noiseScale = 0.34 + 0.28 * i
+            particles.mainEmitter.noiseAnimationSpeed = 0.60 + 0.75 * i
             entity.components.set(particles)
         }
     }
@@ -340,16 +390,23 @@ enum Stage2FlightEffects {
         entity.name = name
         entity.position = position
 
-        // Local +Y is rotated into aircraft-aft (-Z). The default vortex axis is
-        // +Y too, so vortexStrength curls the droplets around the streamwise axis.
-        entity.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0])
-
         var particles = ParticleEmitterComponent()
-        particles.emitterShape = .sphere
-        particles.emitterShapeSize = [0.065, 0.065, 0.065]
+
+        // Sweep births through a short streamwise volume. This fills the space
+        // between render updates at fighter speeds and removes the bead-necklace
+        // artifact produced by a tiny point/sphere emitter. -Z is explicitly
+        // aircraft-aft in the authored F-16 coordinate frame.
+        let isLERX = name.contains(".lerx.")
+        let isTip = name.contains(".tip.")
+        particles.emitterShape = .box
+        particles.emitterShapeSize = isLERX
+            ? SIMD3<Float>(0.16, 0.10, 1.30)
+            : (isTip
+                ? SIMD3<Float>(0.11, 0.08, 0.82)
+                : SIMD3<Float>(0.14, 0.09, 1.08))
         particles.birthLocation = .volume
         particles.birthDirection = .local
-        particles.emissionDirection = [0, 1, 0]
+        particles.emissionDirection = [0, 0, -1]
         particles.fieldSimulationSpace = .global
         particles.particlesInheritTransform = false
         particles.isEmitting = false
@@ -359,8 +416,8 @@ enum Stage2FlightEffects {
         particles.mainEmitter.birthRate = 0
         particles.mainEmitter.lifeSpan = 0.32
         particles.mainEmitter.lifeSpanVariation = 0.08
-        particles.mainEmitter.size = 0.10
-        particles.mainEmitter.sizeVariation = 0.04
+        particles.mainEmitter.size = 0.12
+        particles.mainEmitter.sizeVariation = 0.045
         particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.45
         particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.30
         particles.mainEmitter.opacityCurve = .gradualFadeInOut
@@ -386,7 +443,7 @@ enum Stage2FlightEffects {
 
         var particles = ParticleEmitterComponent()
         particles.emitterShape = .box
-        particles.emitterShapeSize = [1.05, 0.40, 0.26]
+        particles.emitterShapeSize = [1.35, 0.56, 0.42]
         particles.birthLocation = .volume
         particles.birthDirection = .local
         particles.emissionDirection = [0, 0, -1]
@@ -399,8 +456,8 @@ enum Stage2FlightEffects {
         particles.mainEmitter.birthRate = 0
         particles.mainEmitter.lifeSpan = 0.18
         particles.mainEmitter.lifeSpanVariation = 0.05
-        particles.mainEmitter.size = 0.24
-        particles.mainEmitter.sizeVariation = 0.10
+        particles.mainEmitter.size = 0.27
+        particles.mainEmitter.sizeVariation = 0.12
         particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.50
         particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.20
         particles.mainEmitter.opacityCurve = .quickFadeInOut
@@ -440,7 +497,9 @@ enum Stage2FlightEffects {
         particles.mainEmitter.sizeVariation = diffuse ? 0.20 : 0.065
         particles.mainEmitter.sizeMultiplierAtEndOfLifespan = diffuse ? 5.4 : 2.4
         particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = diffuse ? 1.75 : 1.35
-        particles.mainEmitter.opacityCurve = diffuse ? .easeFadeOut : .gradualFadeInOut
+        // Both layers build instead of appearing at maximum density on birth.
+        // The long-lived layer especially should mature downstream before fading.
+        particles.mainEmitter.opacityCurve = .gradualFadeInOut
         particles.mainEmitter.noiseStrength = diffuse ? 0.18 : 0.05
         particles.mainEmitter.noiseScale = diffuse ? 0.82 : 0.34
         particles.mainEmitter.noiseAnimationSpeed = diffuse ? 0.24 : 0.40
@@ -449,7 +508,7 @@ enum Stage2FlightEffects {
                 red: 0.97,
                 green: 0.985,
                 blue: 1.0,
-                alpha: diffuse ? 0.20 : 0.62
+                alpha: diffuse ? 0.13 : 0.42
             )),
             end: .single(UIColor(red: 0.78, green: 0.84, blue: 0.90, alpha: 0.0))
         )
@@ -501,29 +560,34 @@ enum Stage2FlightEffects {
         particles.isEmitting = emitting
         particles.birthDirection = .world
         particles.emissionDirection = driftDirection
-        particles.speed = max(0.03, driftSpeed)
-        particles.speedVariation = diffuse ? 0.35 + 0.70 * p : 0.12 + 0.22 * p
+        // Fresh ice stays tight for a few seconds; the older persistent
+        // population takes the full wind/wake drift and survives long enough to
+        // leave an actual maneuver trace across the sky.
+        particles.speed = diffuse
+            ? max(0.03, driftSpeed)
+            : max(0.02, driftSpeed * 0.22)
+        particles.speedVariation = diffuse ? 0.30 + 0.62 * p : 0.06 + 0.16 * p
 
         if diffuse {
-            particles.mainEmitter.birthRate = emitting ? 210 + 720 * s * (0.35 + 0.65 * p) : 0
-            particles.mainEmitter.lifeSpan = Double(12 + 28 * p)
-            particles.mainEmitter.lifeSpanVariation = Double(2.0 + 5.5 * p)
+            particles.mainEmitter.birthRate = emitting ? 150 + 500 * s * (0.35 + 0.65 * p) : 0
+            particles.mainEmitter.lifeSpan = Double(40 + 80 * p)
+            particles.mainEmitter.lifeSpanVariation = Double(5.0 + 12.0 * p)
             particles.mainEmitter.size = 0.34 + 0.30 * s
             particles.mainEmitter.sizeVariation = 0.16 + 0.18 * p
-            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 3.6 + 3.6 * p
-            particles.mainEmitter.noiseStrength = 0.10 + 0.24 * p
-            particles.mainEmitter.noiseScale = 0.58 + 0.60 * p
-            particles.mainEmitter.noiseAnimationSpeed = 0.16 + 0.22 * p
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 3.8 + 3.8 * p
+            particles.mainEmitter.noiseStrength = 0.08 + 0.22 * p
+            particles.mainEmitter.noiseScale = 0.62 + 0.64 * p
+            particles.mainEmitter.noiseAnimationSpeed = 0.12 + 0.18 * p
         } else {
-            particles.mainEmitter.birthRate = emitting ? 900 + 2_400 * s : 0
-            particles.mainEmitter.lifeSpan = Double(4.2 + 7.0 * p)
-            particles.mainEmitter.lifeSpanVariation = Double(0.65 + 1.4 * p)
+            particles.mainEmitter.birthRate = emitting ? 650 + 1_850 * s : 0
+            particles.mainEmitter.lifeSpan = Double(7.0 + 13.0 * p)
+            particles.mainEmitter.lifeSpanVariation = Double(0.9 + 2.0 * p)
             particles.mainEmitter.size = 0.14 + 0.14 * s
             particles.mainEmitter.sizeVariation = 0.045 + 0.070 * s
-            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.8 + 1.8 * p
-            particles.mainEmitter.noiseStrength = 0.025 + 0.080 * p
-            particles.mainEmitter.noiseScale = 0.30 + 0.30 * p
-            particles.mainEmitter.noiseAnimationSpeed = 0.24 + 0.24 * p
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 2.0 + 1.8 * p
+            particles.mainEmitter.noiseStrength = 0.018 + 0.060 * p
+            particles.mainEmitter.noiseScale = 0.34 + 0.28 * p
+            particles.mainEmitter.noiseAnimationSpeed = 0.18 + 0.20 * p
         }
 
         entity.components.set(particles)
