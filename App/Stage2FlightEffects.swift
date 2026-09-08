@@ -166,7 +166,11 @@ enum Stage2FlightEffects {
         let formationStrength = temperatureFactor
             * humidityFormation
             * (0.30 + 0.70 * exhaustWater)
-        let persistence = clamp((iceRH - 0.96) / 0.20, 0, 1)
+        // Persistence is separate from initial formation. The synthetic RHi
+        // field spans a broader range than a true sounding, so begin the long-
+        // lived ice population earlier instead of making almost every visible
+        // contrail collapse into the short core-only regime.
+        let persistence = clamp((iceRH - 0.82) / 0.35, 0, 1)
         let formsContrail = temperatureMargin > -0.5
             && iceRH > 0.70
             && fuelFlow > 0.012
@@ -202,7 +206,7 @@ enum Stage2FlightEffects {
             name: contrailDiffuseName,
             from: previous,
             to: exhaustPoint,
-            emitting: formsContrail && persistence > 0.08,
+            emitting: formsContrail && persistence > 0.02,
             strength: formationStrength,
             persistence: persistence,
             driftDirection: driftDirection,
