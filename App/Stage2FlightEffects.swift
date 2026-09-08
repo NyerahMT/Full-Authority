@@ -66,30 +66,30 @@ enum Stage2FlightEffects {
         let root = Entity()
         root.name = attachedRootName
 
-        if let leftMesh = makeWingVaporMesh(phase: 0.0) {
+        if let leftMesh = makeWingVaporMesh(phase: 0.0, side: -1) {
             let left = ModelEntity(mesh: leftMesh, materials: [effectMaterial(alpha: 0.0)])
             left.name = leftWingVaporName
-            left.position = [-3.55, 0.02, -1.60]
+            left.position = [-4.55, -0.06, -1.55]
             left.isEnabled = false
             root.addChild(left)
         }
 
-        if let rightMesh = makeWingVaporMesh(phase: 1.7) {
+        if let rightMesh = makeWingVaporMesh(phase: 1.7, side: 1) {
             let right = ModelEntity(mesh: rightMesh, materials: [effectMaterial(alpha: 0.0)])
             right.name = rightWingVaporName
-            right.position = [3.55, 0.02, -1.60]
+            right.position = [4.55, -0.06, -1.55]
             right.isEnabled = false
             root.addChild(right)
         }
 
-        // A visible "Mach cone" in photography is normally a transonic
-        // condensation cloud, not the shock wave itself. Three irregular shell
-        // layers avoid the old perfect translucent geometric cone.
-        for layer in 0..<3 {
+        // The visible transonic effect is a thin pressure-condensation collar
+        // around the wing-root/fuselage region. It is deliberately NOT a cone
+        // primitive and not a filled ball of white vapor.
+        for layer in 0..<2 {
             if let mesh = makeTransonicCondensationMesh(phase: Float(layer) * 1.93) {
                 let cloud = ModelEntity(mesh: mesh, materials: [effectMaterial(alpha: 0.0)])
                 cloud.name = "\(transonicCloudPrefix).\(layer)"
-                cloud.position = [0, 0.05, -0.10 - Float(layer) * 0.18]
+                cloud.position = [0, 0.00, -0.22 - Float(layer) * 0.12]
                 cloud.isEnabled = false
                 root.addChild(cloud)
             }
@@ -232,32 +232,32 @@ enum Stage2FlightEffects {
 
             // Jet regime: narrow engine-exhaust core, quickly rolled into wake.
             let jetFade = exp(-ageF / 1.65) * pow(max(0, 1 - normalizedAge), 0.5)
-            let jetRadius = 0.10 + 0.055 * min(ageF, 2.4)
+            let jetRadius = 0.070 + 0.030 * min(ageF, 3.0)
             core.isEnabled = jetFade * strength > 0.006
             core.scale = [jetRadius, jetRadius * 0.90, runtime.lengths[index]]
-            setEffectAlpha(core, alpha: 0.22 * strength * jetFade)
+            setEffectAlpha(core, alpha: 0.13 * strength * jetFade)
 
             // Primary wake: two counter-rotating lobes spread toward rolled-up
             // vortex spacing while descending under mutual induction.
             let rollup = smoothStep(clamp((ageF - 0.45) / 4.8, 0, 1))
             let breakup = clamp((ageF - 8.0) / 8.0, 0, 1)
             let pairWidth = 0.85 + rollup * (wakeVortexSeparation - 0.85) + breakup * 2.2
-            let pairDepth = 0.42 + rollup * 1.65 + ageF * (0.045 + 0.055 * persistence)
+            let pairDepth = 0.90 + rollup * 0.30 + ageF * 0.025
             let vortexBuild = smoothStep(clamp((ageF - 0.35) / 1.8, 0, 1))
             let vortexFade = pow(max(0, 1 - normalizedAge), 0.52)
             vortex.isEnabled = vortexBuild * vortexFade * strength > 0.005
             vortex.scale = [pairWidth, pairDepth, runtime.lengths[index]]
-            setEffectAlpha(vortex, alpha: 0.115 * strength * vortexBuild * vortexFade * (0.55 + 0.45 * persistence))
+            setEffectAlpha(vortex, alpha: 0.052 * strength * vortexBuild * vortexFade * (0.55 + 0.45 * persistence))
 
             // Secondary wake: detrained ice remains near flight level while the
             // primary pair descends, so it is delayed, broad and deliberately wispy.
             let secondaryBuild = smoothStep(clamp((ageF - 2.0) / 4.0, 0, 1))
             let secondaryFade = pow(max(0, 1 - normalizedAge), 0.65)
-            let secondaryWidth = 1.0 + ageF * (0.20 + 0.20 * persistence)
-            let secondaryDepth = 0.24 + ageF * 0.055
+            let secondaryWidth = 0.80 + ageF * (0.12 + 0.12 * persistence)
+            let secondaryDepth = 0.18 + ageF * 0.030
             secondary.isEnabled = secondaryBuild * secondaryFade * strength * persistence > 0.010
             secondary.scale = [secondaryWidth, secondaryDepth, runtime.lengths[index]]
-            setEffectAlpha(secondary, alpha: 0.050 * strength * persistence * secondaryBuild * secondaryFade)
+            setEffectAlpha(secondary, alpha: 0.020 * strength * persistence * secondaryBuild * secondaryFade)
         }
     }
 
@@ -272,12 +272,16 @@ enum Stage2FlightEffects {
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
-        let moisture = clamp((iceRH - 0.62) / 0.38, 0, 1)
-        let gIntensity = clamp((abs(state.loadFactorG) - 2.8) / 5.2, 0, 1)
-        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 14.0, 0, 1)
-        let qbarIntensity = clamp((state.dynamicPressurePSF - 115) / 560.0, 0, 1)
-        let vaporIntensity = max(gIntensity, alphaIntensity) * qbarIntensity * moisture
-        let vaporEnabled = vaporIntensity > 0.065 && state.calibratedAirspeedKnots > 165
+
+        // Wing-tip vapor is driven by a lift/circulation proxy, not by speed
+        // alone. It takes humid air plus meaningful G/AoA and dynamic pressure.
+        let moisture = clamp((iceRH - 0.72) / 0.30, 0, 1)
+        let gIntensity = clamp((abs(state.loadFactorG) - 3.0) / 4.8, 0, 1)
+        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 8.0) / 10.5, 0, 1)
+        let qbarIntensity = clamp((state.dynamicPressurePSF - 145) / 650.0, 0, 1)
+        let circulation = max(gIntensity, alphaIntensity * 0.90) * qbarIntensity
+        let vaporIntensity = circulation * moisture
+        let vaporEnabled = vaporIntensity > 0.10 && state.calibratedAirspeedKnots > 175
 
         let alpha = state.angleOfAttackDegrees * .pi / 180
         let beta = state.sideslipDegrees * .pi / 180
@@ -285,20 +289,25 @@ enum Stage2FlightEffects {
             simd_quatf(angle: -beta, axis: [0, 1, 0]) *
             simd_quatf(angle: alpha, axis: [1, 0, 0])
 
+        let flicker = 1.0 + 0.035 * sin(Float(simulationTime) * 17.0)
+        let streamwiseScale = (0.82 + 0.30 * vaporIntensity) * flicker
+        let transverseScale = 0.82 + 0.22 * vaporIntensity
+        let alphaValue = 0.010 + 0.075 * vaporIntensity
+
         if let left = root.findEntity(named: leftWingVaporName) as? ModelEntity {
             left.isEnabled = vaporEnabled
             left.orientation = flowOrientation
-            left.position = [-3.42, -0.04 + 0.006 * sin(Float(simulationTime) * 24.0), -1.35]
-            left.scale = [0.34 + vaporIntensity * 0.26, 0.24 + vaporIntensity * 0.20, 0.32 + vaporIntensity * 0.54]
-            setEffectAlpha(left, alpha: 0.004 + vaporIntensity * 0.038)
+            left.position = [-4.55, -0.06, -1.55]
+            left.scale = [transverseScale, transverseScale, streamwiseScale]
+            setEffectAlpha(left, alpha: alphaValue)
         }
 
         if let right = root.findEntity(named: rightWingVaporName) as? ModelEntity {
             right.isEnabled = vaporEnabled
             right.orientation = flowOrientation
-            right.position = [3.42, -0.04 + 0.006 * sin(Float(simulationTime) * 25.0 + 0.8), -1.35]
-            right.scale = [0.34 + vaporIntensity * 0.26, 0.24 + vaporIntensity * 0.20, 0.32 + vaporIntensity * 0.54]
-            setEffectAlpha(right, alpha: 0.004 + vaporIntensity * 0.038)
+            right.position = [4.55, -0.06, -1.55]
+            right.scale = [transverseScale, transverseScale, streamwiseScale]
+            setEffectAlpha(right, alpha: alphaValue)
         }
     }
 
@@ -311,57 +320,71 @@ enum Stage2FlightEffects {
             positionMeters: state.positionMeters,
             altitudeFeet: state.altitudeFeetMSL
         )
-        let moisture = clamp((iceRH - 0.68) / 0.36, 0, 1)
+        let moisture = clamp((iceRH - 0.76) / 0.26, 0, 1)
         let mach = state.mach
-        let transonicPeak = exp(-pow((mach - 1.000) / 0.034, 2))
-        let qbarFactor = clamp((state.dynamicPressurePSF - 180) / 650.0, 0, 1)
-        let alphaPenalty = 1 - 0.45 * clamp(abs(state.angleOfAttackDegrees) / 18.0, 0, 1)
-        let intensity = transonicPeak * qbarFactor * moisture * alphaPenalty
-        let visible = mach > 0.958 && mach < 1.070 && intensity > 0.040
 
-        for layer in 0..<3 {
-            guard let cloud = root.findEntity(named: "\(transonicCloudPrefix).\(layer)") as? ModelEntity else {
+        // Condensation is localized to the transonic pressure field. The visible
+        // cloud peaks very near Mach 1 and falls away rapidly either side.
+        let transonicPeak = exp(-pow((mach - 0.995) / 0.030, 2))
+        let qbarFactor = clamp((state.dynamicPressurePSF - 220) / 720.0, 0, 1)
+        let alphaFactor = 0.72 + 0.28 * clamp(abs(state.angleOfAttackDegrees) / 10.0, 0, 1)
+        let intensity = transonicPeak * qbarFactor * moisture * alphaFactor
+        let visible = mach > 0.965 && mach < 1.045 && intensity > 0.055
+
+        let alpha = state.angleOfAttackDegrees * .pi / 180
+        let beta = state.sideslipDegrees * .pi / 180
+        let flowOrientation =
+            simd_quatf(angle: -beta * 0.45, axis: [0, 1, 0]) *
+            simd_quatf(angle: alpha * 0.35, axis: [1, 0, 0])
+
+        for layer in 0..<2 {
+            guard let cloud = root.findEntity(named: "\\(transonicCloudPrefix).\\(layer)") as? ModelEntity else {
                 continue
             }
-            let phase = Float(layer) * 1.73
-            let flutter = 1 + 0.012 * sin(Float(simulationTime) * (18 + Float(layer) * 2.4) + phase)
-            let layerScale = 0.72 + Float(layer) * 0.065
+            let phase = Float(layer) * 1.61
+            let breathe = 1.0 + 0.018 * sin(Float(simulationTime) * 12.0 + phase)
             cloud.isEnabled = visible
+            cloud.orientation = flowOrientation
+            cloud.position = [0, -0.01 + 0.012 * sin(Float(simulationTime) * 9.0 + phase), -0.18 - Float(layer) * 0.10]
             cloud.scale = [
-                layerScale * flutter,
-                layerScale * (0.94 + 0.02 * sin(Float(simulationTime) * 13 + phase)),
-                0.72 + intensity * 0.12
+                (0.96 + 0.08 * intensity) * breathe,
+                0.88 + 0.10 * intensity,
+                0.92 + 0.06 * intensity
             ]
-            cloud.position.y = -0.04 + 0.018 * sin(Float(simulationTime) * 11 + phase)
-            setEffectAlpha(cloud, alpha: (0.012 - Float(layer) * 0.0025) * intensity)
+            setEffectAlpha(cloud, alpha: (0.030 - Float(layer) * 0.010) * intensity)
         }
     }
 
     // MARK: - Geometry
 
-    private static func makeWingVaporMesh(phase: Float) -> MeshResource? {
-        let segments = 18
+    private static func makeWingVaporMesh(phase: Float, side: Float) -> MeshResource? {
+        let segments = 20
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
-        // Crossed tapered sheets give the condensation volume from chase, side
-        // and underside views without a primitive sphere/tube.
-        for sheet in 0..<3 {
+        // A real fighter wing-tip vortex reads as a thin, slightly wandering
+        // filament. Two narrow crossed ribbons keep it visible from arbitrary
+        // camera angles without turning it into a bulb or spear.
+        for sheet in 0..<2 {
             let base = UInt32(positions.count)
-            let sheetAngle = Float(sheet) * (.pi / 3)
+            let sheetAngle = Float(sheet) * (.pi / 2)
             let c = cos(sheetAngle)
             let s = sin(sheetAngle)
 
             for index in 0..<segments {
                 let t = Float(index) / Float(segments - 1)
-                let z = -0.08 - 4.4 * t
-                let envelope = sin(.pi * min(1, t * 1.16)) * (1 - 0.50 * t)
-                let width = 0.055 + 0.34 * envelope
-                let ripple = sin(t * 17.0 + phase + Float(sheet)) * 0.026 * t
-                let a = SIMD2<Float>(-width, ripple)
-                let b = SIMD2<Float>(width, -ripple)
-                positions.append([a.x * c - a.y * s, a.x * s + a.y * c, z])
-                positions.append([b.x * c - b.y * s, b.x * s + b.y * c, z])
+                let z = -0.04 - 2.65 * t
+                let fadeEnvelope = sin(.pi * min(1, t * 1.05)) * (1 - 0.58 * t)
+                let width = 0.020 + 0.060 * fadeEnvelope
+                let inwardCurl = -side * 0.11 * t * t
+                let downwash = -0.035 * t - 0.018 * t * t
+                let wander = 0.012 * sin(t * 18.0 + phase + Float(sheet) * 1.7)
+                let centerX = inwardCurl
+                let centerY = downwash + wander
+                let ax = width * c
+                let ay = width * s
+                positions.append([centerX - ax, centerY - ay, z])
+                positions.append([centerX + ax, centerY + ay, z])
             }
 
             for index in 0..<(segments - 1) {
@@ -373,55 +396,46 @@ enum Stage2FlightEffects {
             }
         }
 
-        var descriptor = MeshDescriptor(name: "Wing condensation volume")
+        var descriptor = MeshDescriptor(name: "Wing-tip vortex condensation filament")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
     }
 
     private static func makeTransonicCondensationMesh(phase: Float) -> MeshResource? {
-        let radialSegments = 44
-        let axialSegments = 18
+        let radialSegments = 52
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
-        // Irregular annular cloud envelope around the wing/fuselage pressure-drop
-        // region. This intentionally is not a perfect Mach-angle cone: visible
-        // transonic vapor photography is a condensation cloud, not the shockwave.
-        for axial in 0...axialSegments {
-            let t = Float(axial) / Float(axialSegments)
-            let z = 1.75 - 3.9 * t
-            let center = exp(-pow((t - 0.48) / 0.23, 2))
-            let baseRadius = 0.48 + 1.95 * center
+        // Thin elliptical annulus centered on the wing-root pressure field. The
+        // empty center leaves the fuselage readable and the tiny streamwise
+        // ripple gives the collar a vapor edge instead of a geometric disk.
+        for radial in 0..<radialSegments {
+            let angle = Float(radial) / Float(radialSegments) * 2 * .pi
+            let irregular = 1.0
+                + 0.050 * sin(angle * 5.0 + phase)
+                + 0.024 * sin(angle * 11.0 - phase * 0.6)
 
-            for radial in 0..<radialSegments {
-                let angle = Float(radial) / Float(radialSegments) * 2 * .pi
-                let irregular = 1
-                    + 0.055 * sin(angle * 5 + phase + t * 7)
-                    + 0.028 * sin(angle * 11 - phase * 0.7 + t * 13)
-                let radius = baseRadius * irregular
-                positions.append([
-                    cos(angle) * radius,
-                    sin(angle) * radius * 0.54,
-                    z
-                ])
-            }
+            let innerX = 0.72 * cos(angle)
+            let innerY = 0.30 * sin(angle)
+            let outerX = 3.35 * irregular * cos(angle)
+            let outerY = 0.92 * irregular * sin(angle)
+            let zRipple = 0.08 * sin(angle * 3.0 + phase) + 0.035 * sin(angle * 9.0 - phase)
+
+            positions.append([innerX, innerY, zRipple * 0.35])
+            positions.append([outerX, outerY, zRipple])
         }
 
-        for axial in 0..<axialSegments {
-            let row = axial * radialSegments
-            let nextRow = (axial + 1) * radialSegments
-            for radial in 0..<radialSegments {
-                let next = (radial + 1) % radialSegments
-                let i0 = UInt32(row + radial)
-                let i1 = UInt32(row + next)
-                let i2 = UInt32(nextRow + radial)
-                let i3 = UInt32(nextRow + next)
-                appendDoubleSidedQuad(&indices, i0, i1, i2, i3)
-            }
+        for radial in 0..<radialSegments {
+            let next = (radial + 1) % radialSegments
+            let i0 = UInt32(radial * 2)
+            let i1 = i0 + 1
+            let i2 = UInt32(next * 2)
+            let i3 = i2 + 1
+            appendDoubleSidedQuad(&indices, i0, i1, i2, i3)
         }
 
-        var descriptor = MeshDescriptor(name: "Transonic condensation cloud")
+        var descriptor = MeshDescriptor(name: "Transonic pressure condensation collar")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
@@ -461,30 +475,35 @@ enum Stage2FlightEffects {
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
         let stations = 7
+
+        // The wake-vortex centers may separate by meters, but the visible ice
+        // filaments themselves stay thin. Keep center spacing and filament
+        // thickness independent so the trail never becomes two giant sausages.
         for lobe: Float in [-1, 1] {
-            for sheet in 0..<3 {
+            for sheet in 0..<2 {
                 let base = UInt32(positions.count)
-                let angle = Float(sheet) / 3.0 * .pi
+                let angle = Float(sheet) * (.pi / 2)
                 let c = cos(angle), s = sin(angle)
                 for station in 0..<stations {
                     let t = Float(station) / Float(stations - 1)
                     let z = t - 0.5
-                    let ragged = 1 + 0.13*sin(t*13+phase+Float(sheet)*1.1+lobe) + 0.05*sin(t*29-phase*0.6)
-                    let radius = 0.145 * ragged
-                    let swirl = 0.035 * sin(t*18+phase+lobe*1.7)
-                    let centerX = lobe * 0.39
-                    let centerY = -0.055 + lobe * swirl
-                    let a = SIMD2<Float>(centerX-radius*c, centerY-radius*s)
-                    let b = SIMD2<Float>(centerX+radius*c, centerY+radius*s)
-                    positions.append([a.x, a.y, z]); positions.append([b.x, b.y, z])
+                    let ragged = 1 + 0.10 * sin(t * 13 + phase + Float(sheet) + lobe)
+                    let radius = 0.028 * ragged
+                    let swirl = 0.020 * sin(t * 18 + phase + lobe * 1.7)
+                    let centerX = lobe * 0.47
+                    let centerY = -0.020 + lobe * swirl
+                    let a = SIMD2<Float>(centerX - radius * c, centerY - radius * s)
+                    let b = SIMD2<Float>(centerX + radius * c, centerY + radius * s)
+                    positions.append([a.x, a.y, z])
+                    positions.append([b.x, b.y, z])
                 }
                 for station in 0..<(stations - 1) {
                     let i = base + UInt32(station * 2)
-                    appendDoubleSidedQuad(&indices, i, i+1, i+2, i+3)
+                    appendDoubleSidedQuad(&indices, i, i + 1, i + 2, i + 3)
                 }
             }
         }
-        var descriptor = MeshDescriptor(name: "Contrail rolled-up vortex pair")
+        var descriptor = MeshDescriptor(name: "Contrail rolled-up vortex filaments")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
