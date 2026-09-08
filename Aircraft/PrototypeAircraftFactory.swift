@@ -228,8 +228,6 @@ enum PrototypeAircraftFactory {
         plume.isEnabled = false
 
         let aftRotation = simd_quatf(angle: -.pi / 2, axis: SIMD3<Float>(1, 0, 0))
-        let meshLipCompensation = SIMD3<Float>(0, 0, 0.50)
-
         let halo = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
@@ -241,8 +239,8 @@ enum PrototypeAircraftFactory {
         )
         halo.name = afterburnerHaloName
         halo.orientation = aftRotation
-        halo.position = meshLipCompensation
         halo.scale = [1.15, 2.15, 1.15]
+        halo.position = [0, 0, 0.5 * halo.scale.y]
         plume.addChild(halo)
 
         let outer = ModelEntity(
@@ -256,8 +254,8 @@ enum PrototypeAircraftFactory {
         )
         outer.name = afterburnerOuterName
         outer.orientation = aftRotation
-        outer.position = meshLipCompensation
         outer.scale = [0.94, 1.90, 1.02]
+        outer.position = [0, 0, 0.5 * outer.scale.y]
         plume.addChild(outer)
 
         let inner = ModelEntity(
@@ -271,8 +269,8 @@ enum PrototypeAircraftFactory {
         )
         inner.name = afterburnerInnerName
         inner.orientation = aftRotation
-        inner.position = meshLipCompensation
         inner.scale = [0.58, 1.52, 0.66]
+        inner.position = [0, 0, 0.5 * inner.scale.y]
         plume.addChild(inner)
 
         let core = ModelEntity(
@@ -286,8 +284,8 @@ enum PrototypeAircraftFactory {
         )
         core.name = afterburnerCoreName
         core.orientation = aftRotation
-        core.position = meshLipCompensation
         core.scale = [0.24, 1.12, 0.30]
+        core.position = [0, 0, 0.5 * core.scale.y]
         plume.addChild(core)
 
         // Thin pressure cells live *inside* the flame envelope. These are not

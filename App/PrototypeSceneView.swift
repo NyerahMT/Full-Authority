@@ -496,17 +496,21 @@ struct PrototypeSceneView: View {
 
             if let halo = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerHaloName) {
                 halo.scale = [1.15 * width, 2.15 * length, 1.15 * width]
+                halo.position.z = 0.5 * halo.scale.y
             }
             if let outer = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerOuterName) {
                 outer.scale = [0.94 * width, 1.90 * length, 1.02 * width]
+                outer.position.z = 0.5 * outer.scale.y
             }
             if let inner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerInnerName) {
                 let pulse = 1.0 + 0.016 * sin(time * 61.0 + 0.9)
                 inner.scale = [0.58 * width * pulse, 1.52 * length, 0.66 * width * pulse]
+                inner.position.z = 0.5 * inner.scale.y
             }
             if let core = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerCoreName) {
                 let pulse = 1.0 + 0.026 * sin(time * 73.0 + 0.35)
                 core.scale = [0.24 * width * pulse, 1.12 * length, 0.30 * width * pulse]
+                core.position.z = 0.5 * core.scale.y
             }
 
             for index in 0..<5 {
