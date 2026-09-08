@@ -37,7 +37,6 @@ struct PrototypeSceneView: View {
     @State private var orbitGestureOrigin = SIMD2<Float>.zero
     @State private var orbitGestureActive = false
 
-
     var body: some View {
         ZStack {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
@@ -67,9 +66,6 @@ struct PrototypeSceneView: View {
                     positionCamera(camera, forceSnap: true)
                     content.add(camera)
 
-                    // A stronger side-key and restrained sky fill keep the F-16's
-                    // real facets readable. The previous opposing lights filled nearly
-                    // every shadow and made the authored frame look flatter than it is.
                     let sun = Entity()
                     sun.name = "FA.sun"
                     sun.components.set([
@@ -99,7 +95,11 @@ struct PrototypeSceneView: View {
                     aircraft.orientation = simulation.state.orientation
                     aircraft.isEnabled = cameraMode != .cockpit
                     updateAircraftPresentation(aircraft)
-                    runtime.jetAudio.update(state: simulation.state, isPaused: simulation.isPaused, isCockpit: cameraMode == .cockpit)
+                    runtime.jetAudio.update(
+                        state: simulation.state,
+                        isPaused: simulation.isPaused,
+                        isCockpit: cameraMode == .cockpit
+                    )
 
                     if let trailRoot = content.entities.first(where: { $0.name == Stage2FlightEffects.trailRootName }) {
                         Stage2FlightEffects.updateWorldTrails(
@@ -120,7 +120,10 @@ struct PrototypeSceneView: View {
             }
             .background(stage2Sky)
 
-            if !simulation.isPaused && cameraMode != .cockpit {
+            // The same free-look surface is now available in cockpit. External
+            // cameras orbit the airplane; cockpit mode rotates the pilot's head
+            // while keeping the eyepoint fixed in the seat.
+            if !simulation.isPaused {
                 orbitGestureSurface
             }
 
@@ -155,11 +158,9 @@ struct PrototypeSceneView: View {
             HStack(spacing: 8) {
                 Spacer()
 
-                if cameraHasOrbitOffset && cameraMode != .cockpit {
+                if cameraHasOrbitOffset {
                     Button {
-                        orbitYawRadians = 0
-                        orbitPitchRadians = 0
-                        orbitGestureActive = false
+                        recenterView()
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "scope")
@@ -179,6 +180,7 @@ struct PrototypeSceneView: View {
 
                 Button {
                     cameraMode = cameraMode.next
+                    recenterView()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: cameraMode == .cockpit ? "viewfinder" : "camera.fill")
@@ -218,20 +220,34 @@ struct PrototypeSceneView: View {
                                 orbitGestureOrigin = SIMD2<Float>(orbitYawRadians, orbitPitchRadians)
                                 orbitGestureActive = true
                             }
-                            let sensitivity: Float = 0.0045
-                            orbitYawRadians = wrappedAngle(
-                                orbitGestureOrigin.x - Float(value.translation.width) * sensitivity
-                            )
-                            orbitPitchRadians = clamp(
-                                orbitGestureOrigin.y + Float(value.translation.height) * sensitivity,
-                                -0.72,
-                                0.62
-                            )
+
+                            let sensitivity: Float = cameraMode == .cockpit ? 0.0040 : 0.0045
+                            let candidateYaw = orbitGestureOrigin.x
+                                - Float(value.translation.width) * sensitivity
+                            let candidatePitch = orbitGestureOrigin.y
+                                + Float(value.translation.height) * sensitivity
+
+                            if cameraMode == .cockpit {
+                                // Rough human head/helmet limits. This is deliberately
+                                // wide enough to check six while preventing the view
+                                // from rolling through impossible camera orientations.
+                                orbitYawRadians = clamp(candidateYaw, -2.62, 2.62)
+                                orbitPitchRadians = clamp(candidatePitch, -1.02, 0.82)
+                            } else {
+                                orbitYawRadians = wrappedAngle(candidateYaw)
+                                orbitPitchRadians = clamp(candidatePitch, -0.72, 0.62)
+                            }
                         }
                         .onEnded { _ in orbitGestureActive = false }
                 )
         }
         .allowsHitTesting(true)
+    }
+
+    private func recenterView() {
+        orbitYawRadians = 0
+        orbitPitchRadians = 0
+        orbitGestureActive = false
     }
 
     private func wrappedAngle(_ value: Float) -> Float {
@@ -277,8 +293,7 @@ struct PrototypeSceneView: View {
                         cameraMode = .chase
                         runtime.cameraInitialized = false
                         runtime.cameraModeKey = ""
-                        orbitYawRadians = 0
-                        orbitPitchRadians = 0
+                        recenterView()
                     } label: {
                         Text("RESET TO RUNWAY")
                             .font(.system(size: 11, weight: .black, design: .monospaced))
@@ -314,11 +329,6 @@ struct PrototypeSceneView: View {
         }
         runtime.lastCameraTime = now
 
-        // The chase rig is intentionally almost rigid. Airframe position and
-        // attitude are applied directly every render update so pitch/roll/yaw do
-        // not swim behind the JSBSim state. Only the optional longitudinal
-        // pullback is filtered, which preserves a tiny acceleration cue without
-        // turning the camera into another spring-mass system.
         let airspeed = state.airspeedMetersPerSecond
         if let previousAirspeed = runtime.lastAirspeed {
             let acceleration = max(0, (airspeed - previousAirspeed) / max(dt, 1.0 / 240.0))
@@ -352,11 +362,11 @@ struct PrototypeSceneView: View {
             pullbackScale = 0.55
 
         case .cockpit:
-            // Upstream F-16 eyepoint relative to CG. Cockpit view has no
-            // synthetic pullback at all: it is locked to the airframe.
+            // Fixed eyepoint in the F-16 seat. Free-look below rotates the head,
+            // not the eyepoint, so the runway does not slide around the cockpit.
             localCameraOffset = [0, 0.88, 3.64]
             localLookPoint = [0, 0.88, 90]
-            fieldOfView = 72
+            fieldOfView = 68
             pullbackScale = 0
         }
 
@@ -375,22 +385,35 @@ struct PrototypeSceneView: View {
         ))
 
         let desiredPosition = aircraftPosition + simd_act(attitude, localCameraOffset)
-        let desiredLookTarget = aircraftPosition + simd_act(attitude, localLookPoint)
-        let aircraftUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
+        let desiredLookTarget: SIMD3<Float>
+        let cameraUp: SIMD3<Float>
+
+        if cameraMode == .cockpit && cameraHasOrbitOffset {
+            let yaw = simd_quatf(angle: orbitYawRadians, axis: [0, 1, 0])
+            let pitch = simd_quatf(angle: orbitPitchRadians, axis: [1, 0, 0])
+            let headRotation = yaw * pitch
+            let headForwardLocal = simd_act(headRotation, SIMD3<Float>(0, 0, 1))
+            let headUpLocal = simd_act(headRotation, SIMD3<Float>(0, 1, 0))
+
+            desiredLookTarget = desiredPosition
+                + simd_act(attitude, headForwardLocal) * 90
+            cameraUp = simd_act(attitude, headUpLocal)
+        } else {
+            desiredLookTarget = aircraftPosition + simd_act(attitude, localLookPoint)
+            cameraUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
+        }
+
         let desiredOrientation = lookRotation(
             forward: desiredLookTarget - desiredPosition,
-            up: aircraftUp
+            up: cameraUp
         )
 
-        // Rigid means rigid: no exponential position lag and no quaternion
-        // spring. JSBSim remains authoritative; the camera simply renders the
-        // latest aircraft-relative pose.
         camera.position = desiredPosition
         camera.orientation = desiredOrientation
         runtime.cameraInitialized = true
         runtime.cameraModeKey = cameraMode.rawValue
 
-        _ = forceSnap // retained by the call sites for reset/mode-change semantics
+        _ = forceSnap
     }
 
     private func lookRotation(forward: SIMD3<Float>, up: SIMD3<Float>) -> simd_quatf {
@@ -412,10 +435,6 @@ struct PrototypeSceneView: View {
     private func updateAircraftPresentation(_ aircraft: Entity) {
         let state = simulation.state
 
-
-        // The replacement F-16 is an authored rig. These sign conversions are
-        // renderer-boundary conversions between JSBSim's left/right local
-        // surface conventions and the source FBX animation convention.
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftAileronName) {
             left.orientation = simd_quatf(
                 angle: -state.leftAileronRadians,
@@ -429,9 +448,6 @@ struct PrototypeSceneView: View {
             )
         }
         if let left = aircraft.findEntity(named: PrototypeAircraftFactory.leftElevatorName) {
-            // JSBSim defines left differential-tail angle with the opposite local
-            // sign to the right tail. The authored FBX uses the same +X hinge
-            // direction on both stabilators, hence the left-side sign conversion.
             left.orientation = simd_quatf(
                 angle: -state.leftStabilatorRadians,
                 axis: PrototypeAircraftFactory.leftStabilatorVisualAxis
@@ -444,7 +460,6 @@ struct PrototypeSceneView: View {
             )
         }
         if let rudder = aircraft.findEntity(named: PrototypeAircraftFactory.rudderName) {
-            // vazgriz's authored Rudder channel uses -rudder influence.
             rudder.orientation = simd_quatf(
                 angle: -state.rudderRadians,
                 axis: PrototypeAircraftFactory.rudderVisualAxis
@@ -481,8 +496,6 @@ struct PrototypeSceneView: View {
         let intensity = state.afterburnerActive ? clamp(0.48 + 0.40 * n2 + 0.12 * fuel, 0, 1) : 0
         let time = Float(simulation.simulationTime)
 
-        // Lower ambient pressure lets the jet expand more. This is only a visual
-        // presentation term; JSBSim remains authoritative for actual thrust.
         let pressureExpansion = clamp(sqrtf(2_116.22 / max(state.ambientPressurePSF, 450)), 0.90, 1.62)
         let speedCompression = clamp(1.0 - 0.08 * state.mach, 0.87, 1.0)
 
@@ -567,17 +580,35 @@ private struct CockpitFrameOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                CockpitBowShape()
-                    .stroke(.black.opacity(0.80), style: StrokeStyle(lineWidth: 13, lineCap: .round))
-                CockpitBowShape()
-                    .stroke(.white.opacity(0.055), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                // Keep the canopy framing at the extreme edges. The previous
+                // center-mounted V occupied most of the forward view and looked
+                // like two giant bars instead of an F-16 bubble canopy.
+                CockpitCanopyEdgeShape()
+                    .stroke(
+                        .black.opacity(0.66),
+                        style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round)
+                    )
+                CockpitCanopyEdgeShape()
+                    .stroke(
+                        .white.opacity(0.045),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                    )
 
-                VStack {
+                VStack(spacing: 0) {
                     Spacer()
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(.black.opacity(0.78))
-                        .frame(width: geometry.size.width * 0.58, height: 54)
-                        .offset(y: 27)
+
+                    // A restrained glareshield gives the eye a cockpit reference
+                    // without pretending we have a full 3D interior yet.
+                    RoundedRectangle(cornerRadius: 30)
+                        .fill(.black.opacity(0.72))
+                        .frame(width: geometry.size.width * 0.70, height: 76)
+                        .overlay(alignment: .top) {
+                            Capsule()
+                                .fill(.white.opacity(0.055))
+                                .frame(width: geometry.size.width * 0.48, height: 2)
+                                .padding(.top, 9)
+                        }
+                        .offset(y: 42)
                 }
             }
         }
@@ -585,26 +616,45 @@ private struct CockpitFrameOverlay: View {
     }
 }
 
-private struct CockpitBowShape: Shape {
+private struct CockpitCanopyEdgeShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let top = CGPoint(x: rect.midX, y: rect.minY - 12)
-        path.move(to: top)
+
+        let leftBottom = CGPoint(x: rect.minX + rect.width * 0.025, y: rect.maxY * 0.91)
+        let leftUpper = CGPoint(x: rect.minX + rect.width * 0.095, y: rect.minY + rect.height * 0.12)
+        let leftTop = CGPoint(x: rect.minX + rect.width * 0.24, y: rect.minY + rect.height * 0.015)
+
+        path.move(to: leftBottom)
         path.addCurve(
-            to: CGPoint(x: rect.minX + rect.width * 0.12, y: rect.maxY * 0.82),
-            control1: CGPoint(x: rect.midX - rect.width * 0.10, y: rect.height * 0.22),
-            control2: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.height * 0.55)
+            to: leftUpper,
+            control1: CGPoint(x: rect.minX + rect.width * 0.020, y: rect.height * 0.62),
+            control2: CGPoint(x: rect.minX + rect.width * 0.045, y: rect.height * 0.24)
         )
-        path.move(to: top)
         path.addCurve(
-            to: CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.maxY * 0.82),
-            control1: CGPoint(x: rect.midX + rect.width * 0.10, y: rect.height * 0.22),
-            control2: CGPoint(x: rect.maxX - rect.width * 0.18, y: rect.height * 0.55)
+            to: leftTop,
+            control1: CGPoint(x: rect.minX + rect.width * 0.13, y: rect.height * 0.055),
+            control2: CGPoint(x: rect.minX + rect.width * 0.19, y: rect.height * 0.020)
         )
+
+        let rightBottom = CGPoint(x: rect.maxX - rect.width * 0.025, y: rect.maxY * 0.91)
+        let rightUpper = CGPoint(x: rect.maxX - rect.width * 0.095, y: rect.minY + rect.height * 0.12)
+        let rightTop = CGPoint(x: rect.maxX - rect.width * 0.24, y: rect.minY + rect.height * 0.015)
+
+        path.move(to: rightBottom)
+        path.addCurve(
+            to: rightUpper,
+            control1: CGPoint(x: rect.maxX - rect.width * 0.020, y: rect.height * 0.62),
+            control2: CGPoint(x: rect.maxX - rect.width * 0.045, y: rect.height * 0.24)
+        )
+        path.addCurve(
+            to: rightTop,
+            control1: CGPoint(x: rect.maxX - rect.width * 0.13, y: rect.height * 0.055),
+            control2: CGPoint(x: rect.maxX - rect.width * 0.19, y: rect.height * 0.020)
+        )
+
         return path
     }
 }
-
 
 @MainActor
 private final class Stage0108JetAudio {
@@ -651,19 +701,20 @@ private final class Stage0108JetAudio {
         let live: Float = isPaused ? 0 : 1
         let dryPower = max(n1, fuel)
 
-        // The tonal components carry the identity of the engine. The broadband
-        // exhaust is intentionally lower and darker so it supports the whine and
-        // rumble instead of masking everything as white noise.
         rumbleRate.rate = 0.78 + 0.33 * n1
         turbineRate.rate = 0.70 + 1.00 * n2
 
-        let cockpitRumble: Float = isCockpit ? 0.62 : 1.0
-        let cockpitTurbine: Float = isCockpit ? 1.18 : 0.82
-        let cockpitExhaust: Float = isCockpit ? 0.24 : 1.0
-        let cockpitWind: Float = isCockpit ? 0.34 : 1.0
+        // The persistent high-pitched whir is the synthetic compressor/turbine
+        // layer, not an APU. In the cockpit it was actually louder than outside.
+        // Helmet/canopy attenuation now knocks that layer down hard while leaving
+        // enough low-frequency engine body to know the jet is alive.
+        let cockpitRumble: Float = isCockpit ? 0.52 : 1.0
+        let cockpitTurbine: Float = isCockpit ? 0.30 : 0.82
+        let cockpitExhaust: Float = isCockpit ? 0.18 : 1.0
+        let cockpitWind: Float = isCockpit ? 0.22 : 1.0
 
         rumble.volume = live * cockpitRumble * (0.050 + 0.18 * n1)
-        turbine.volume = live * cockpitTurbine * (0.020 + 0.13 * n2 * n2)
+        turbine.volume = live * cockpitTurbine * (0.014 + 0.095 * n2 * n2)
         exhaust.volume = live * cockpitExhaust * (0.025 + 0.20 * dryPower)
         afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.16 + 0.14 * n2 : 0)
         wind.volume = live * cockpitWind * (0.004 + 0.030 * min(powf(mach, 1.55), 1.40))
@@ -717,9 +768,6 @@ private final class Stage0108JetAudio {
     }
 
     private func configureEQ() {
-        // High-frequency hiss is aggressively rolled off. The external jet sound
-        // should be a low-frequency pressure roar with turbine energy riding on
-        // top, not a wide-open noise generator.
         let exhaustBands = exhaustEQ.bands
         exhaustBands[0].filterType = .lowShelf
         exhaustBands[0].frequency = 120
@@ -768,7 +816,7 @@ private final class Stage0108JetAudio {
     private func fireIgnitionTransient(isCockpit: Bool) {
         guard let ignitionBuffer else { return }
         ignition.stop()
-        ignition.volume = isCockpit ? 0.14 : 0.38
+        ignition.volume = isCockpit ? 0.11 : 0.38
         ignition.scheduleBuffer(ignitionBuffer, at: nil, options: [])
         ignition.play()
     }
@@ -819,8 +867,6 @@ private final class Stage0108JetAudio {
                 seeds[ch] = 1_664_525 &* seeds[ch] &+ 1_013_904_223
                 let raw = Float(Int32(bitPattern: seeds[ch])) / Float(Int32.max)
 
-                // Several one-pole stages turn white noise into broad pressure
-                // bands. Almost all audible energy now lives below ~2 kHz.
                 sub[ch] = 0.9985 * sub[ch] + 0.0015 * raw
                 low[ch] = 0.9880 * low[ch] + 0.0120 * raw
                 body[ch] = 0.9100 * body[ch] + 0.0900 * raw
