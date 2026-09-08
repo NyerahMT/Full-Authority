@@ -443,23 +443,20 @@ private struct F16HUD: View {
                     F16FlightPathMarker(color: hudColor, limited: fpmLimited)
                         .offset(x: fpmX, y: fpmY)
 
-                    F16BankAngleIndicator(rollDegrees: state.rollDegrees, color: hudColor)
-                        .offset(x: fpmX, y: fpmY)
-
                     if gearDown {
                         let aoaBracketY = fpmY + CGFloat(13.0 - state.angleOfAttackDegrees) * pixelsPerDegree
                         F16AOABracket(color: hudColor, pixelsPerDegree: pixelsPerDegree)
                             .offset(x: fpmX - 48, y: aoaBracketY)
                     }
 
+                    // Keep the primary airspeed/altitude presentations well outside
+                    // the flight-path/pitch-ladder field. The previous offsets packed
+                    // both tapes against the center of the HUD on iPhone.
                     F16VelocityScale(state: state, color: hudColor)
-                        .offset(x: -hudWidth * 0.48)
+                        .offset(x: -hudWidth * 0.68)
 
                     F16AltitudeScale(state: state, color: hudColor)
-                        .offset(x: hudWidth * 0.47)
-
-                    F16VerticalVelocityScale(state: state, color: hudColor)
-                        .offset(x: hudWidth * 0.59)
+                        .offset(x: hudWidth * 0.67)
 
                     F16HeadingScale(headingDegrees: state.headingDegrees, color: hudColor)
                         .frame(width: hudWidth * 0.68, height: 48)

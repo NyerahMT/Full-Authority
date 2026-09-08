@@ -188,7 +188,7 @@ enum PrototypeAircraftFactory {
             material(UIColor(red: 0.33, green: 0.35, blue: 0.36, alpha: 1), roughness: 0.74, metallic: 0.02),
             material(UIColor(red: 0.50, green: 0.52, blue: 0.53, alpha: 1), roughness: 0.78, metallic: 0.01),
             material(UIColor(red: 0.22, green: 0.23, blue: 0.23, alpha: 1), roughness: 0.82, metallic: 0.00),
-            material(UIColor(red: 0.16, green: 0.12, blue: 0.075, alpha: 1), roughness: 0.18, metallic: 0.12),
+            material(UIColor(red: 0.075, green: 0.105, blue: 0.125, alpha: 1), roughness: 0.10, metallic: 0.24),
             material(UIColor(red: 0.20, green: 0.19, blue: 0.17, alpha: 1), roughness: 0.34, metallic: 0.92),
             material(UIColor(red: 0.42, green: 0.44, blue: 0.45, alpha: 1), roughness: 0.68, metallic: 0.02)
         ]
@@ -231,10 +231,10 @@ enum PrototypeAircraftFactory {
         let halo = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.22,
-                green: 0.12,
-                blue: 0.78,
-                alpha: 0.13
+                red: 0.82,
+                green: 0.10,
+                blue: 0.025,
+                alpha: 0.15
             ))]
         )
         halo.name = afterburnerHaloName
@@ -246,10 +246,10 @@ enum PrototypeAircraftFactory {
         let outer = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.08,
-                green: 0.28,
-                blue: 1.0,
-                alpha: 0.28
+                red: 1.0,
+                green: 0.24,
+                blue: 0.035,
+                alpha: 0.34
             ))]
         )
         outer.name = afterburnerOuterName
@@ -261,10 +261,10 @@ enum PrototypeAircraftFactory {
         let inner = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.42,
-                green: 0.76,
-                blue: 1.0,
-                alpha: 0.50
+                red: 1.0,
+                green: 0.52,
+                blue: 0.075,
+                alpha: 0.56
             ))]
         )
         inner.name = afterburnerInnerName
@@ -276,10 +276,10 @@ enum PrototypeAircraftFactory {
         let core = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.94,
-                green: 0.97,
-                blue: 1.0,
-                alpha: 0.82
+                red: 1.0,
+                green: 0.88,
+                blue: 0.48,
+                alpha: 0.86
             ))]
         )
         core.name = afterburnerCoreName
@@ -292,15 +292,15 @@ enum PrototypeAircraftFactory {
         // the old detached sphere blobs: from the side they read as soft bands
         // in the plume and disappear with the burner.
         let shockZ: [Float] = [-0.68, -1.36, -2.10, -2.92, -3.82]
-        let shockR: [Float] = [0.34, 0.31, 0.27, 0.23, 0.19]
+        let shockR: [Float] = [0.24, 0.215, 0.19, 0.165, 0.14]
         for index in shockZ.indices {
             let cell = ModelEntity(
-                mesh: .generateCylinder(height: 0.055, radius: shockR[index]),
+                mesh: .generateCylinder(height: 0.030, radius: shockR[index]),
                 materials: [UnlitMaterial(color: UIColor(
-                    red: 0.82,
-                    green: 0.92,
-                    blue: 1.0,
-                    alpha: CGFloat(max(0.11, 0.30 - Float(index) * 0.038))
+                    red: 1.0,
+                    green: 0.66,
+                    blue: 0.20,
+                    alpha: CGFloat(max(0.055, 0.15 - Float(index) * 0.020))
                 ))]
             )
             cell.name = afterburnerShockPrefix + String(index)
@@ -317,10 +317,10 @@ enum PrototypeAircraftFactory {
         let glow = ModelEntity(
             mesh: .generateCylinder(height: 0.032, radius: 0.455),
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.58,
-                green: 0.75,
-                blue: 1.0,
-                alpha: 0.52
+                red: 1.0,
+                green: 0.30,
+                blue: 0.055,
+                alpha: 0.56
             ))]
         )
         glow.name = nozzleGlowName
@@ -546,12 +546,20 @@ enum PrototypeAircraftFactory {
         let centroid = (a.position + b.position + c.position) / 3
         let averageNormal = simd_normalize(a.normal + b.normal + c.normal)
 
-        // Bronze-tinted bubble canopy.
-        if abs(centroid.x) < 1.10,
-           centroid.z > 1.55,
-           centroid.z < 4.65,
-           centroid.y > 0.62 {
-            return Paint.canopy.rawValue
+        // F-16 bubble canopy. Use a tapered planform instead of the old
+        // rectangular classifier, which painted a broad slab of upper fuselage
+        // as glass and made the canopy look blocky from chase view.
+        let canopyCenterZ: Float = 3.10
+        let canopyHalfLength: Float = 1.47
+        let canopyLongitudinal = (centroid.z - canopyCenterZ) / canopyHalfLength
+        if abs(canopyLongitudinal) < 1.0 {
+            let widthProfile = sqrt(max(0, 1 - canopyLongitudinal * canopyLongitudinal))
+            let canopyHalfWidth = 0.16 + 0.68 * widthProfile
+            if abs(centroid.x) < canopyHalfWidth,
+               centroid.y > 0.70,
+               averageNormal.y > -0.48 {
+                return Paint.canopy.rawValue
+            }
         }
 
         // Characteristic darker radome.
