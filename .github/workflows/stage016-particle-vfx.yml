@@ -1,0 +1,491 @@
+name: Stage016ParticleVFX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stage016-particle-vfx.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replace mesh vapor with live RealityKit particles
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('App/Stage2FlightEffects.swift')
+          s = p.read_text()
+
+          def replace_between(text, start, end, replacement):
+              i = text.index(start)
+              j = text.index(end, i)
+              return text[:i] + replacement + text[j:]
+
+          s = s.replace(
+              '    private static let transonicCloudPrefix = "FA.effects.transonic"\n',
+              '''    private static let transonicCloudPrefix = "FA.effects.transonic"\n    private static let lerxLeftEmitterName = "FA.effects.particles.lerx.left"\n    private static let lerxRightEmitterName = "FA.effects.particles.lerx.right"\n    private static let tipLeftEmitterName = "FA.effects.particles.tip.left"\n    private static let tipRightEmitterName = "FA.effects.particles.tip.right"\n    private static let transonicEmitterPrefix = "FA.effects.particles.transonic"\n    private static let contrailCoreEmitterName = "FA.effects.particles.contrail.core"\n    private static let contrailDiffuseEmitterName = "FA.effects.particles.contrail.diffuse"\n''',
+              1,
+          )
+
+          attached = '''    static func makeAttachedEffects() -> Entity {
+        let root = Entity()
+        root.name = attachedRootName
+
+        // Emitters are locators on the F-16, not pre-baked animations. Newborn
+        // particles are transformed through the airframe once, then remain in
+        // world space so vapor is physically left behind as the jet moves.
+        let lerxLeft = makeAirframeParticleEmitter(
+            name: lerxLeftEmitterName,
+            position: [-1.32, 0.22, 1.28],
+            vortexStrength: 12
+        )
+        root.addChild(lerxLeft)
+
+        let lerxRight = makeAirframeParticleEmitter(
+            name: lerxRightEmitterName,
+            position: [1.32, 0.22, 1.28],
+            vortexStrength: -12
+        )
+        root.addChild(lerxRight)
+
+        let tipLeft = makeAirframeParticleEmitter(
+            name: tipLeftEmitterName,
+            position: [-4.55, -0.05, -1.45],
+            vortexStrength: 7
+        )
+        root.addChild(tipLeft)
+
+        let tipRight = makeAirframeParticleEmitter(
+            name: tipRightEmitterName,
+            position: [4.55, -0.05, -1.45],
+            vortexStrength: -7
+        )
+        root.addChild(tipRight)
+
+        // The transonic cloud is intentionally several small pressure-region
+        // emitters instead of one geometric cone/donut. Their short-lived world
+        // particles bloom around the wing roots and peel away behind the jet.
+        let transonicLocators: [SIMD3<Float>] = [
+            [-2.75,  0.18, -0.18],
+            [-1.55,  0.52, -0.02],
+            [-1.70, -0.28, -0.15],
+            [ 1.70, -0.28, -0.15],
+            [ 1.55,  0.52, -0.02],
+            [ 2.75,  0.18, -0.18]
+        ]
+        for (index, position) in transonicLocators.enumerated() {
+            let emitter = makeTransonicParticleEmitter(
+                name: transonicEmitterPrefix + "." + String(index),
+                position: position
+            )
+            root.addChild(emitter)
+        }
+
+        return root
+    }
+
+'''
+          s = replace_between(s, '    static func makeAttachedEffects() -> Entity {', '    static func makeTrailPool() -> Entity {', attached)
+
+          trail = '''    static func makeTrailPool() -> Entity {
+        let root = Entity()
+        root.name = trailRootName
+
+        // Two world-space particle layers produce one physical contrail: a tight
+        // fresh ice core and a slower, older diffused cloud. Because these emitters
+        // move through world space while their particles do not inherit transform,
+        // the trail naturally records the aircraft path without drawing a line mesh.
+        let core = makeContrailEmitter(
+            name: contrailCoreEmitterName,
+            diffuse: false
+        )
+        root.addChild(core)
+
+        let diffuse = makeContrailEmitter(
+            name: contrailDiffuseEmitterName,
+            diffuse: true
+        )
+        root.addChild(diffuse)
+
+        return root
+    }
+
+'''
+          s = replace_between(s, '    static func makeTrailPool() -> Entity {', '    static func updateAttachedEffects(', trail)
+
+          world = '''    static func updateWorldTrails(
+        root: Entity,
+        state: AircraftState,
+        simulationTime: TimeInterval,
+        runtime: Runtime
+    ) {
+        let reset = simulationTime + 0.001 < runtime.lastSimulationTime
+        runtime.lastSimulationTime = simulationTime
+
+        let iceRH = iceRelativeHumidity(
+            positionMeters: state.positionMeters,
+            altitudeFeet: state.altitudeFeetMSL
+        )
+        let criticalTemperatureC = schmidtApplemanCriticalTemperatureC(
+            pressurePSF: state.ambientPressurePSF
+        )
+        let temperatureMargin = criticalTemperatureC - state.ambientTemperatureC
+        let temperatureFactor = clamp((temperatureMargin + 1.0) / 8.0, 0, 1)
+        let humidityFormationFactor = clamp((iceRH - 0.70) / 0.30, 0, 1)
+        let fuelFlow = state.engineFuelFlowPoundsPerSecond
+        let exhaustWaterFactor = clamp((fuelFlow - 0.015) / 0.65, 0, 1)
+        let formationStrength = temperatureFactor
+            * humidityFormationFactor
+            * (0.30 + 0.70 * exhaustWaterFactor)
+        let persistence = clamp((iceRH - 0.96) / 0.20, 0, 1)
+        let formsContrail = temperatureMargin > -0.5
+            && iceRH > 0.70
+            && fuelFlow > 0.012
+            && formationStrength > 0.025
+
+        let exhaust = worldPoint(local: [0, -0.04, -7.58], state: state)
+        let wakeDown = initialWakeDescentRate(state: state)
+        let drift = state.windMetersPerSecond + SIMD3<Float>(0, -0.32 * wakeDown, 0)
+        let driftSpeed = max(0.03, simd_length(drift))
+        let driftDirection = simd_length_squared(drift) > 0.0001
+            ? simd_normalize(drift)
+            : SIMD3<Float>(0, -1, 0)
+
+        if let core = root.findEntity(named: contrailCoreEmitterName),
+           var particles = core.components[ParticleEmitterComponent.self] {
+            core.position = exhaust
+            if reset { particles.restart() }
+            particles.isEmitting = formsContrail
+            particles.birthDirection = .world
+            particles.emissionDirection = driftDirection
+            particles.speed = driftSpeed
+            particles.speedVariation = 0.22 + 0.38 * persistence
+            particles.mainEmitter.birthRate = formsContrail ? 260 + 760 * formationStrength : 0
+            particles.mainEmitter.lifeSpan = Double(2.8 + 5.2 * persistence)
+            particles.mainEmitter.lifeSpanVariation = Double(0.45 + 0.85 * persistence)
+            particles.mainEmitter.size = 0.085 + 0.070 * formationStrength
+            particles.mainEmitter.sizeVariation = 0.035 + 0.045 * formationStrength
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 2.0 + 1.8 * persistence
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.35
+            particles.mainEmitter.noiseStrength = 0.035 + 0.095 * persistence
+            particles.mainEmitter.noiseScale = 0.34 + 0.26 * persistence
+            particles.mainEmitter.noiseAnimationSpeed = 0.22 + 0.22 * persistence
+            core.components.set(particles)
+        }
+
+        if let diffuse = root.findEntity(named: contrailDiffuseEmitterName),
+           var particles = diffuse.components[ParticleEmitterComponent.self] {
+            diffuse.position = exhaust
+            if reset { particles.restart() }
+            let persistent = formsContrail && persistence > 0.08
+            particles.isEmitting = persistent
+            particles.birthDirection = .world
+            particles.emissionDirection = driftDirection
+            particles.speed = driftSpeed * 0.95
+            particles.speedVariation = 0.45 + 0.85 * persistence
+            particles.mainEmitter.birthRate = persistent ? 45 + 190 * formationStrength * persistence : 0
+            particles.mainEmitter.lifeSpan = Double(8.0 + 20.0 * persistence)
+            particles.mainEmitter.lifeSpanVariation = Double(1.5 + 3.5 * persistence)
+            particles.mainEmitter.size = 0.20 + 0.20 * formationStrength
+            particles.mainEmitter.sizeVariation = 0.11 + 0.10 * persistence
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 2.8 + 3.8 * persistence
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.6
+            particles.mainEmitter.noiseStrength = 0.10 + 0.22 * persistence
+            particles.mainEmitter.noiseScale = 0.55 + 0.55 * persistence
+            particles.mainEmitter.noiseAnimationSpeed = 0.16 + 0.20 * persistence
+            diffuse.components.set(particles)
+        }
+    }
+
+'''
+          s = replace_between(s, '    static func updateWorldTrails(', '    // MARK: - Aerodynamic condensation', world)
+
+          wing = '''    private static func updateWingCondensation(
+        root: Entity,
+        state: AircraftState,
+        simulationTime: TimeInterval
+    ) {
+        let iceRH = iceRelativeHumidity(
+            positionMeters: state.positionMeters,
+            altitudeFeet: state.altitudeFeetMSL
+        )
+        let moisture = clamp((iceRH - 0.70) / 0.30, 0, 1)
+        let gIntensity = clamp((abs(state.loadFactorG) - 2.4) / 5.3, 0, 1)
+        let alphaIntensity = clamp((abs(state.angleOfAttackDegrees) - 7.0) / 11.0, 0, 1)
+        let qbarIntensity = clamp((state.dynamicPressurePSF - 125) / 650.0, 0, 1)
+
+        // LERX separation is alpha-dominant. Wing-tip condensation is more
+        // circulation/load dominated. Both still require humid air and qbar.
+        let lerxIntensity = alphaIntensity * (0.35 + 0.65 * gIntensity) * qbarIntensity * moisture
+        let tipIntensity = gIntensity * (0.45 + 0.55 * qbarIntensity) * moisture
+        let lerxOn = lerxIntensity > 0.045 && state.calibratedAirspeedKnots > 145
+        let tipOn = tipIntensity > 0.055 && state.calibratedAirspeedKnots > 165
+
+        updateAirframeEmitter(
+            root: root,
+            name: lerxLeftEmitterName,
+            enabled: lerxOn,
+            intensity: lerxIntensity,
+            birthRate: 260 + 1_550 * lerxIntensity,
+            lifeSpan: 0.16 + 0.26 * Double(lerxIntensity),
+            size: 0.030 + 0.060 * lerxIntensity,
+            vortexStrength: 8 + 28 * lerxIntensity,
+            side: -1
+        )
+        updateAirframeEmitter(
+            root: root,
+            name: lerxRightEmitterName,
+            enabled: lerxOn,
+            intensity: lerxIntensity,
+            birthRate: 260 + 1_550 * lerxIntensity,
+            lifeSpan: 0.16 + 0.26 * Double(lerxIntensity),
+            size: 0.030 + 0.060 * lerxIntensity,
+            vortexStrength: -(8 + 28 * lerxIntensity),
+            side: 1
+        )
+        updateAirframeEmitter(
+            root: root,
+            name: tipLeftEmitterName,
+            enabled: tipOn,
+            intensity: tipIntensity,
+            birthRate: 170 + 850 * tipIntensity,
+            lifeSpan: 0.24 + 0.42 * Double(tipIntensity),
+            size: 0.026 + 0.048 * tipIntensity,
+            vortexStrength: 5 + 18 * tipIntensity,
+            side: -1
+        )
+        updateAirframeEmitter(
+            root: root,
+            name: tipRightEmitterName,
+            enabled: tipOn,
+            intensity: tipIntensity,
+            birthRate: 170 + 850 * tipIntensity,
+            lifeSpan: 0.24 + 0.42 * Double(tipIntensity),
+            size: 0.026 + 0.048 * tipIntensity,
+            vortexStrength: -(5 + 18 * tipIntensity),
+            side: 1
+        )
+
+        _ = simulationTime
+    }
+
+'''
+          s = replace_between(s, '    private static func updateWingCondensation(', '    private static func updateTransonicCondensation(', wing)
+
+          transonic = '''    private static func updateTransonicCondensation(
+        root: Entity,
+        state: AircraftState,
+        simulationTime: TimeInterval
+    ) {
+        let iceRH = iceRelativeHumidity(
+            positionMeters: state.positionMeters,
+            altitudeFeet: state.altitudeFeetMSL
+        )
+        let moisture = clamp((iceRH - 0.74) / 0.28, 0, 1)
+        let mach = state.mach
+        let peak = exp(-pow((mach - 0.995) / 0.030, 2))
+        let qbar = clamp((state.dynamicPressurePSF - 180) / 760.0, 0, 1)
+        let alphaAssist = 0.78 + 0.22 * clamp(abs(state.angleOfAttackDegrees) / 10.0, 0, 1)
+        let intensity = peak * qbar * moisture * alphaAssist
+        let visible = mach > 0.955 && mach < 1.055 && intensity > 0.035
+
+        for index in 0..<6 {
+            let name = transonicEmitterPrefix + "." + String(index)
+            guard let entity = root.findEntity(named: name),
+                  var particles = entity.components[ParticleEmitterComponent.self] else {
+                continue
+            }
+
+            let localBias = 0.88 + 0.12 * sin(Float(index) * 1.71 + Float(simulationTime) * 9.0)
+            let layerIntensity = clamp(intensity * localBias, 0, 1)
+            particles.isEmitting = visible
+            particles.speed = 0.6 + 2.2 * layerIntensity
+            particles.speedVariation = 0.7 + 1.1 * layerIntensity
+            particles.mainEmitter.birthRate = visible ? 150 + 700 * layerIntensity : 0
+            particles.mainEmitter.lifeSpan = Double(0.11 + 0.18 * layerIntensity)
+            particles.mainEmitter.lifeSpanVariation = Double(0.035 + 0.060 * layerIntensity)
+            particles.mainEmitter.size = 0.11 + 0.18 * layerIntensity
+            particles.mainEmitter.sizeVariation = 0.07 + 0.08 * layerIntensity
+            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.35 + 0.35 * layerIntensity
+            particles.mainEmitter.noiseStrength = 0.22 + 0.35 * layerIntensity
+            particles.mainEmitter.noiseScale = 0.30 + 0.25 * layerIntensity
+            particles.mainEmitter.noiseAnimationSpeed = 0.9 + 0.9 * layerIntensity
+            entity.components.set(particles)
+        }
+    }
+
+    private static func makeAirframeParticleEmitter(
+        name: String,
+        position: SIMD3<Float>,
+        vortexStrength: Float
+    ) -> Entity {
+        let entity = Entity()
+        entity.name = name
+        entity.position = position
+        // Rotate local +Y into aircraft aft (-Z). The default particle vortex
+        // axis is local +Y, so this also makes the swirl axis streamwise.
+        entity.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0])
+
+        var particles = ParticleEmitterComponent()
+        particles.emitterShape = .sphere
+        particles.emitterShapeSize = [0.07, 0.07, 0.07]
+        particles.birthLocation = .volume
+        particles.birthDirection = .local
+        particles.emissionDirection = [0, 1, 0]
+        particles.fieldSimulationSpace = .local
+        particles.particlesInheritTransform = false
+        particles.isEmitting = false
+        particles.speed = 2.0
+        particles.speedVariation = 1.0
+        particles.mainEmitter.birthRate = 0
+        particles.mainEmitter.birthRateVariation = 40
+        particles.mainEmitter.lifeSpan = 0.30
+        particles.mainEmitter.lifeSpanVariation = 0.08
+        particles.mainEmitter.size = 0.05
+        particles.mainEmitter.sizeVariation = 0.02
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.35
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.25
+        particles.mainEmitter.opacityCurve = .gradualFadeInOut
+        particles.mainEmitter.noiseStrength = 0.16
+        particles.mainEmitter.noiseScale = 0.30
+        particles.mainEmitter.noiseAnimationSpeed = 0.90
+        particles.mainEmitter.vortexStrength = vortexStrength
+        particles.mainEmitter.color = .evolving(
+            start: .single(UIColor(white: 0.98, alpha: 0.72)),
+            end: .single(UIColor(red: 0.82, green: 0.88, blue: 0.92, alpha: 0.0))
+        )
+        entity.components.set(particles)
+        return entity
+    }
+
+    private static func makeTransonicParticleEmitter(
+        name: String,
+        position: SIMD3<Float>
+    ) -> Entity {
+        let entity = Entity()
+        entity.name = name
+        entity.position = position
+
+        var particles = ParticleEmitterComponent()
+        particles.emitterShape = .box
+        particles.emitterShapeSize = [1.25, 0.52, 0.30]
+        particles.birthLocation = .volume
+        particles.birthDirection = .local
+        particles.emissionDirection = [0, 0, -1]
+        particles.fieldSimulationSpace = .global
+        particles.particlesInheritTransform = false
+        particles.isEmitting = false
+        particles.speed = 1.0
+        particles.speedVariation = 1.0
+        particles.mainEmitter.birthRate = 0
+        particles.mainEmitter.birthRateVariation = 60
+        particles.mainEmitter.lifeSpan = 0.18
+        particles.mainEmitter.lifeSpanVariation = 0.05
+        particles.mainEmitter.size = 0.16
+        particles.mainEmitter.sizeVariation = 0.08
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.45
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = 1.20
+        particles.mainEmitter.opacityCurve = .quickFadeInOut
+        particles.mainEmitter.noiseStrength = 0.30
+        particles.mainEmitter.noiseScale = 0.42
+        particles.mainEmitter.noiseAnimationSpeed = 1.2
+        particles.mainEmitter.color = .evolving(
+            start: .single(UIColor(red: 0.94, green: 0.97, blue: 1.0, alpha: 0.62)),
+            end: .single(UIColor(red: 0.80, green: 0.86, blue: 0.91, alpha: 0.0))
+        )
+        entity.components.set(particles)
+        return entity
+    }
+
+    private static func makeContrailEmitter(
+        name: String,
+        diffuse: Bool
+    ) -> Entity {
+        let entity = Entity()
+        entity.name = name
+
+        var particles = ParticleEmitterComponent()
+        particles.emitterShape = .sphere
+        particles.emitterShapeSize = diffuse ? [0.34, 0.34, 0.34] : [0.16, 0.16, 0.16]
+        particles.birthLocation = .volume
+        particles.birthDirection = .world
+        particles.emissionDirection = [0, -1, 0]
+        particles.fieldSimulationSpace = .global
+        particles.particlesInheritTransform = false
+        particles.isEmitting = false
+        particles.speed = 0.15
+        particles.speedVariation = diffuse ? 0.65 : 0.22
+        particles.mainEmitter.birthRate = 0
+        particles.mainEmitter.birthRateVariation = diffuse ? 28 : 90
+        particles.mainEmitter.lifeSpan = diffuse ? 16.0 : 4.0
+        particles.mainEmitter.lifeSpanVariation = diffuse ? 3.0 : 0.7
+        particles.mainEmitter.size = diffuse ? 0.28 : 0.10
+        particles.mainEmitter.sizeVariation = diffuse ? 0.14 : 0.04
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = diffuse ? 5.0 : 2.5
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespanPower = diffuse ? 1.65 : 1.35
+        particles.mainEmitter.opacityCurve = diffuse ? .easeFadeOut : .gradualFadeInOut
+        particles.mainEmitter.noiseStrength = diffuse ? 0.18 : 0.06
+        particles.mainEmitter.noiseScale = diffuse ? 0.85 : 0.38
+        particles.mainEmitter.noiseAnimationSpeed = diffuse ? 0.28 : 0.42
+        particles.mainEmitter.color = .evolving(
+            start: .single(UIColor(red: 0.97, green: 0.985, blue: 1.0, alpha: diffuse ? 0.24 : 0.66)),
+            end: .single(UIColor(red: 0.78, green: 0.84, blue: 0.90, alpha: 0.0))
+        )
+        entity.components.set(particles)
+        return entity
+    }
+
+    private static func updateAirframeEmitter(
+        root: Entity,
+        name: String,
+        enabled: Bool,
+        intensity: Float,
+        birthRate: Float,
+        lifeSpan: Double,
+        size: Float,
+        vortexStrength: Float,
+        side: Float
+    ) {
+        guard let entity = root.findEntity(named: name),
+              var particles = entity.components[ParticleEmitterComponent.self] else {
+            return
+        }
+        particles.isEmitting = enabled
+        particles.speed = 1.8 + 4.2 * intensity
+        particles.speedVariation = 0.8 + 1.5 * intensity
+        particles.mainEmitter.birthRate = enabled ? birthRate : 0
+        particles.mainEmitter.lifeSpan = lifeSpan
+        particles.mainEmitter.lifeSpanVariation = lifeSpan * 0.22
+        particles.mainEmitter.size = size
+        particles.mainEmitter.sizeVariation = size * 0.38
+        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.25 + 0.55 * intensity
+        particles.mainEmitter.noiseStrength = 0.10 + 0.30 * intensity
+        particles.mainEmitter.noiseScale = 0.24 + 0.20 * intensity
+        particles.mainEmitter.noiseAnimationSpeed = 0.75 + 0.80 * intensity
+        particles.mainEmitter.vortexStrength = vortexStrength
+        entity.position.x += side * 0.0015 * sin(intensity * 9.0)
+        entity.components.set(particles)
+    }
+
+'''
+          s = replace_between(s, '    private static func updateTransonicCondensation(', '    // MARK: - Geometry', transonic)
+
+          p.write_text(s)
+          PY
+
+      - name: Commit Stage 016
+        run: |
+          git config user.name "NyerahMT"
+          git config user.email "68287092+NyerahMT@users.noreply.github.com"
+          git add App/Stage2FlightEffects.swift
+          git commit -m "Stage 016: RealityKit particle aerodynamic VFX"
+          git push origin main
