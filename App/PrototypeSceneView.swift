@@ -651,22 +651,22 @@ private final class Stage0108JetAudio {
         let live: Float = isPaused ? 0 : 1
         let dryPower = max(n1, fuel)
 
-        // Only the actual rotating components are pitch-shifted. Broadband jet
-        // exhaust gets louder/denser with power instead of becoming a giant
-        // varispeed fan loop.
-        rumbleRate.rate = 0.80 + 0.31 * n1
-        turbineRate.rate = 0.60 + 1.14 * n2
+        // The tonal components carry the identity of the engine. The broadband
+        // exhaust is intentionally lower and darker so it supports the whine and
+        // rumble instead of masking everything as white noise.
+        rumbleRate.rate = 0.78 + 0.33 * n1
+        turbineRate.rate = 0.70 + 1.00 * n2
 
         let cockpitRumble: Float = isCockpit ? 0.62 : 1.0
-        let cockpitTurbine: Float = isCockpit ? 1.24 : 0.72
-        let cockpitExhaust: Float = isCockpit ? 0.28 : 1.0
-        let cockpitWind: Float = isCockpit ? 0.38 : 1.0
+        let cockpitTurbine: Float = isCockpit ? 1.18 : 0.82
+        let cockpitExhaust: Float = isCockpit ? 0.24 : 1.0
+        let cockpitWind: Float = isCockpit ? 0.34 : 1.0
 
-        rumble.volume = live * cockpitRumble * (0.040 + 0.16 * n1)
-        turbine.volume = live * cockpitTurbine * (0.010 + 0.082 * n2 * n2)
-        exhaust.volume = live * cockpitExhaust * (0.050 + 0.32 * dryPower)
-        afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.44 + 0.20 * n2 : 0)
-        wind.volume = live * cockpitWind * (0.006 + 0.052 * min(powf(mach, 1.55), 1.40))
+        rumble.volume = live * cockpitRumble * (0.050 + 0.18 * n1)
+        turbine.volume = live * cockpitTurbine * (0.020 + 0.13 * n2 * n2)
+        exhaust.volume = live * cockpitExhaust * (0.025 + 0.20 * dryPower)
+        afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.16 + 0.14 * n2 : 0)
+        wind.volume = live * cockpitWind * (0.004 + 0.030 * min(powf(mach, 1.55), 1.40))
 
         if state.afterburnerActive && !lastAfterburnerActive && !isPaused {
             fireIgnitionTransient(isCockpit: isCockpit)
@@ -717,44 +717,47 @@ private final class Stage0108JetAudio {
     }
 
     private func configureEQ() {
+        // High-frequency hiss is aggressively rolled off. The external jet sound
+        // should be a low-frequency pressure roar with turbine energy riding on
+        // top, not a wide-open noise generator.
         let exhaustBands = exhaustEQ.bands
         exhaustBands[0].filterType = .lowShelf
-        exhaustBands[0].frequency = 105
-        exhaustBands[0].gain = 7.0
+        exhaustBands[0].frequency = 120
+        exhaustBands[0].gain = 4.5
         exhaustBands[0].bypass = false
         exhaustBands[1].filterType = .parametric
-        exhaustBands[1].frequency = 720
-        exhaustBands[1].bandwidth = 1.25
-        exhaustBands[1].gain = -4.5
+        exhaustBands[1].frequency = 340
+        exhaustBands[1].bandwidth = 1.15
+        exhaustBands[1].gain = 1.5
         exhaustBands[1].bypass = false
         exhaustBands[2].filterType = .highShelf
-        exhaustBands[2].frequency = 3_400
-        exhaustBands[2].gain = 1.8
+        exhaustBands[2].frequency = 1_850
+        exhaustBands[2].gain = -11.0
         exhaustBands[2].bypass = false
 
         let burnerBands = burnerEQ.bands
         burnerBands[0].filterType = .lowShelf
-        burnerBands[0].frequency = 90
-        burnerBands[0].gain = 8.5
+        burnerBands[0].frequency = 105
+        burnerBands[0].gain = 6.0
         burnerBands[0].bypass = false
         burnerBands[1].filterType = .parametric
-        burnerBands[1].frequency = 460
+        burnerBands[1].frequency = 260
         burnerBands[1].bandwidth = 1.0
-        burnerBands[1].gain = 3.5
+        burnerBands[1].gain = 2.5
         burnerBands[1].bypass = false
         burnerBands[2].filterType = .highShelf
-        burnerBands[2].frequency = 2_800
-        burnerBands[2].gain = 3.8
+        burnerBands[2].frequency = 2_200
+        burnerBands[2].gain = -12.5
         burnerBands[2].bypass = false
 
         let windBands = windEQ.bands
         windBands[0].filterType = .highPass
-        windBands[0].frequency = 520
+        windBands[0].frequency = 620
         windBands[0].bandwidth = 0.8
         windBands[0].bypass = false
         windBands[1].filterType = .highShelf
-        windBands[1].frequency = 3_000
-        windBands[1].gain = -2.0
+        windBands[1].frequency = 2_800
+        windBands[1].gain = -4.0
         windBands[1].bypass = false
     }
 
@@ -765,7 +768,7 @@ private final class Stage0108JetAudio {
     private func fireIgnitionTransient(isCockpit: Bool) {
         guard let ignitionBuffer else { return }
         ignition.stop()
-        ignition.volume = isCockpit ? 0.18 : 0.54
+        ignition.volume = isCockpit ? 0.14 : 0.38
         ignition.scheduleBuffer(ignitionBuffer, at: nil, options: [])
         ignition.play()
     }
@@ -779,7 +782,7 @@ private final class Stage0108JetAudio {
                 0.31 * sin(2 * .pi * 54 * t) +
                 0.16 * sin(2 * .pi * 81 * t + 0.7) +
                 0.08 * sin(2 * .pi * 108 * t + 1.1)
-            return (tones * amplitude + random * 0.055) * 0.55
+            return (tones * amplitude + random * 0.018) * 0.55
         }
     }
 
@@ -792,7 +795,7 @@ private final class Stage0108JetAudio {
                 0.13 * sin(2 * .pi * 945 * t + 0.9) +
                 0.06 * sin(2 * .pi * 1_575 * t + 1.4)
             let shimmer = 0.90 + 0.07 * sin(2 * .pi * 7.0 * t) + 0.03 * sin(2 * .pi * 13.0 * t + phase)
-            return (blade * shimmer + random * 0.025) * 0.34
+            return (blade * shimmer + random * 0.006) * 0.34
         }
     }
 
@@ -802,38 +805,67 @@ private final class Stage0108JetAudio {
         buffer.frameLength = count
         let rate = Float(format.sampleRate)
         let channels = Int(format.channelCount)
+
         var seeds: [UInt32] = [0x91E1_0DA5, 0xC2A7_3B19]
+        var sub: [Float] = [0, 0]
         var low: [Float] = [0, 0]
-        var mid: [Float] = [0, 0]
-        var burst: [Float] = [0, 0]
+        var body: [Float] = [0, 0]
+        var presence: [Float] = [0, 0]
+        var crackle: [Float] = [0, 0]
 
         for i in 0..<Int(count) {
             let t = Float(i) / rate
             for ch in 0..<channels {
                 seeds[ch] = 1_664_525 &* seeds[ch] &+ 1_013_904_223
                 let raw = Float(Int32(bitPattern: seeds[ch])) / Float(Int32.max)
-                low[ch] = 0.992 * low[ch] + 0.008 * raw
-                mid[ch] = 0.72 * mid[ch] + 0.28 * raw
-                let high = raw - mid[ch]
 
-                if afterburner && abs(raw) > 0.9925 {
-                    burst[ch] += raw * 0.85
+                // Several one-pole stages turn white noise into broad pressure
+                // bands. Almost all audible energy now lives below ~2 kHz.
+                sub[ch] = 0.9985 * sub[ch] + 0.0015 * raw
+                low[ch] = 0.9880 * low[ch] + 0.0120 * raw
+                body[ch] = 0.9100 * body[ch] + 0.0900 * raw
+                presence[ch] = 0.6200 * presence[ch] + 0.3800 * raw
+
+                let lowBand = low[ch] - sub[ch]
+                let bodyBand = body[ch] - low[ch]
+                let edge = raw - presence[ch]
+
+                if afterburner && abs(raw) > 0.9970 {
+                    crackle[ch] += raw * 0.55
                 }
-                burst[ch] *= afterburner ? 0.975 : 0.94
+                crackle[ch] *= afterburner ? 0.984 : 0.94
 
+                let phase = Float(ch) * 0.16
                 let combustion =
-                    0.12 * sin(2 * .pi * 47 * t + Float(ch) * 0.17) +
-                    0.07 * sin(2 * .pi * 73 * t + 0.6)
-                let breathing = 0.88 + 0.07 * sin(2 * .pi * 2.0 * t) + 0.05 * sin(2 * .pi * 3.5 * t + 1.2)
+                    0.10 * sin(2 * .pi * 46 * t + phase) +
+                    0.065 * sin(2 * .pi * 69 * t + 0.55) +
+                    0.035 * sin(2 * .pi * 92 * t + 1.05)
+                let pressurePulse = afterburner
+                    ? 0.045 * sin(2 * .pi * 118 * t + phase)
+                    : 0.020 * sin(2 * .pi * 118 * t + phase)
+                let breathing = 0.90
+                    + 0.055 * sin(2 * .pi * 1.7 * t + phase)
+                    + 0.035 * sin(2 * .pi * 3.1 * t + 1.2)
 
-                let broadband: Float
+                let colored: Float
                 if afterburner {
-                    broadband = low[ch] * 1.25 + mid[ch] * 0.78 + high * 0.30 + burst[ch] * 0.36
+                    colored =
+                        1.20 * sub[ch] +
+                        1.55 * lowBand +
+                        0.58 * bodyBand +
+                        0.020 * edge +
+                        0.15 * crackle[ch]
                 } else {
-                    broadband = low[ch] * 1.10 + mid[ch] * 0.58 + high * 0.12
+                    colored =
+                        1.00 * sub[ch] +
+                        1.28 * lowBand +
+                        0.44 * bodyBand +
+                        0.010 * edge
                 }
-                let sample = (broadband * breathing + combustion) * (afterburner ? 0.72 : 0.62)
-                buffer.floatChannelData![ch][i] = clamp(sample, -0.98, 0.98)
+
+                let sample = (colored * breathing + combustion + pressurePulse)
+                    * (afterburner ? 0.62 : 0.52)
+                buffer.floatChannelData![ch][i] = clamp(sample, -0.92, 0.92)
             }
         }
         return buffer
@@ -852,7 +884,7 @@ private final class Stage0108JetAudio {
                 let raw = Float(Int32(bitPattern: seeds[ch])) / Float(Int32.max)
                 slow[ch] = 0.965 * slow[ch] + 0.035 * raw
                 let high = raw - slow[ch]
-                buffer.floatChannelData![ch][i] = high * 0.20
+                buffer.floatChannelData![ch][i] = high * 0.14
             }
         }
         return buffer
@@ -862,9 +894,10 @@ private final class Stage0108JetAudio {
         makeStereoBuffer(format: format, seconds: seconds) { t, channel, random in
             let phase = Float(channel) * 0.13
             let thump = sin(2 * .pi * 57 * t + phase) * expf(-7.0 * t)
-            let barkEnvelope = min(t * 18.0, 1.0) * expf(-2.0 * t)
+            let secondary = 0.42 * sin(2 * .pi * 92 * t + 0.5) * expf(-5.5 * t)
+            let barkEnvelope = min(t * 14.0, 1.0) * expf(-3.2 * t)
             let bark = random * barkEnvelope
-            return clamp(thump * 0.62 + bark * 0.50, -0.98, 0.98)
+            return clamp(thump * 0.68 + secondary + bark * 0.12, -0.92, 0.92)
         }
     }
 
