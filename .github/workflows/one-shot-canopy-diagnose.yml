@@ -1,0 +1,131 @@
+name: Canopy Boundary Diagnose
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-shot-canopy-diagnose.yml'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Analyze canopy mesh boundary
+        run: |
+          python3 - <<'PY'
+          import math
+          from collections import defaultdict, deque
+          from pathlib import Path
+
+          obj = Path('Assets/JSBSim/visuals/f16/f16_static.obj').read_text().splitlines()
+          verts=[]; faces=[]
+          for line in obj:
+              if line.startswith('v '):
+                  p=line.split(); verts.append(tuple(map(float,p[1:4])))
+              elif line.startswith('f '):
+                  toks=line.split()[1:]
+                  ids=[]
+                  for t in toks:
+                      raw=int(t.split('/')[0])
+                      ids.append(raw-1 if raw>0 else len(verts)+raw)
+                  for i in range(1,len(ids)-1):
+                      # Match RealityKit loader's reversed winding after Y/Z handedness swap.
+                      faces.append((ids[0],ids[i+1],ids[i]))
+
+          def q(p): return tuple(round(c,4) for c in p)
+          def sub(a,b): return (a[0]-b[0],a[1]-b[1],a[2]-b[2])
+          def cross(a,b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+          def dot(a,b): return sum(x*y for x,y in zip(a,b))
+          def norm(a):
+              l=math.sqrt(max(dot(a,a),1e-30)); return tuple(x/l for x in a)
+          def centroid(f):
+              ps=[verts[i] for i in f]; return tuple(sum(p[k] for p in ps)/3 for k in range(3))
+          cents=[centroid(f) for f in faces]
+          norms=[]; edgefaces=defaultdict(list)
+          for fi,f in enumerate(faces):
+              a,b,c=[verts[i] for i in f]
+              norms.append(norm(cross(sub(b,a),sub(c,a))))
+              for u,v in ((a,b),(b,c),(c,a)):
+                  k=tuple(sorted((q(u),q(v))))
+                  edgefaces[k].append(fi)
+
+          seeds=[i for i,p in enumerate(cents) if abs(p[0])<0.80 and 1.65<p[2]<4.55 and p[1]>0.60]
+          seed=max(seeds,key=lambda i:cents[i][1])
+          selected={seed}; dq=deque([seed])
+          while dq:
+              cur=dq.popleft(); f=faces[cur]; ps=[verts[i] for i in f]
+              for u,v in ((ps[0],ps[1]),(ps[1],ps[2]),(ps[2],ps[0])):
+                  k=tuple(sorted((q(u),q(v))))
+                  for nb in edgefaces[k]:
+                      if nb==cur or nb in selected: continue
+                      p=cents[nb]
+                      if not (abs(p[0])<1.18 and 1.35<p[2]<4.85 and p[1]>0.34): continue
+                      ang=math.degrees(math.acos(max(-1,min(1,dot(norms[cur],norms[nb])))))
+                      limit=64.0 if (p[2]>3.00 and p[1]>0.40 and abs(p[0])<0.80) else 36.0
+                      if ang<=limit:
+                          selected.add(nb); dq.append(nb)
+
+          print('TRIANGLES',len(faces),'SELECTED',len(selected),'SEED',seed,'SEED_CENTROID',cents[seed])
+          xs=[cents[i][0] for i in selected]; ys=[cents[i][1] for i in selected]; zs=[cents[i][2] for i in selected]
+          print('SELECTED RANGE x',min(xs),max(xs),'y',min(ys),max(ys),'z',min(zs),max(zs))
+
+          boundary=[]
+          for fi in sorted(selected):
+              f=faces[fi]; ps=[verts[i] for i in f]
+              for u,v in ((ps[0],ps[1]),(ps[1],ps[2]),(ps[2],ps[0])):
+                  k=tuple(sorted((q(u),q(v))))
+                  nbs=[n for n in edgefaces[k] if n!=fi]
+                  if not nbs:
+                      continue
+                  for nb in nbs:
+                      if nb not in selected:
+                          ang=math.degrees(math.acos(max(-1,min(1,dot(norms[fi],norms[nb])))))
+                          mid=tuple((u[j]+v[j])/2 for j in range(3))
+                          boundary.append((fi,nb,ang,cents[nb],mid))
+
+          print('\nFRONT ADJACENT NON-SELECTED FACES (z>2.4, y>0.15, |x|<1.15):')
+          front=[x for x in boundary if x[3][2]>2.4 and x[3][1]>0.15 and abs(x[3][0])<1.15]
+          # de-dupe by neighbor, preserve smallest tangent angle
+          best={}
+          for row in front:
+              if row[1] not in best or row[2]<best[row[1]][2]: best[row[1]]=row
+          for fi,nb,ang,p,mid in sorted(best.values(), key=lambda r:(-r[3][2],-r[3][1],abs(r[3][0]))):
+              print(f'nb={nb:4d} from={fi:4d} ang={ang:6.2f} centroid=({p[0]: .4f},{p[1]: .4f},{p[2]: .4f}) edgeMid=({mid[0]: .4f},{mid[1]: .4f},{mid[2]: .4f})')
+
+          print('\nSELECTED FRONT LOWER BOUNDARY EDGES (z>2.2, midpoint y<0.85):')
+          rows=[]
+          seen=set()
+          for fi,nb,ang,p,mid in boundary:
+              key=(fi,nb,tuple(round(x,4) for x in mid))
+              if key in seen: continue
+              seen.add(key)
+              if mid[2]>2.2 and mid[1]<0.85 and abs(mid[0])<1.2:
+                  rows.append((mid,fi,nb,ang,p))
+          for mid,fi,nb,ang,p in sorted(rows,key=lambda r:(r[0][2],r[0][0],r[0][1])):
+              print(f'mid=({mid[0]: .4f},{mid[1]: .4f},{mid[2]: .4f}) sel={fi} out={nb} ang={ang:.2f} outC=({p[0]:.4f},{p[1]:.4f},{p[2]:.4f})')
+
+          # Also identify likely windshield continuation as one-ring/two-ring non-selected faces above the
+          # lowest selected boundary envelope in the forward centerline area.
+          adjacency=defaultdict(set)
+          for e,fs in edgefaces.items():
+              for a in fs:
+                  for b in fs:
+                      if a!=b: adjacency[a].add(b)
+          candidates=set()
+          frontier=set(selected)
+          for depth in range(2):
+              nxt=set()
+              for a in frontier:
+                  for b in adjacency[a]:
+                      if b not in selected and b not in candidates:
+                          p=cents[b]
+                          if abs(p[0])<0.95 and 2.4<p[2]<4.9 and p[1]>0.15:
+                              candidates.add(b); nxt.add(b)
+              frontier=nxt
+          print('\nTWO-RING FORWARD CANDIDATES:')
+          for i in sorted(candidates,key=lambda i:(-cents[i][2],-cents[i][1],abs(cents[i][0]))):
+              p=cents[i]
+              nearest=min((math.degrees(math.acos(max(-1,min(1,dot(norms[i],norms[s]))))) for s in adjacency[i] if s in selected), default=999)
+              print(f'face={i:4d} centroid=({p[0]: .4f},{p[1]: .4f},{p[2]: .4f}) nearestSelAngle={nearest:6.2f}')
+          PY
