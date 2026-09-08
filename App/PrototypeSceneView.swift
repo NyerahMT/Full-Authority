@@ -479,7 +479,7 @@ struct PrototypeSceneView: View {
 
         // Lower ambient pressure lets the jet expand more. This is only a visual
         // presentation term; JSBSim remains authoritative for actual thrust.
-        let pressureExpansion = clamp(sqrt(2_116.22 / max(state.ambientPressurePSF, 450)), 0.90, 1.62)
+        let pressureExpansion = clamp(sqrtf(2_116.22 / max(state.ambientPressurePSF, 450)), 0.90, 1.62)
         let speedCompression = clamp(1.0 - 0.08 * state.mach, 0.87, 1.0)
 
         if let plume = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerName) {
@@ -496,21 +496,21 @@ struct PrototypeSceneView: View {
 
             if let halo = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerHaloName) {
                 halo.scale = [1.15 * width, 2.15 * length, 1.15 * width]
-                halo.position.z = 0.5 * halo.scale.y
+                halo.position = [0, 0, 0.5 * halo.scale.y]
             }
             if let outer = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerOuterName) {
                 outer.scale = [0.94 * width, 1.90 * length, 1.02 * width]
-                outer.position.z = 0.5 * outer.scale.y
+                outer.position = [0, 0, 0.5 * outer.scale.y]
             }
             if let inner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerInnerName) {
                 let pulse = 1.0 + 0.016 * sin(time * 61.0 + 0.9)
                 inner.scale = [0.58 * width * pulse, 1.52 * length, 0.66 * width * pulse]
-                inner.position.z = 0.5 * inner.scale.y
+                inner.position = [0, 0, 0.5 * inner.scale.y]
             }
             if let core = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerCoreName) {
                 let pulse = 1.0 + 0.026 * sin(time * 73.0 + 0.35)
                 core.scale = [0.24 * width * pulse, 1.12 * length, 0.30 * width * pulse]
-                core.position.z = 0.5 * core.scale.y
+                core.position = [0, 0, 0.5 * core.scale.y]
             }
 
             for index in 0..<5 {
@@ -857,8 +857,8 @@ private final class Stage0108JetAudio {
     private func makeIgnitionBuffer(format: AVAudioFormat, seconds: Double) -> AVAudioPCMBuffer {
         makeStereoBuffer(format: format, seconds: seconds) { t, channel, random in
             let phase = Float(channel) * 0.13
-            let thump = sin(2 * .pi * 57 * t + phase) * exp(-7.0 * t)
-            let barkEnvelope = min(t * 18.0, 1.0) * exp(-2.0 * t)
+            let thump = sin(2 * .pi * 57 * t + phase) * expf(-7.0 * t)
+            let barkEnvelope = min(t * 18.0, 1.0) * expf(-2.0 * t)
             let bark = random * barkEnvelope
             return clamp(thump * 0.62 + bark * 0.50, -0.98, 0.98)
         }

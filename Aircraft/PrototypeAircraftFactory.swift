@@ -300,7 +300,7 @@ enum PrototypeAircraftFactory {
                     red: 0.82,
                     green: 0.92,
                     blue: 1.0,
-                    alpha: max(0.11, 0.30 - Float(index) * 0.038)
+                    alpha: CGFloat(max(0.11, 0.30 - Float(index) * 0.038))
                 ))]
             )
             cell.name = afterburnerShockPrefix + String(index)
