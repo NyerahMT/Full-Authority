@@ -645,7 +645,9 @@ enum Stage2FlightEffects {
             particles.mainEmitter.birthRate = emitting
                 ? densityScale * (150 + 500 * s * (0.35 + 0.65 * p))
                 : 0
-            particles.mainEmitter.lifeSpan = Double((spreadLayer ? 45 : 55) + (spreadLayer ? 65 : 80) * p)
+            let baseLife: Float = spreadLayer ? 45 : 55
+            let persistenceLife: Float = spreadLayer ? 65 : 80
+            particles.mainEmitter.lifeSpan = Double(baseLife + persistenceLife * p)
             particles.mainEmitter.lifeSpanVariation = Double(6.0 + 14.0 * p)
             particles.mainEmitter.size = (spreadLayer ? 0.30 : 0.34) + 0.30 * s
             particles.mainEmitter.sizeVariation = 0.16 + 0.18 * p
