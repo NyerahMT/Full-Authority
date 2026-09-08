@@ -164,28 +164,18 @@ enum PrototypeAircraftFactory {
     }
 
     private static func makeF16Materials() throws -> [PhysicallyBasedMaterial] {
-        guard let textureURL = Bundle.main.url(
-            forResource: "f16",
-            withExtension: "png",
-            subdirectory: "JSBSim/visuals/f16"
-        ) else {
-            throw AssetError.missing("f16.png")
-        }
-
-        // The authored asset ships UVs and a tiny neutral shading texture. The
-        // old renderer discarded both, which is why the jet read as one white
-        // silhouette. Reuse that UV shading while separating the real mesh into
-        // recognizable F-16 material zones.
-        let texture = try TextureResource.load(contentsOf: textureURL, withName: "FA.f16.base")
-        let sampled = MaterialParameters.Texture(texture)
-
+        // The bundled 32x32 f16.png is mostly transparent alpha. Feeding it
+        // directly into RealityKit's PBR base color makes most exterior texels
+        // transparent, which exposes the inside/back faces of the aircraft.
+        // Keep the authored UVs in the mesh for a future real livery, but use
+        // fully opaque zoned materials until we have an opaque texture atlas.
         func material(
             _ tint: UIColor,
             roughness: Float,
             metallic: Float
         ) -> PhysicallyBasedMaterial {
             var result = PhysicallyBasedMaterial()
-            result.baseColor = .init(tint: tint, texture: sampled)
+            result.baseColor = .init(tint: tint)
             result.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: roughness)
             result.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: metallic)
             return result
