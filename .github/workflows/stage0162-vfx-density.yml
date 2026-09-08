@@ -1,0 +1,53 @@
+name: Stage0162VFXDensity
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/stage0162-vfx-density.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tune particle density size and activation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('App/Stage2FlightEffects.swift')
+          s = p.read_text()
+
+          replacements = {
+          '''        let moisture = clamp((iceRH - 0.70) / 0.30, 0, 1)\n        let g = clamp((abs(state.loadFactorG) - 2.4) / 5.3, 0, 1)\n        let alpha = clamp((abs(state.angleOfAttackDegrees) - 7.0) / 11.0, 0, 1)\n        let qbar = clamp((state.dynamicPressurePSF - 125) / 650.0, 0, 1)\n''': '''        // Restore the broader Stage 014/015 activation envelope. The new\n        // particle renderer should change how vapor looks, not make it harder\n        // to encounter in normal high-energy maneuvering.\n        let moisture = clamp((iceRH - 0.62) / 0.38, 0, 1)\n        let g = clamp((abs(state.loadFactorG) - 2.8) / 5.2, 0, 1)\n        let alpha = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 14.0, 0, 1)\n        let qbar = clamp((state.dynamicPressurePSF - 115) / 560.0, 0, 1)\n''',
+          '''        let lerxIntensity = alpha * (0.34 + 0.66 * g) * qbar * moisture\n        let tipIntensity = g * (0.42 + 0.58 * qbar) * moisture\n        let lerxOn = lerxIntensity > 0.045 && state.calibratedAirspeedKnots > 145\n        let tipOn = tipIntensity > 0.055 && state.calibratedAirspeedKnots > 165\n''': '''        let maneuverIntensity = max(g, alpha) * qbar * moisture\n        let lerxIntensity = max(alpha, maneuverIntensity * 0.82) * qbar * moisture\n        let tipIntensity = max(g * qbar, maneuverIntensity * 0.72) * moisture\n        let lerxOn = maneuverIntensity > 0.055 && state.calibratedAirspeedKnots > 155\n        let tipOn = maneuverIntensity > 0.065 && state.calibratedAirspeedKnots > 165\n''',
+          '''        particles.mainEmitter.birthRate = enabled ? 120 + 1_350 * i : 0\n        particles.mainEmitter.lifeSpan = Double(0.18 + 0.42 * i)\n        particles.mainEmitter.lifeSpanVariation = Double(0.04 + 0.10 * i)\n        particles.mainEmitter.size = 0.025 + 0.055 * i\n        particles.mainEmitter.sizeVariation = 0.010 + 0.025 * i\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.25 + 0.70 * i\n''': '''        // Dense droplet field: individual particles should disappear into a\n        // continuous vapor sheet/filament rather than reading as sparse dots.\n        particles.mainEmitter.birthRate = enabled ? 650 + 4_900 * i : 0\n        particles.mainEmitter.lifeSpan = Double(0.24 + 0.62 * i)\n        particles.mainEmitter.lifeSpanVariation = Double(0.06 + 0.14 * i)\n        particles.mainEmitter.size = 0.055 + 0.115 * i\n        particles.mainEmitter.sizeVariation = 0.020 + 0.050 * i\n        particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.45 + 1.05 * i\n''',
+          '''        let moisture = clamp((iceRH - 0.74) / 0.28, 0, 1)\n        let mach = state.mach\n        let machPeak = exp(-pow((mach - 0.995) / 0.030, 2))\n        let qbar = clamp((state.dynamicPressurePSF - 180) / 760.0, 0, 1)\n        let alphaAssist = 0.78 + 0.22 * clamp(abs(state.angleOfAttackDegrees) / 10.0, 0, 1)\n        let intensity = machPeak * qbar * moisture * alphaAssist\n        let visible = mach > 0.955 && mach < 1.055 && intensity > 0.035\n''': '''        // Return to the earlier, wider transonic activation envelope.\n        let moisture = clamp((iceRH - 0.68) / 0.36, 0, 1)\n        let mach = state.mach\n        let machPeak = exp(-pow((mach - 1.000) / 0.034, 2))\n        let qbar = clamp((state.dynamicPressurePSF - 180) / 650.0, 0, 1)\n        let alphaPenalty = 1 - 0.45 * clamp(abs(state.angleOfAttackDegrees) / 18.0, 0, 1)\n        let intensity = machPeak * qbar * moisture * alphaPenalty\n        let visible = mach > 0.958 && mach < 1.070 && intensity > 0.040\n''',
+          '''            particles.mainEmitter.birthRate = visible ? 90 + 520 * i : 0\n            particles.mainEmitter.lifeSpan = Double(0.10 + 0.18 * i)\n            particles.mainEmitter.lifeSpanVariation = Double(0.025 + 0.050 * i)\n            particles.mainEmitter.size = 0.085 + 0.15 * i\n            particles.mainEmitter.sizeVariation = 0.045 + 0.070 * i\n            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.30 + 0.38 * i\n''': '''            particles.mainEmitter.birthRate = visible ? 650 + 2_900 * i : 0\n            particles.mainEmitter.lifeSpan = Double(0.14 + 0.26 * i)\n            particles.mainEmitter.lifeSpanVariation = Double(0.035 + 0.070 * i)\n            particles.mainEmitter.size = 0.17 + 0.30 * i\n            particles.mainEmitter.sizeVariation = 0.070 + 0.13 * i\n            particles.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.45 + 0.60 * i\n''',
+          '''        particles.mainEmitter.size = 0.05\n        particles.mainEmitter.sizeVariation = 0.02\n''': '''        particles.mainEmitter.size = 0.10\n        particles.mainEmitter.sizeVariation = 0.04\n''',
+          '''        particles.mainEmitter.size = 0.13\n        particles.mainEmitter.sizeVariation = 0.06\n''': '''        particles.mainEmitter.size = 0.24\n        particles.mainEmitter.sizeVariation = 0.10\n''',
+          '''        particles.mainEmitter.size = diffuse ? 0.24 : 0.085\n        particles.mainEmitter.sizeVariation = diffuse ? 0.13 : 0.035\n''': '''        particles.mainEmitter.size = diffuse ? 0.42 : 0.16\n        particles.mainEmitter.sizeVariation = diffuse ? 0.20 : 0.065\n''',
+          '''            particles.mainEmitter.birthRate = emitting ? 34 + 130 * s * (0.35 + 0.65 * p) : 0\n            particles.mainEmitter.lifeSpan = Double(10 + 24 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(1.5 + 4.5 * p)\n            particles.mainEmitter.size = 0.18 + 0.16 * s\n            particles.mainEmitter.sizeVariation = 0.09 + 0.10 * p\n''': '''            particles.mainEmitter.birthRate = emitting ? 210 + 720 * s * (0.35 + 0.65 * p) : 0\n            particles.mainEmitter.lifeSpan = Double(12 + 28 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(2.0 + 5.5 * p)\n            particles.mainEmitter.size = 0.34 + 0.30 * s\n            particles.mainEmitter.sizeVariation = 0.16 + 0.18 * p\n''',
+          '''            particles.mainEmitter.birthRate = emitting ? 180 + 480 * s : 0\n            particles.mainEmitter.lifeSpan = Double(3.2 + 5.8 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(0.45 + 1.0 * p)\n            particles.mainEmitter.size = 0.070 + 0.070 * s\n            particles.mainEmitter.sizeVariation = 0.025 + 0.035 * s\n''': '''            particles.mainEmitter.birthRate = emitting ? 900 + 2_400 * s : 0\n            particles.mainEmitter.lifeSpan = Double(4.2 + 7.0 * p)\n            particles.mainEmitter.lifeSpanVariation = Double(0.65 + 1.4 * p)\n            particles.mainEmitter.size = 0.14 + 0.14 * s\n            particles.mainEmitter.sizeVariation = 0.045 + 0.070 * s\n'''
+          }
+
+          for old, new in replacements.items():
+              if old not in s:
+                  raise SystemExit('Expected Stage2FlightEffects block not found:\n' + old[:140])
+              s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add App/Stage2FlightEffects.swift
+          git commit -m 'Stage 016.2: increase vapor density and restore activation'
+          git push origin HEAD:main
