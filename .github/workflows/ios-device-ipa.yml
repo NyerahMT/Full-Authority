@@ -124,3 +124,5 @@ jobs:
           path: FullAuthority-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
+
+# Stage 012 verification
