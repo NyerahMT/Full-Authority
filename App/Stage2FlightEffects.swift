@@ -338,7 +338,7 @@ enum Stage2FlightEffects {
             simd_quatf(angle: alpha * 0.35, axis: [1, 0, 0])
 
         for layer in 0..<2 {
-            guard let cloud = root.findEntity(named: "\\(transonicCloudPrefix).\\(layer)") as? ModelEntity else {
+            guard let cloud = root.findEntity(named: "\(transonicCloudPrefix).\(layer)") as? ModelEntity else {
                 continue
             }
             let phase = Float(layer) * 1.61
