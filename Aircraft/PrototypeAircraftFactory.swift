@@ -11,6 +11,9 @@ enum PrototypeAircraftFactory {
     static let afterburnerName = "FA.aircraft.afterburner"
     static let afterburnerInnerName = "FA.aircraft.afterburner.inner"
     static let afterburnerOuterName = "FA.aircraft.afterburner.outer"
+    static let afterburnerCoreName = "FA.aircraft.afterburner.core"
+    static let afterburnerHaloName = "FA.aircraft.afterburner.halo"
+    static let afterburnerShockPrefix = "FA.aircraft.afterburner.shock."
     static let nozzleName = "FA.aircraft.nozzle"
     static let nozzleGlowName = "FA.aircraft.nozzle.glow"
     static let speedbrakeName = "FA.aircraft.speedbrake"
@@ -216,41 +219,117 @@ enum PrototypeAircraftFactory {
         let plume = Entity()
         plume.name = afterburnerName
 
-        // The authored F-16 ends at z ~= -7.019 m. Put the flame root at the
-        // physical nozzle lip instead of the obsolete R4 exhaust coordinates.
-        plume.position = [0, 0, -7.02]
+        // The visual root and the authored F-16 use the same coordinate frame.
+        // The source plume mesh itself begins 0.5 m down its local axis, so each
+        // envelope layer gets a +0.5 m Z compensation after rotation. That puts
+        // the first luminous texels directly on the physical nozzle lip instead
+        // of leaving the half-meter gap visible in the chase camera.
+        plume.position = [0, 0, -7.025]
         plume.isEnabled = false
 
         let aftRotation = simd_quatf(angle: -.pi / 2, axis: SIMD3<Float>(1, 0, 0))
+        let meshLipCompensation = SIMD3<Float>(0, 0, 0.50)
+
+        let halo = ModelEntity(
+            mesh: plumeMesh,
+            materials: [UnlitMaterial(color: UIColor(
+                red: 0.22,
+                green: 0.12,
+                blue: 0.78,
+                alpha: 0.13
+            ))]
+        )
+        halo.name = afterburnerHaloName
+        halo.orientation = aftRotation
+        halo.position = meshLipCompensation
+        halo.scale = [1.15, 2.15, 1.15]
+        plume.addChild(halo)
 
         let outer = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.12,
-                green: 0.34,
+                red: 0.08,
+                green: 0.28,
                 blue: 1.0,
-                alpha: 0.34
+                alpha: 0.28
             ))]
         )
         outer.name = afterburnerOuterName
         outer.orientation = aftRotation
+        outer.position = meshLipCompensation
+        outer.scale = [0.94, 1.90, 1.02]
         plume.addChild(outer)
 
         let inner = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.72,
-                green: 0.88,
+                red: 0.42,
+                green: 0.76,
                 blue: 1.0,
-                alpha: 0.62
+                alpha: 0.50
             ))]
         )
         inner.name = afterburnerInnerName
         inner.orientation = aftRotation
-        inner.scale = [0.55, 0.72, 0.55]
+        inner.position = meshLipCompensation
+        inner.scale = [0.58, 1.52, 0.66]
         plume.addChild(inner)
 
+        let core = ModelEntity(
+            mesh: plumeMesh,
+            materials: [UnlitMaterial(color: UIColor(
+                red: 0.94,
+                green: 0.97,
+                blue: 1.0,
+                alpha: 0.82
+            ))]
+        )
+        core.name = afterburnerCoreName
+        core.orientation = aftRotation
+        core.position = meshLipCompensation
+        core.scale = [0.24, 1.12, 0.30]
+        plume.addChild(core)
+
+        // Thin pressure cells live *inside* the flame envelope. These are not
+        // the old detached sphere blobs: from the side they read as soft bands
+        // in the plume and disappear with the burner.
+        let shockZ: [Float] = [-0.68, -1.36, -2.10, -2.92, -3.82]
+        let shockR: [Float] = [0.34, 0.31, 0.27, 0.23, 0.19]
+        for index in shockZ.indices {
+            let cell = ModelEntity(
+                mesh: .generateCylinder(height: 0.055, radius: shockR[index]),
+                materials: [UnlitMaterial(color: UIColor(
+                    red: 0.82,
+                    green: 0.92,
+                    blue: 1.0,
+                    alpha: max(0.11, 0.30 - Float(index) * 0.038)
+                ))]
+            )
+            cell.name = afterburnerShockPrefix + String(index)
+            cell.position = [0, 0, shockZ[index]]
+            cell.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+            cell.isEnabled = false
+            plume.addChild(cell)
+        }
+
         root.addChild(plume)
+
+        // Keep nozzle incandescence outside the AB hierarchy so high dry power
+        // can still show a hot turbine/nozzle core when the flame is off.
+        let glow = ModelEntity(
+            mesh: .generateCylinder(height: 0.032, radius: 0.455),
+            materials: [UnlitMaterial(color: UIColor(
+                red: 0.58,
+                green: 0.75,
+                blue: 1.0,
+                alpha: 0.52
+            ))]
+        )
+        glow.name = nozzleGlowName
+        glow.position = [0, 0, -7.030]
+        glow.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+        glow.isEnabled = false
+        root.addChild(glow)
     }
 
     private static func addLandingGear(to root: Entity) {
