@@ -422,7 +422,9 @@ enum PrototypeAircraftFactory {
             guard face.count == f.count - 1, face.count >= 3 else { continue }
 
             for i in 1..<(face.count - 1) {
-                let triangle = [face[0], face[i], face[i + 1]]
+                // The authored FBX conversion swaps source Y/Z, which changes handedness.
+                // Reverse winding so RealityKit front-face culling still sees the exterior shell.
+                let triangle = [face[0], face[i + 1], face[i]]
                 for v in triangle {
                     indices.append(UInt32(positions.count))
                     positions.append(v.position)
