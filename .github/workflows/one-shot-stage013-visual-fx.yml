@@ -1,0 +1,213 @@
+name: Stage013VisualFXPass
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-shot-stage013-visual-fx.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore physics based aerodynamic effects
+        run: |
+          git show 471b78fdbf8cf7bec82e83f4ff288a4e7472cb72:App/Stage2FlightEffects.swift > App/Stage2FlightEffects.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('App/Stage2FlightEffects.swift')
+          s = p.read_text()
+          s = s.replace(
+              'let exhaust = worldPoint(local: [0, -0.21, -7.95], state: state)',
+              'let exhaust = worldPoint(local: [0, -0.04, -7.58], state: state)',
+              1,
+          )
+          s = s.replace(
+              '// Bounded mobile pool: about twenty seconds of spatial history at 0.11 s sampling.',
+              '// Bounded mobile pool: world-space exhaust history that is advected by the live wind field.',
+              1,
+          )
+          p.write_text(s)
+          PY
+
+      - name: Increase F16 surface definition
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Aircraft/PrototypeAircraftFactory.swift')
+          s = p.read_text()
+
+          old = '''    private enum Paint: UInt32 {
+        case upper = 0
+        case lower = 1
+        case radome = 2
+        case canopy = 3
+        case exhaust = 4
+        case intake = 5
+    }
+'''
+          new = '''    private enum Paint: UInt32 {
+        case upper = 0
+        case lower = 1
+        case radome = 2
+        case canopy = 3
+        case exhaust = 4
+        case intake = 5
+        case side = 6
+        case control = 7
+    }
+'''
+          if old not in s:
+              raise SystemExit('Paint enum block not found')
+          s = s.replace(old, new, 1)
+
+          s = s.replace(
+              'let controlMaterial = materials[Int(Paint.upper.rawValue)]',
+              'let controlMaterial = materials[Int(Paint.control.rawValue)]',
+              1,
+          )
+
+          old_materials = '''        return [
+            material(UIColor(red: 0.33, green: 0.35, blue: 0.36, alpha: 1), roughness: 0.74, metallic: 0.02),
+            material(UIColor(red: 0.50, green: 0.52, blue: 0.53, alpha: 1), roughness: 0.78, metallic: 0.01),
+            material(UIColor(red: 0.22, green: 0.23, blue: 0.23, alpha: 1), roughness: 0.82, metallic: 0.00),
+            material(UIColor(red: 0.075, green: 0.105, blue: 0.125, alpha: 1), roughness: 0.10, metallic: 0.24),
+            material(UIColor(red: 0.20, green: 0.19, blue: 0.17, alpha: 1), roughness: 0.34, metallic: 0.92),
+            material(UIColor(red: 0.42, green: 0.44, blue: 0.45, alpha: 1), roughness: 0.68, metallic: 0.02)
+        ]
+'''
+          new_materials = '''        // Keep the Hill Gray family, but give the model enough tonal and
+        // roughness separation that its actual facets and moving surfaces read
+        // under directional light instead of collapsing into one flat gray mass.
+        return [
+            material(UIColor(red: 0.305, green: 0.325, blue: 0.335, alpha: 1), roughness: 0.60, metallic: 0.025),
+            material(UIColor(red: 0.455, green: 0.475, blue: 0.485, alpha: 1), roughness: 0.66, metallic: 0.015),
+            material(UIColor(red: 0.165, green: 0.175, blue: 0.180, alpha: 1), roughness: 0.79, metallic: 0.000),
+            material(UIColor(red: 0.045, green: 0.072, blue: 0.090, alpha: 1), roughness: 0.075, metallic: 0.34),
+            material(UIColor(red: 0.135, green: 0.125, blue: 0.110, alpha: 1), roughness: 0.28, metallic: 0.95),
+            material(UIColor(red: 0.335, green: 0.355, blue: 0.365, alpha: 1), roughness: 0.56, metallic: 0.025),
+            material(UIColor(red: 0.255, green: 0.275, blue: 0.285, alpha: 1), roughness: 0.63, metallic: 0.020),
+            material(UIColor(red: 0.275, green: 0.295, blue: 0.305, alpha: 1), roughness: 0.56, metallic: 0.025)
+        ]
+'''
+          if old_materials not in s:
+              raise SystemExit('material array block not found')
+          s = s.replace(old_materials, new_materials, 1)
+
+          old_classification = '''        // Hill Gray-style darker upper surfaces and lighter lower surfaces.
+        if centroid.y < -0.10 || averageNormal.y < -0.28 {
+            return Paint.lower.rawValue
+        }
+
+        return Paint.upper.rawValue
+'''
+          new_classification = '''        // Real form definition comes from the mesh normals first. A slightly
+        // darker side tone preserves fuselage, vertical-tail and leading-edge
+        // shape even against a bright sky; it is still subtle enough to read as
+        // one painted airframe rather than a patchwork skin.
+        if abs(averageNormal.y) < 0.42,
+           centroid.y > -0.55,
+           centroid.z < 5.15 {
+            return Paint.side.rawValue
+        }
+
+        // Hill Gray-style darker upper surfaces and lighter lower surfaces.
+        if centroid.y < -0.10 || averageNormal.y < -0.28 {
+            return Paint.lower.rawValue
+        }
+
+        return Paint.upper.rawValue
+'''
+          if old_classification not in s:
+              raise SystemExit('paint classification block not found')
+          s = s.replace(old_classification, new_classification, 1)
+          p.write_text(s)
+          PY
+
+      - name: Improve scene lighting contrast
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('App/PrototypeSceneView.swift')
+          s = p.read_text()
+
+          old = '''                    let sun = Entity()
+                    sun.name = "FA.sun"
+                    sun.components.set([
+                        DirectionalLightComponent(
+                            color: UIColor(red: 1.0, green: 0.94, blue: 0.84, alpha: 1),
+                            intensity: 13_500
+                        ),
+                        DirectionalLightComponent.Shadow()
+                    ])
+                    sun.look(at: .zero, from: [-7_000, 10_000, -4_000], relativeTo: nil)
+                    content.add(sun)
+
+                    let fill = Entity()
+                    fill.name = "FA.fill"
+                    fill.components.set(DirectionalLightComponent(
+                        color: UIColor(red: 0.58, green: 0.71, blue: 0.91, alpha: 1),
+                        intensity: 1_450
+                    ))
+                    fill.look(at: .zero, from: [6_000, 4_500, 5_500], relativeTo: nil)
+                    content.add(fill)
+'''
+          new = '''                    // A stronger side-key and restrained sky fill keep the F-16's
+                    // real facets readable. The previous opposing lights filled nearly
+                    // every shadow and made the authored frame look flatter than it is.
+                    let sun = Entity()
+                    sun.name = "FA.sun"
+                    sun.components.set([
+                        DirectionalLightComponent(
+                            color: UIColor(red: 1.0, green: 0.95, blue: 0.87, alpha: 1),
+                            intensity: 12_600
+                        ),
+                        DirectionalLightComponent.Shadow()
+                    ])
+                    sun.look(at: .zero, from: [-8_800, 9_600, -2_300], relativeTo: nil)
+                    content.add(sun)
+
+                    let fill = Entity()
+                    fill.name = "FA.fill"
+                    fill.components.set(DirectionalLightComponent(
+                        color: UIColor(red: 0.50, green: 0.66, blue: 0.90, alpha: 1),
+                        intensity: 520
+                    ))
+                    fill.look(at: .zero, from: [6_500, 5_200, 6_200], relativeTo: nil)
+                    content.add(fill)
+'''
+          if old not in s:
+              raise SystemExit('scene light block not found')
+          s = s.replace(old, new, 1)
+
+          old_sky = '''                .init(color: Color(red: 0.030, green: 0.155, blue: 0.39), location: 0.00),
+                .init(color: Color(red: 0.10, green: 0.34, blue: 0.62), location: 0.44),
+                .init(color: Color(red: 0.49, green: 0.63, blue: 0.73), location: 0.74),
+                .init(color: Color(red: 0.71, green: 0.70, blue: 0.62), location: 1.00)
+'''
+          new_sky = '''                .init(color: Color(red: 0.022, green: 0.125, blue: 0.34), location: 0.00),
+                .init(color: Color(red: 0.075, green: 0.285, blue: 0.56), location: 0.44),
+                .init(color: Color(red: 0.42, green: 0.57, blue: 0.69), location: 0.74),
+                .init(color: Color(red: 0.68, green: 0.68, blue: 0.62), location: 1.00)
+'''
+          if old_sky not in s:
+              raise SystemExit('sky gradient block not found')
+          s = s.replace(old_sky, new_sky, 1)
+          p.write_text(s)
+          PY
+
+      - name: Commit Stage 013
+        run: |
+          rm -f .github/workflows/one-shot-stage013-visual-fx.yml
+          git config user.name "NyerahMT"
+          git config user.email "68287092+NyerahMT@users.noreply.github.com"
+          git add App/Stage2FlightEffects.swift Aircraft/PrototypeAircraftFactory.swift App/PrototypeSceneView.swift .github/workflows/one-shot-stage013-visual-fx.yml
+          git commit -m "Stage 013: airframe definition and physics based vapor FX"
+          git push
