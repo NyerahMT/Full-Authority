@@ -1,108 +1,125 @@
-name: Stage021 Phone Feedback Hotfix
+name: F-16 Yaw Regression
 
 on:
   push:
     branches:
-      - stage021-vfx-audio-atmosphere
+      - main
     paths:
+      - 'scripts/stage-f16-calibration.sh'
+      - 'ThirdParty/jsbsim'
+      - '.gitmodules'
       - '.github/workflows/stage021-yaw-regression.yml'
+  pull_request:
+    paths:
+      - 'scripts/stage-f16-calibration.sh'
+      - 'ThirdParty/jsbsim'
+      - '.gitmodules'
+      - '.github/workflows/stage021-yaw-regression.yml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  hotfix:
+  yaw-response:
+    name: Verify in-flight rudder authority
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: stage021-vfx-audio-atmosphere
+          submodules: recursive
 
-      - name: Correct airborne rudder sign and burner color
+      - name: Install JSBSim Python package
+        run: python3 -m pip install --quiet jsbsim
+
+      - name: Stage Full Authority F-16 resources
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p /tmp/FullAuthority.app
+          bash scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
+
+      - name: Verify pedal creates useful in-flight yaw response
+        shell: bash
+        run: |
           python3 - <<'PY'
-          from pathlib import Path
+          import math
+          import jsbsim
 
-          sim = Path('Simulation/FlightSimulation.swift')
-          text = sim.read_text(encoding='utf-8')
-          old = (
-              "        // Full Authority's touch control is screen-centric: dragging right means\n"
-              "        // right pedal / nose-right. Stage 020 feeds this pilot command into the\n"
-              "        // F-16 scheduler once; stability feedback remains a separate SAS signal.\n"
-              "        let pilotYawCommand = -Double(controls.rudder)\n"
-              "        let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)\n"
-          )
-          new = (
-              "        // Airborne rudder and nosewheel steering use opposite sign conventions\n"
-              "        // in the current JSBSim F-16 model. Preserve the already-correct ground\n"
-              "        // steering direction while making touch-right command aerodynamic nose-right.\n"
-              "        let pilotRudderCommand = Double(controls.rudder)\n"
-              "        let rudder = clamp(trimRudderCommand + pilotRudderCommand, min: -1, max: 1)\n"
-          )
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit('airborne rudder block not found')
+          root = '/tmp/FullAuthority.app/JSBSim'
+          fdm = jsbsim.FGFDMExec(root)
+          fdm.set_debug_level(0)
+          fdm.set_dt(1.0 / 120.0)
+          if not fdm.load_model('f16'):
+              raise SystemExit('failed to load staged F-16')
 
-          old_steer = (
-              "        let steering = state.weightOnWheels && state.gearPosition > 0.8\n"
-              "            ? clamp(pilotYawCommand, min: -1, max: 1)\n"
-              "            : 0\n"
-          )
-          new_steer = (
-              "        let steeringCommand = -Double(controls.rudder)\n"
-              "        let steering = state.weightOnWheels && state.gearPosition > 0.8\n"
-              "            ? clamp(steeringCommand, min: -1, max: 1)\n"
-              "            : 0\n"
-          )
-          if old_steer in text:
-              text = text.replace(old_steer, new_steer, 1)
-          elif new_steer not in text:
-              raise SystemExit('ground steering block not found')
-          sim.write_text(text, encoding='utf-8')
+          initial = {
+              'ic/lat-geod-deg': 0.0,
+              'ic/long-gc-deg': 0.0,
+              'ic/h-sl-ft': 15000.0,
+              'ic/vc-kts': 300.0,
+              'ic/alpha-deg': 2.0,
+              'ic/beta-deg': 0.0,
+              'ic/phi-deg': 0.0,
+              'ic/theta-deg': 2.0,
+              'ic/psi-true-deg': 0.0,
+              'ic/gamma-deg': 0.0,
+          }
+          for prop, value in initial.items():
+              fdm[prop] = value
+          fdm['propulsion/set-running'] = -1
+          fdm['fcs/throttle-cmd-norm'] = 0.62
+          fdm['fcs/throttle-cmd-norm[0]'] = 0.62
+          fdm['fcs/aileron-cmd-norm'] = 0.0
+          fdm['fcs/elevator-cmd-norm'] = 0.0
+          fdm['fcs/rudder-cmd-norm'] = 0.0
+          if not fdm.run_ic():
+              raise SystemExit('run_ic failed')
+          fdm['propulsion/set-running'] = -1
 
-          aircraft = Path('Aircraft/PrototypeAircraftFactory.swift')
-          text = aircraft.read_text(encoding='utf-8')
-          old_blue = (
-              "            materials: [UnlitMaterial(color: UIColor(\n"
-              "                red: 0.34,\n"
-              "                green: 0.47,\n"
-              "                blue: 1.00,\n"
-              "                alpha: 0.075\n"
-              "            ))]\n"
-          )
-          new_warm = (
-              "            materials: [UnlitMaterial(color: UIColor(\n"
-              "                red: 1.00,\n"
-              "                green: 0.18,\n"
-              "                blue: 0.015,\n"
-              "                alpha: 0.055\n"
-              "            ))]\n"
-          )
-          if old_blue in text:
-              text = text.replace(old_blue, new_warm, 1)
-          elif new_warm not in text:
-              raise SystemExit('blue afterburner halo not found')
-          aircraft.write_text(text, encoding='utf-8')
+          for _ in range(120):
+              fdm['fcs/throttle-cmd-norm'] = 0.62
+              fdm['fcs/throttle-cmd-norm[0]'] = 0.62
+              fdm['fcs/rudder-cmd-norm'] = 0.0
+              if not fdm.run():
+                  raise SystemExit('neutral settle failed')
+
+          beta0 = float(fdm['aero/beta-deg'])
+          heading0 = float(fdm['attitude/psi-deg'])
+          qbar = float(fdm['aero/qbar-psf'])
+          max_rudder = 0.0
+          max_beta_delta = 0.0
+          max_yaw_rate = 0.0
+
+          for _ in range(180):
+              fdm['fcs/throttle-cmd-norm'] = 0.62
+              fdm['fcs/throttle-cmd-norm[0]'] = 0.62
+              fdm['fcs/rudder-cmd-norm'] = 0.70
+              if not fdm.run():
+                  raise SystemExit('pedal response run failed')
+              rudder = abs(float(fdm['fcs/rudder-pos-rad']))
+              beta = abs(float(fdm['aero/beta-deg']) - beta0)
+              yaw_rate = abs(float(fdm['velocities/r-aero-rad_sec']))
+              max_rudder = max(max_rudder, rudder)
+              max_beta_delta = max(max_beta_delta, beta)
+              max_yaw_rate = max(max_yaw_rate, yaw_rate)
+
+          heading1 = float(fdm['attitude/psi-deg'])
+          heading_delta = abs((heading1 - heading0 + 180.0) % 360.0 - 180.0)
+
+          print(f'dynamic pressure: {qbar:.1f} psf')
+          print(f'pedal command: {float(fdm["fcs/rudder-cmd-norm"]):.4f}')
+          print(f'fa pedal gain output: {float(fdm["fcs/fa-pedal-rudder"]):.4f}')
+          print(f'yaw scheduler output: {float(fdm["fcs/yaw-scheduler"]):.4f}')
+          print(f'rudder pos norm: {float(fdm["fcs/rudder-pos-norm"]):.4f}')
+          print(f'rudder pos rad: {float(fdm["fcs/rudder-pos-rad"]):.4f}')
+          print(f'max actual rudder: {math.degrees(max_rudder):.2f} deg')
+          print(f'max beta change: {max_beta_delta:.2f} deg')
+          print(f'max aero yaw rate: {math.degrees(max_yaw_rate):.2f} deg/s')
+          print(f'heading change: {heading_delta:.2f} deg')
+
+          if max_rudder < math.radians(7.0):
+              raise SystemExit('FAIL: held 70% pedal lacks useful scheduled rudder authority')
+          if max_beta_delta < 0.8 and max_yaw_rate < math.radians(1.5) and heading_delta < 1.0:
+              raise SystemExit('FAIL: rudder moves but aircraft lacks useful in-flight lateral response')
           PY
-
-          grep -q 'let pilotRudderCommand = Double(controls.rudder)' Simulation/FlightSimulation.swift
-          grep -q 'let steeringCommand = -Double(controls.rudder)' Simulation/FlightSimulation.swift
-          ! grep -q 'blue: 1.00' Aircraft/PrototypeAircraftFactory.swift
-
-      - name: Commit source hotfix
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'NyerahMT'
-          git config user.email '68287092+NyerahMT@users.noreply.github.com'
-          git add Simulation/FlightSimulation.swift Aircraft/PrototypeAircraftFactory.swift
-          git diff --cached --check
-          if git diff --cached --quiet; then
-            echo 'Hotfix already applied'
-            exit 0
-          fi
-          git commit -m 'Stage 021: fix airborne rudder direction and remove blue flame halo'
-          git push origin HEAD:stage021-vfx-audio-atmosphere
