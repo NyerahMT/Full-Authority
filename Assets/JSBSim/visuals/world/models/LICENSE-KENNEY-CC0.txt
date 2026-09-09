@@ -1,0 +1,16 @@
+Full Authority uses a deliberately small geometry subset from two Kenney asset packs:
+
+Kenney Nature Kit
+https://kenney.nl/assets/nature-kit
+Mirror/download source used for the development import:
+https://opengameart.org/content/nature-kit
+
+Kenney City Kit (Industrial)
+https://kenney.nl/assets/city-kit-industrial
+Mirror/download source used for the development import:
+https://opengameart.org/content/city-kit-industrial
+
+Both packs are released under Creative Commons CC0 1.0 / public domain dedication.
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Full Authority imports geometry only from the selected OBJ files and supplies its own restrained RealityKit materials. Original Kenney color textures are intentionally not shipped.
