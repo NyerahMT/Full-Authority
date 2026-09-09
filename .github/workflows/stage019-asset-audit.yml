@@ -52,23 +52,44 @@ jobs:
           unzip -q /tmp/fa-audit/kenney/nature.zip -d /tmp/fa-audit/kenney/nature
           unzip -q /tmp/fa-audit/kenney/industrial.zip -d /tmp/fa-audit/kenney/industrial
 
-      - name: Audit useful model names and source sizes
+      - name: Audit selected model scale and material structure
         shell: bash
         run: |
           set -euo pipefail
-          echo '--- Nature candidates ---'
-          find /tmp/fa-audit/kenney/nature -type f \( \
-            -iname 'tree_default.obj' -o \
-            -iname 'tree_oak.obj' -o \
-            -iname 'tree_pineDefaultA.obj' -o \
-            -iname 'tree_pineTallA.obj' -o \
-            -iname 'plant_bush.obj' -o \
-            -iname 'rock_largeA.obj' \
-          \) -printf '%p | %s bytes\n' | sort
+          python3 - <<'PY'
+          from pathlib import Path
 
-          echo '--- Industrial OBJ inventory ---'
-          find /tmp/fa-audit/kenney/industrial -type f -iname '*.obj' \
-            -printf '%f | %s bytes | %p\n' | sort | sed -n '1,120p'
+          roots = {
+              'nature': Path('/tmp/fa-audit/kenney/nature/Models/OBJ format'),
+              'industrial': Path('/tmp/fa-audit/kenney/industrial/Models/OBJ format'),
+          }
+          selected = {
+              'nature': ['tree_default','tree_oak','tree_pineDefaultA','tree_pineTallA','rock_largeA'],
+              'industrial': ['building-h','building-i','building-k','building-n','building-s','detail-tank','water-tower','shipping-container-a'],
+          }
+
+          for family, names in selected.items():
+              print(f'--- {family} selected geometry ---')
+              for name in names:
+                  path = roots[family] / f'{name}.obj'
+                  verts=[]; faces=0; materials=[]
+                  for raw in path.read_text(errors='ignore').splitlines():
+                      if raw.startswith('v '):
+                          p=raw.split()
+                          if len(p)>=4: verts.append(tuple(map(float,p[1:4])))
+                      elif raw.startswith('f '):
+                          faces += max(1, len(raw.split())-3)
+                      elif raw.startswith('usemtl '):
+                          m=raw.split(maxsplit=1)[1]
+                          if m not in materials: materials.append(m)
+                  mins=[min(v[i] for v in verts) for i in range(3)]
+                  maxs=[max(v[i] for v in verts) for i in range(3)]
+                  size=[maxs[i]-mins[i] for i in range(3)]
+                  print(f'{name:22s} verts={len(verts):4d} tris~={faces:5d} size={size[0]:7.3f} x {size[1]:7.3f} x {size[2]:7.3f} usemtl={materials}')
+                  mtl = roots[family] / f'{name}.mtl'
+                  if mtl.exists():
+                      print('  MTL:', ' | '.join(line.strip() for line in mtl.read_text(errors='ignore').splitlines() if line.strip()))
+          PY
 
       - name: Preserve manifest and selected visual previews
         shell: bash
