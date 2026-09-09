@@ -40,6 +40,9 @@ struct ContentView: View {
             // forces the symbology back on after the pilot turns it off.
             if hmdEnabled {
                 F16HUD(state: simulation.state, controls: simulation.controls)
+                    // Keep full symbology in the cockpit; in chase view the jet
+                    // becomes the hero instead of fighting a neon-green overlay.
+                    .opacity(cameraMode == .cockpit ? 1.0 : 0.78)
                     .allowsHitTesting(false)
             }
 

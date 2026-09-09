@@ -173,35 +173,40 @@ enum PrototypeAircraftFactory {
     }
 
     private static func makeF16Materials() throws -> [PhysicallyBasedMaterial] {
-        // The bundled 32x32 f16.png is mostly transparent alpha. Feeding it
-        // directly into RealityKit's PBR base color makes most exterior texels
-        // transparent, which exposes the inside/back faces of the aircraft.
-        // Keep the authored UVs in the mesh for a future real livery, but use
-        // fully opaque zoned materials until we have an opaque texture atlas.
+        // Stage 016 material hierarchy: keep the permissively licensed FlightSim_F16
+        // geometry, but let PBR response carry much more of the visual quality.
+        // This follows the standard metallic/roughness workflow rather than adding
+        // expensive geometry simply to create highlights.
         func material(
             _ tint: UIColor,
             roughness: Float,
-            metallic: Float
+            metallic: Float,
+            specular: Float,
+            clearcoat: Float,
+            clearcoatRoughness: Float
         ) -> PhysicallyBasedMaterial {
             var result = PhysicallyBasedMaterial()
             result.baseColor = .init(tint: tint)
-            result.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: roughness)
-            result.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: metallic)
+            result.roughness = .init(floatLiteral: roughness)
+            result.metallic = .init(floatLiteral: metallic)
+            result.specular = .init(floatLiteral: specular)
+            result.clearcoat = .init(floatLiteral: clearcoat)
+            result.clearcoatRoughness = .init(floatLiteral: clearcoatRoughness)
             return result
         }
 
-        // Keep the Hill Gray family, but give the model enough tonal and
-        // roughness separation that its actual facets and moving surfaces read
-        // under directional light instead of collapsing into one flat gray mass.
+        // Hill Gray stays recognizable, but surfaces now separate by gloss as well
+        // as color. The canopy is deliberately jewel-like so the jet remains the
+        // hero object in chase view; the exhaust is hot, dark metallic rather than gray.
         return [
-            material(UIColor(red: 0.305, green: 0.325, blue: 0.335, alpha: 1), roughness: 0.60, metallic: 0.025),
-            material(UIColor(red: 0.455, green: 0.475, blue: 0.485, alpha: 1), roughness: 0.66, metallic: 0.015),
-            material(UIColor(red: 0.165, green: 0.175, blue: 0.180, alpha: 1), roughness: 0.79, metallic: 0.000),
-            material(UIColor(red: 0.045, green: 0.072, blue: 0.090, alpha: 1), roughness: 0.075, metallic: 0.34),
-            material(UIColor(red: 0.135, green: 0.125, blue: 0.110, alpha: 1), roughness: 0.28, metallic: 0.95),
-            material(UIColor(red: 0.335, green: 0.355, blue: 0.365, alpha: 1), roughness: 0.56, metallic: 0.025),
-            material(UIColor(red: 0.255, green: 0.275, blue: 0.285, alpha: 1), roughness: 0.63, metallic: 0.020),
-            material(UIColor(red: 0.275, green: 0.295, blue: 0.305, alpha: 1), roughness: 0.56, metallic: 0.025)
+            material(UIColor(red: 0.300, green: 0.325, blue: 0.340, alpha: 1), roughness: 0.43, metallic: 0.035, specular: 0.55, clearcoat: 0.14, clearcoatRoughness: 0.30),
+            material(UIColor(red: 0.470, green: 0.490, blue: 0.500, alpha: 1), roughness: 0.50, metallic: 0.020, specular: 0.48, clearcoat: 0.10, clearcoatRoughness: 0.36),
+            material(UIColor(red: 0.145, green: 0.153, blue: 0.158, alpha: 1), roughness: 0.72, metallic: 0.000, specular: 0.30, clearcoat: 0.02, clearcoatRoughness: 0.70),
+            material(UIColor(red: 0.020, green: 0.050, blue: 0.072, alpha: 1), roughness: 0.045, metallic: 0.16, specular: 1.00, clearcoat: 1.00, clearcoatRoughness: 0.018),
+            material(UIColor(red: 0.105, green: 0.095, blue: 0.082, alpha: 1), roughness: 0.18, metallic: 0.98, specular: 0.78, clearcoat: 0.05, clearcoatRoughness: 0.22),
+            material(UIColor(red: 0.315, green: 0.340, blue: 0.355, alpha: 1), roughness: 0.48, metallic: 0.025, specular: 0.50, clearcoat: 0.10, clearcoatRoughness: 0.34),
+            material(UIColor(red: 0.245, green: 0.270, blue: 0.285, alpha: 1), roughness: 0.46, metallic: 0.030, specular: 0.54, clearcoat: 0.12, clearcoatRoughness: 0.32),
+            material(UIColor(red: 0.270, green: 0.295, blue: 0.310, alpha: 1), roughness: 0.44, metallic: 0.030, specular: 0.55, clearcoat: 0.13, clearcoatRoughness: 0.30)
         ]
     }
 

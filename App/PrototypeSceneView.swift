@@ -45,9 +45,17 @@ struct PrototypeSceneView: View {
                     content.environment = .default
 
                     let world = Stage2WorldFactory.make()
+                    // Stage 016 cinematic lighting: reduce the flat default IBL so
+                    // directional sunlight and material roughness can actually shape terrain.
+                    world.components.set(EnvironmentLightingConfigurationComponent(
+                        environmentLightingWeight: 0.48
+                    ))
                     content.add(world)
 
                     let aircraft = PrototypeAircraftFactory.make()
+                    aircraft.components.set(EnvironmentLightingConfigurationComponent(
+                        environmentLightingWeight: 0.70
+                    ))
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
                     aircraft.addChild(Stage2FlightEffects.makeAttachedEffects())
@@ -70,21 +78,21 @@ struct PrototypeSceneView: View {
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.95, blue: 0.87, alpha: 1),
-                            intensity: 7_800
+                            color: UIColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1),
+                            intensity: 10_400
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
-                    sun.look(at: .zero, from: [-8_800, 9_600, -2_300], relativeTo: nil)
+                    sun.look(at: .zero, from: [-9_600, 5_600, -3_200], relativeTo: nil)
                     content.add(sun)
 
                     let fill = Entity()
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.50, green: 0.66, blue: 0.90, alpha: 1),
-                        intensity: 340
+                        color: UIColor(red: 0.42, green: 0.58, blue: 0.86, alpha: 1),
+                        intensity: 210
                     ))
-                    fill.look(at: .zero, from: [6_500, 5_200, 6_200], relativeTo: nil)
+                    fill.look(at: .zero, from: [6_800, 6_200, 7_600], relativeTo: nil)
                     content.add(fill)
                 } update: { content in
                     guard let aircraft = content.entities.first(where: { $0.name == PrototypeAircraftFactory.aircraftName }) else {
@@ -150,12 +158,16 @@ struct PrototypeSceneView: View {
     }
 
     private var stage2Sky: some View {
+        // Stage 016 cinematic sky. The zenith-to-horizon progression follows the
+        // aerial-perspective structure described by Bruneton & Neyret, while the
+        // warmer low horizon is intentionally pushed for a readable game palette.
         LinearGradient(
             stops: [
-                .init(color: Color(red: 0.022, green: 0.125, blue: 0.34), location: 0.00),
-                .init(color: Color(red: 0.075, green: 0.285, blue: 0.56), location: 0.44),
-                .init(color: Color(red: 0.42, green: 0.57, blue: 0.69), location: 0.74),
-                .init(color: Color(red: 0.68, green: 0.68, blue: 0.62), location: 1.00)
+                .init(color: Color(red: 0.008, green: 0.070, blue: 0.205), location: 0.00),
+                .init(color: Color(red: 0.025, green: 0.205, blue: 0.455), location: 0.38),
+                .init(color: Color(red: 0.225, green: 0.455, blue: 0.655), location: 0.68),
+                .init(color: Color(red: 0.565, green: 0.625, blue: 0.640), location: 0.86),
+                .init(color: Color(red: 0.760, green: 0.665, blue: 0.535), location: 1.00)
             ],
             startPoint: .top,
             endPoint: .bottom

@@ -1,3 +1,4 @@
+import Metal
 import RealityKit
 import UIKit
 import simd
@@ -7,6 +8,13 @@ enum Stage2WorldFactory {
     private struct TerrainMeshes {
         let ground: MeshResource
         let rock: MeshResource?
+    }
+
+    // Stage 016 sourced PBR surface pass. These maps are CC0 Poly Haven
+    // assets imported at build time; the game never depends on a live API.
+    private struct WorldTextureSet {
+        let baseColor: TextureResource?
+        let roughness: TextureResource?
     }
 
     static func make() -> Entity {
@@ -30,7 +38,7 @@ enum Stage2WorldFactory {
         // denser render of the exact JSBSim contact surface, not a decorative hill layer.
         let tileSize: Float = 6_000
         let resolution = 81
-        let texture = try? TextureResource.load(named: "terrain_albedo")
+        let terrainTextures = worldTextureSet(named: "terrain_grass")
 
         for tileX in -4..<4 {
             for tileZ in -4..<4 {
@@ -48,7 +56,7 @@ enum Stage2WorldFactory {
                 let selector = abs(tileX * 19 + tileZ * 11)
                 let ground = ModelEntity(
                     mesh: meshes.ground,
-                    materials: [terrainMaterial(texture: texture, selector: selector)]
+                    materials: [terrainMaterial(textures: terrainTextures, selector: selector)]
                 )
                 ground.position = [centerX, 0, centerZ]
                 root.addChild(ground)
@@ -65,29 +73,93 @@ enum Stage2WorldFactory {
         }
     }
 
-    private static func terrainMaterial(texture: TextureResource?, selector: Int) -> PhysicallyBasedMaterial {
+    private static func worldTextureSet(named stem: String) -> WorldTextureSet {
+        WorldTextureSet(
+            baseColor: loadWorldTexture("\(stem)_diff"),
+            roughness: loadWorldTexture("\(stem)_rough")
+        )
+    }
+
+    private static func loadWorldTexture(_ name: String) -> TextureResource? {
+        guard let url = Bundle.main.url(
+            forResource: name,
+            withExtension: "jpg",
+            subdirectory: "JSBSim/visuals/world"
+        ) else { return nil }
+        return try? TextureResource.load(contentsOf: url, withName: name)
+    }
+
+    private static func repeatedTexture(
+        _ resource: TextureResource,
+        anisotropy: Int = 8
+    ) -> MaterialParameters.Texture {
+        var texture = MaterialParameters.Texture(resource)
+        texture.sampler.modify { descriptor in
+            descriptor.sAddressMode = .repeat
+            descriptor.tAddressMode = .repeat
+            descriptor.mipFilter = .linear
+            descriptor.minFilter = .linear
+            descriptor.magFilter = .linear
+            descriptor.maxAnisotropy = anisotropy
+        }
+        return texture
+    }
+
+    private static func terrainMaterial(
+        textures: WorldTextureSet,
+        selector: Int
+    ) -> PhysicallyBasedMaterial {
         let tints: [UIColor] = [
-            UIColor(red: 0.48, green: 0.56, blue: 0.34, alpha: 1),
-            UIColor(red: 0.57, green: 0.57, blue: 0.35, alpha: 1),
-            UIColor(red: 0.39, green: 0.50, blue: 0.30, alpha: 1),
-            UIColor(red: 0.59, green: 0.52, blue: 0.31, alpha: 1),
-            UIColor(red: 0.43, green: 0.47, blue: 0.28, alpha: 1),
-            UIColor(red: 0.53, green: 0.60, blue: 0.39, alpha: 1)
+            UIColor(red: 0.72, green: 0.78, blue: 0.58, alpha: 1),
+            UIColor(red: 0.82, green: 0.78, blue: 0.54, alpha: 1),
+            UIColor(red: 0.64, green: 0.73, blue: 0.51, alpha: 1),
+            UIColor(red: 0.82, green: 0.69, blue: 0.47, alpha: 1),
+            UIColor(red: 0.68, green: 0.68, blue: 0.47, alpha: 1),
+            UIColor(red: 0.76, green: 0.79, blue: 0.57, alpha: 1)
         ]
 
         var material = PhysicallyBasedMaterial()
-        if let texture {
+        if let base = textures.baseColor {
             material.baseColor = PhysicallyBasedMaterial.BaseColor(
                 tint: tints[selector % tints.count],
-                texture: MaterialParameters.Texture(texture)
+                texture: repeatedTexture(base)
             )
         } else {
             material.baseColor = PhysicallyBasedMaterial.BaseColor(
-                tint: UIColor(red: 0.24, green: 0.32, blue: 0.16, alpha: 1)
+                tint: UIColor(red: 0.30, green: 0.38, blue: 0.19, alpha: 1)
             )
         }
-        material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)
+        if let rough = textures.roughness {
+            material.roughness = PhysicallyBasedMaterial.Roughness(
+                scale: 0.94,
+                texture: repeatedTexture(rough)
+            )
+        } else {
+            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)
+        }
         material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
+        material.specular = PhysicallyBasedMaterial.Specular(floatLiteral: 0.32)
+        return material
+    }
+
+    private static func pbrSurfaceMaterial(
+        textures: WorldTextureSet,
+        tint: UIColor,
+        roughnessScale: Float
+    ) -> PhysicallyBasedMaterial {
+        var material = PhysicallyBasedMaterial()
+        if let base = textures.baseColor {
+            material.baseColor = .init(tint: tint, texture: repeatedTexture(base))
+        } else {
+            material.baseColor = .init(tint: tint)
+        }
+        if let rough = textures.roughness {
+            material.roughness = .init(scale: roughnessScale, texture: repeatedTexture(rough))
+        } else {
+            material.roughness = .init(floatLiteral: roughnessScale)
+        }
+        material.metallic = .init(floatLiteral: 0.0)
+        material.specular = .init(floatLiteral: 0.38)
         return material
     }
 
@@ -140,10 +212,14 @@ enum Stage2WorldFactory {
                 positions.append([localX, height, localZ])
                 normals.append(Stage2TerrainProfile.normal(east: globalX, north: globalZ))
 
-                var u = Float(xIndex) / Float(resolution - 1)
-                var v = Float(zIndex) / Float(resolution - 1)
-                if mirrorU { u = 1 - u }
-                if mirrorV { v = 1 - v }
+                // World-space UVs keep ground detail at a readable physical scale
+                // instead of stretching one texture across a 6 km tile. 24 m is
+                // deliberately stylized: visible from low altitude without noisy moire.
+                let textureScaleMeters: Float = 24
+                var u = globalX / textureScaleMeters
+                var v = globalZ / textureScaleMeters
+                if mirrorU { u = -u }
+                if mirrorV { v = -v }
                 texcoords.append([u, v])
             }
         }
@@ -421,6 +497,98 @@ enum Stage2WorldFactory {
         )
         towerCab.position = [715, 52, 900]
         root.addChild(towerCab)
+
+        addAirbaseMaterialOverlays(to: root)
+    }
+
+    /// Thin PBR overlays preserve the existing runway geometry/markings while
+    /// replacing the giant flat-color surfaces with real, tiled material detail.
+    private static func addAirbaseMaterialOverlays(to root: Entity) {
+        let asphalt = worldTextureSet(named: "runway_asphalt")
+        let concrete = worldTextureSet(named: "apron_concrete")
+
+        if let runway = makeTexturedSurface(
+            size: [64, 4_800],
+            center: [0, 0.108, 2_000],
+            tileMeters: 7.5,
+            material: pbrSurfaceMaterial(
+                textures: asphalt,
+                tint: UIColor(red: 0.54, green: 0.55, blue: 0.55, alpha: 1),
+                roughnessScale: 0.96
+            )
+        ) {
+            root.addChild(runway)
+        }
+
+        if let taxiway = makeTexturedSurface(
+            size: [30, 3_050],
+            center: [320, 0.082, 1_650],
+            tileMeters: 7.0,
+            material: pbrSurfaceMaterial(
+                textures: asphalt,
+                tint: UIColor(red: 0.50, green: 0.51, blue: 0.51, alpha: 1),
+                roughnessScale: 0.97
+            )
+        ) {
+            root.addChild(taxiway)
+        }
+
+        for connectorZ: Float in [250, 1_100, 2_100, 3_050] {
+            if let connector = makeTexturedSurface(
+                size: [320, 24],
+                center: [160, 0.082, connectorZ],
+                tileMeters: 7.0,
+                material: pbrSurfaceMaterial(
+                    textures: asphalt,
+                    tint: UIColor(red: 0.50, green: 0.51, blue: 0.51, alpha: 1),
+                    roughnessScale: 0.97
+                )
+            ) {
+                root.addChild(connector)
+            }
+        }
+
+        if let apron = makeTexturedSurface(
+            size: [430, 360],
+            center: [520, 0.084, 720],
+            tileMeters: 6.5,
+            material: pbrSurfaceMaterial(
+                textures: concrete,
+                tint: UIColor(red: 0.68, green: 0.68, blue: 0.65, alpha: 1),
+                roughnessScale: 0.94
+            )
+        ) {
+            root.addChild(apron)
+        }
+    }
+
+    private static func makeTexturedSurface(
+        size: SIMD2<Float>,
+        center: SIMD3<Float>,
+        tileMeters: Float,
+        material: PhysicallyBasedMaterial
+    ) -> ModelEntity? {
+        let halfX = size.x * 0.5
+        let halfZ = size.y * 0.5
+        let positions: [SIMD3<Float>] = [
+            [-halfX, 0, -halfZ], [halfX, 0, -halfZ],
+            [-halfX, 0, halfZ], [halfX, 0, halfZ]
+        ]
+        let normals = Array(repeating: SIMD3<Float>(0, 1, 0), count: 4)
+        let u = size.x / max(tileMeters, 0.5)
+        let v = size.y / max(tileMeters, 0.5)
+        let texcoords: [SIMD2<Float>] = [[0, 0], [u, 0], [0, v], [u, v]]
+        let indices: [UInt32] = [0, 2, 1, 1, 2, 3]
+
+        var descriptor = MeshDescriptor(name: "Stage 016 PBR surface")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
+        descriptor.primitives = .triangles(indices)
+        guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.position = center
+        return entity
     }
 
     private static func addRunwayLight(to root: Entity, position: SIMD3<Float>, color: UIColor) {
