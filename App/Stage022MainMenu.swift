@@ -384,7 +384,7 @@ struct Stage022MainMenuView: View {
                         Text("Created by NyerahWorks")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.76))
-                        Text("Flight dynamics: JSBSim. Aircraft geometry and world assets retain their in-repository source/license notices. Stage 022 menu scene reuses the same game renderer rather than a prerecorded background.")
+                        Text("Flight dynamics: JSBSim. Reno map/vector data © OpenStreetMap contributors (ODbL). Elevation and orthoimagery: USGS The National Map / 3DEP public-domain sources. Aircraft and other assets retain their in-repository notices.")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.white.opacity(0.56))
                             .fixedSize(horizontal: false, vertical: true)

@@ -1,0 +1,16 @@
+FULL AUTHORITY — STAGE 024 REAL-WORLD MAP DATA
+
+Map/vector data: © OpenStreetMap contributors, Open Database License (ODbL) 1.0.
+Extract source: Geofabrik Nevada free extract.
+https://www.openstreetmap.org/copyright
+https://download.geofabrik.de/north-america/us/nevada.html
+
+Elevation: U.S. Geological Survey 3D Elevation Program (3DEP) 1 arc-second DEM. Public domain / no use restrictions.
+https://www.usgs.gov/3d-elevation-program
+
+Orthoimagery: USGS The National Map USGSImageryOnly service, primarily USDA NAIP for CONUS. Public-domain imagery sources as described by the service.
+https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer
+
+Airport geometry/reference: Federal Aviation Administration AIP, Reno/Tahoe International (KRNO).
+
+The generated reno_world.json is derived from OpenStreetMap data and is distributed under ODbL 1.0.

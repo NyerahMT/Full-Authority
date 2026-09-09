@@ -22,6 +22,14 @@ enum Stage2WorldFactory {
         let root = Entity()
         root.name = "FA.world.stage2"
 
+        if Stage024RealMapData.shared.isLoaded {
+            root.addChild(Stage024RealMapWorld.make())
+            addCloudscape(to: root)
+            return root
+        }
+
+        // Development fallback only. Shipping Stage 024 builds include the Reno
+        // package and never instantiate these older procedural scenery layers.
         addTerrain(to: root)
         addCloudscape(to: root)
         addAirbase(to: root)
@@ -29,7 +37,6 @@ enum Stage2WorldFactory {
         addStage019Environment(to: root)
         root.addChild(Stage020WorldUpgrade.make())
         root.addChild(Stage023TerrainSystem.make())
-
         return root
     }
 

@@ -4,20 +4,13 @@ import simd
 
 enum Stage2TerrainProfile {
     static func heightMeters(east: Float, north: Float) -> Float {
-        Float(FATerrainHeightMeters(Double(east), Double(north)))
+        let map = Stage024RealMapData.shared
+        return map.isLoaded ? map.relativeHeight(east: east, north: north) : 0
     }
 
     static func normal(east: Float, north: Float) -> SIMD3<Float> {
-        let sample: Float = 8
-        let dhde = (
-            heightMeters(east: east + sample, north: north) -
-            heightMeters(east: east - sample, north: north)
-        ) / (2 * sample)
-        let dhdn = (
-            heightMeters(east: east, north: north + sample) -
-            heightMeters(east: east, north: north - sample)
-        ) / (2 * sample)
-        return simd_normalize(SIMD3<Float>(-dhde, 1, -dhdn))
+        let map = Stage024RealMapData.shared
+        return map.isLoaded ? map.normal(east: east, north: north) : SIMD3<Float>(0, 1, 0)
     }
 }
 
@@ -308,7 +301,10 @@ final class FlightSimulation: ObservableObject {
         state.terrainElevationMeters = finiteFloat("position/terrain-elevation-asl-ft", fallback: 0) * feetToMeters
         state.altitudeFeetMSL = finiteFloat("position/h-sl-ft", fallback: state.altitudeMeters * 3.28084)
         updateLocalPositionFromGeodetic()
+        // JSBSim keeps real Reno MSL altitude while RealityKit renders around
+        // a local airport-height origin to preserve floating-point precision.
         state.positionMeters.y = state.altitudeFeetMSL * feetToMeters
+            - Stage024RealMapData.shared.referenceElevationMeters
 
         state.airspeedMetersPerSecond = max(0, Float(bridge.value(forProperty: "velocities/vtrue-fps")) * feetToMeters)
         state.calibratedAirspeedKnots = max(

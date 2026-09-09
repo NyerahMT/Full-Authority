@@ -18,6 +18,9 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <cstdint>
+#include <fstream>
+#include <vector>
 #include <memory>
 #include <string>
 
@@ -115,55 +118,66 @@ private:
 };
 }
 
-double FATerrainAnalyticHeightMeters(double eastMeters, double northMeters) {
-    double base =
-        78.0 * std::sin(northMeters / 2750.0) * std::cos(eastMeters / 3500.0) +
-        52.0 * std::sin((eastMeters + northMeters) / 1820.0) +
-        36.0 * std::cos((eastMeters - 0.45 * northMeters) / 2250.0) +
-        19.0 * std::sin((1.25 * eastMeters + 0.72 * northMeters) / 820.0) +
-        12.0 * std::cos((0.65 * eastMeters - 1.10 * northMeters) / 510.0) +
-        6.5 * std::sin((1.80 * eastMeters + 1.35 * northMeters) / 285.0);
+struct FATerrainGrid {
+    bool loaded = false;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    float cell = 40.0f;
+    float minX = 0.0f;
+    float minZ = 0.0f;
+    float referenceElevation = 0.0f;
+    std::vector<float> samples;
 
-    const double ridge1East = (eastMeters + 6500.0) / 2350.0;
-    const double ridge1North = (northMeters - 9000.0) / 3300.0;
-    base += 245.0 * std::exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North));
+    bool Load(const std::string& path) {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) return false;
+        char magic[4] = {};
+        uint32_t version = 0;
+        stream.read(magic, 4);
+        stream.read(reinterpret_cast<char*>(&version), sizeof(version));
+        stream.read(reinterpret_cast<char*>(&width), sizeof(width));
+        stream.read(reinterpret_cast<char*>(&height), sizeof(height));
+        stream.read(reinterpret_cast<char*>(&cell), sizeof(cell));
+        stream.read(reinterpret_cast<char*>(&minX), sizeof(minX));
+        stream.read(reinterpret_cast<char*>(&minZ), sizeof(minZ));
+        stream.read(reinterpret_cast<char*>(&referenceElevation), sizeof(referenceElevation));
+        if (!stream || std::string(magic, 4) != "FAM2" || version != 1 || width < 2 || height < 2 || cell <= 0.0f) {
+            loaded = false;
+            return false;
+        }
+        samples.resize(static_cast<size_t>(width) * static_cast<size_t>(height));
+        stream.read(reinterpret_cast<char*>(samples.data()), static_cast<std::streamsize>(samples.size() * sizeof(float)));
+        loaded = static_cast<bool>(stream);
+        return loaded;
+    }
 
-    const double ridge2East = (eastMeters - 7200.0) / 2500.0;
-    const double ridge2North = (northMeters - 6500.0) / 2750.0;
-    base += 185.0 * std::exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North));
+    double Height(double eastMeters, double northMeters) const {
+        if (!loaded || samples.empty()) return 0.0;
+        const double gx = (eastMeters - minX) / cell;
+        const double gz = (northMeters - minZ) / cell;
+        const int ix = std::clamp(static_cast<int>(std::floor(gx)), 0, static_cast<int>(width) - 2);
+        const int iz = std::clamp(static_cast<int>(std::floor(gz)), 0, static_cast<int>(height) - 2);
+        const double tx = std::clamp(gx - ix, 0.0, 1.0);
+        const double tz = std::clamp(gz - iz, 0.0, 1.0);
+        const size_t i00 = static_cast<size_t>(iz) * width + static_cast<size_t>(ix);
+        const size_t i10 = i00 + 1;
+        const size_t i01 = static_cast<size_t>(iz + 1) * width + static_cast<size_t>(ix);
+        const size_t i11 = i01 + 1;
+        const double h00 = samples[i00];
+        const double h10 = samples[i10];
+        const double h01 = samples[i01];
+        const double h11 = samples[i11];
+        if (tx + tz <= 1.0) {
+            return h00 + tx * (h10 - h00) + tz * (h01 - h00);
+        }
+        return h11 + (1.0 - tz) * (h10 - h11) + (1.0 - tx) * (h01 - h11);
+    }
+};
 
-    const double ridge3East = (eastMeters + 10500.0) / 3200.0;
-    const double ridge3North = (northMeters + 2500.0) / 2600.0;
-    base += 210.0 * std::exp(-0.5 * (ridge3East * ridge3East + ridge3North * ridge3North));
-
-    const double valleyEast = (eastMeters - 4200.0) / 2300.0;
-    const double valleyNorth = (northMeters - 9800.0) / 5000.0;
-    base -= 92.0 * std::exp(-0.5 * (valleyEast * valleyEast + valleyNorth * valleyNorth));
-
-    const double dx = std::max(std::abs(eastMeters) - 1000.0, 0.0);
-    const double dz = std::max(std::abs(northMeters - 2000.0) - 3600.0, 0.0);
-    const double distanceOutsideAirfield = std::hypot(dx, dz);
-    return base * SmoothStep(distanceOutsideAirfield / 1250.0);
-}
+FATerrainGrid gTerrainGrid;
 
 extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
-    // Same regular elevation grid and diagonal split used by Stage2WorldFactory.
-    // This makes visual triangle height and JSBSim contact height identical.
-    constexpr double grid = 50.0;
-    const double x0 = std::floor(eastMeters / grid) * grid;
-    const double z0 = std::floor(northMeters / grid) * grid;
-    const double tx = (eastMeters - x0) / grid;
-    const double tz = (northMeters - z0) / grid;
-
-    const double h00 = FATerrainAnalyticHeightMeters(x0, northMeters - tz * grid);
-    const double h10 = FATerrainAnalyticHeightMeters(x0 + grid, northMeters - tz * grid);
-    const double h01 = FATerrainAnalyticHeightMeters(x0, northMeters - tz * grid + grid);
-    const double h11 = FATerrainAnalyticHeightMeters(x0 + grid, northMeters - tz * grid + grid);
-
-    if (tx + tz <= 1.0) {
-        return h00 + tx * (h10 - h00) + tz * (h01 - h00);
-    }
-    return h11 + (1.0 - tz) * (h10 - h11) + (1.0 - tx) * (h01 - h11);
+    return gTerrainGrid.Height(eastMeters, northMeters);
 }
 
 @interface FAJSBSimBridge ()
@@ -182,6 +196,8 @@ extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
     if (self) {
         _rootPath = [rootPath copy];
         _deltaTime = 1.0 / 120.0;
+        const std::string terrainPath = std::string(_rootPath.UTF8String ?: "") + "/visuals/world/reno/reno_dem.bin";
+        gTerrainGrid.Load(terrainPath);
         [self rebuildExecutive];
     }
     return self;

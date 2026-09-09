@@ -242,32 +242,82 @@ def build_dem() -> np.ndarray:
 
 
 def export_usgs_imagery() -> None:
+    # Stage 024 uses the underlying USGS NAIP ImageServer rather than
+    # the slower cartographic basemap renderer. Sixteen 1024px exports
+    # are stitched into one 4096px macro image for the 48 km map.
+    import time
+
     path = OUT / "reno_imagery.jpg"
     if path.exists() and path.stat().st_size > 100_000:
         return
-    bbox = f"{ORIGIN_E + MIN_X},{ORIGIN_N + MIN_Z},{ORIGIN_E + MAX_X},{ORIGIN_N + MAX_Z}"
-    params = {
-        "bbox": bbox,
-        "bboxSR": "32611",
-        "imageSR": "32611",
-        "size": f"{IMAGERY_SIZE},{IMAGERY_SIZE}",
-        "format": "jpg",
-        "transparent": "false",
-        "dpi": "96",
-        "f": "image",
-    }
-    temp = CACHE / "reno_usgs_export.jpg"
-    download(
-        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/export",
-        temp,
-        params=params,
-    )
-    with Image.open(temp) as image:
-        image = image.convert("RGB")
-        if image.size != (IMAGERY_SIZE, IMAGERY_SIZE):
-            image = image.resize((IMAGERY_SIZE, IMAGERY_SIZE), Image.Resampling.LANCZOS)
-        image.save(path, "JPEG", quality=88, optimize=True, progressive=True)
-    log(f"USGS orthoimagery {path.stat().st_size / 1024 / 1024:.1f} MiB")
+
+    service = "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage"
+    tiles_per_axis = 4
+    tile_pixels = IMAGERY_SIZE // tiles_per_axis
+    span_x = MAX_X - MIN_X
+    span_z = MAX_Z - MIN_Z
+    tile_world_x = span_x / tiles_per_axis
+    tile_world_z = span_z / tiles_per_axis
+    canvas = Image.new("RGB", (IMAGERY_SIZE, IMAGERY_SIZE))
+
+    for row in range(tiles_per_axis):
+        # Image row zero is north/top, so request rows from MAX_Z downward.
+        z_max = MAX_Z - row * tile_world_z
+        z_min = z_max - tile_world_z
+        for col in range(tiles_per_axis):
+            x_min = MIN_X + col * tile_world_x
+            x_max = x_min + tile_world_x
+            bbox = (
+                f"{ORIGIN_E + x_min},{ORIGIN_N + z_min},"
+                f"{ORIGIN_E + x_max},{ORIGIN_N + z_max}"
+            )
+            params = {
+                "bbox": bbox,
+                "bboxSR": "32611",
+                "imageSR": "32611",
+                "size": f"{tile_pixels},{tile_pixels}",
+                "format": "jpg",
+                "compressionQuality": "88",
+                "interpolation": "RSP_BilinearInterpolation",
+                "f": "image",
+            }
+            tile_path = CACHE / f"reno_naip_{row}_{col}.jpg"
+
+            if not (tile_path.exists() and tile_path.stat().st_size > 4096):
+                last_error = None
+                for attempt in range(1, 5):
+                    try:
+                        log(f"USGS NAIP tile {row + 1},{col + 1} attempt {attempt}")
+                        response = requests.get(service, params=params, timeout=90)
+                        response.raise_for_status()
+                        content_type = response.headers.get("content-type", "")
+                        if "image" not in content_type.lower():
+                            raise RuntimeError(
+                                f"USGS NAIP tile returned {content_type}: {response.text[:300]}"
+                            )
+                        tile_path.write_bytes(response.content)
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        tile_path.unlink(missing_ok=True)
+                        if attempt < 4:
+                            time.sleep(attempt * 3)
+                else:
+                    raise RuntimeError(
+                        f"USGS NAIP tile {row},{col} failed after retries: {last_error}"
+                    )
+
+            with Image.open(tile_path) as tile:
+                tile = tile.convert("RGB")
+                if tile.size != (tile_pixels, tile_pixels):
+                    tile = tile.resize(
+                        (tile_pixels, tile_pixels),
+                        Image.Resampling.LANCZOS,
+                    )
+                canvas.paste(tile, (col * tile_pixels, row * tile_pixels))
+
+    canvas.save(path, "JPEG", quality=88, optimize=True, progressive=True)
+    log(f"USGS NAIP orthoimagery {path.stat().st_size / 1024 / 1024:.1f} MiB")
 
 
 def extract_geofabrik() -> Path:
