@@ -68,16 +68,13 @@ jobs:
 
           echo '--- Industrial OBJ inventory ---'
           find /tmp/fa-audit/kenney/industrial -type f -iname '*.obj' \
-            -printf '%f | %s bytes | %p\n' | sort | head -120
+            -printf '%f | %s bytes | %p\n' | sort | sed -n '1,120p'
 
-          echo '--- Material / texture inventory ---'
-          find /tmp/fa-audit/kenney -type f \( -iname '*.mtl' -o -iname '*.png' -o -iname '*.jpg' \) \
-            -printf '%f | %s bytes | %p\n' | sort | head -160
-
-      - name: Preserve audit manifest
+      - name: Preserve manifest and selected visual previews
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p /tmp/fa-audit/output/previews/industrial /tmp/fa-audit/output/previews/nature
           {
             echo '# Stage 019 CC0 asset audit'
             echo
@@ -86,10 +83,21 @@ jobs:
             echo
             echo '## Industrial OBJ files'
             find /tmp/fa-audit/kenney/industrial -type f -iname '*.obj' -printf '%f\n' | sort
-          } > /tmp/fa-audit/manifest.txt
+          } > /tmp/fa-audit/output/manifest.txt
+
+          for name in a d h i k n s; do
+            cp "/tmp/fa-audit/kenney/industrial/Previews/building-$name.png" \
+              "/tmp/fa-audit/output/previews/industrial/building-$name.png"
+          done
+          for name in tree_default tree_oak tree_pineDefaultA tree_pineTallA plant_bush rock_largeA; do
+            preview=$(find /tmp/fa-audit/kenney/nature -type f -iname "${name}.png" | head -1 || true)
+            if [ -n "$preview" ]; then
+              cp "$preview" "/tmp/fa-audit/output/previews/nature/${name}.png"
+            fi
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: stage019-asset-audit
-          path: /tmp/fa-audit/manifest.txt
+          path: /tmp/fa-audit/output
           retention-days: 7
