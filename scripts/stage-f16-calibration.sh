@@ -19,8 +19,8 @@ rm -rf "$RESOURCE_ROOT/aircraft/f16"
 mkdir -p "$RESOURCE_ROOT/aircraft" "$RESOURCE_ROOT/engine" "$RESOURCE_ROOT/licenses"
 
 # Preserve the complete upstream aircraft directory. Full Authority keeps the
-# published JSBSim F-16 aerodynamic model and yaw-rate controller rather than
-# inventing a separate lateral flight model.
+# published JSBSim F-16 aerodynamic model and only corrects the directional
+# control-law plumbing around pilot pedal authority and stability augmentation.
 cp -R "$SOURCE_ROOT/aircraft/f16" "$RESOURCE_ROOT/aircraft/f16"
 cp "$SOURCE_ROOT/engine/F100-PW-229.xml" "$RESOURCE_ROOT/engine/F100-PW-229.xml"
 cp "$SOURCE_ROOT/engine/direct.xml" "$RESOURCE_ROOT/engine/direct.xml"
@@ -28,15 +28,15 @@ cp "$SOURCE_ROOT/COPYING" "$RESOURCE_ROOT/licenses/JSBSim-COPYING.txt"
 
 # Stage 021 directional-control correction.
 #
-# Earlier Full Authority builds added an extra 28% raw rudder feed-forward; that
-# patch is gone. Stage 020 then over-corrected by removing pilot pedal command
-# from yaw-trim-error, which turned the yaw PID into a pure damper that almost
-# completely cancelled the commanded rudder in flight.
+# NASA F-16 control-law documentation describes an air-data scheduled rudder-
+# pedal forward path that reduces sensitivity in high dynamic pressure, plus
+# yaw-rate/lateral-acceleration feedback for directional damping/coordination.
+# JSBSim's stock F-16 yaw loop severely suppresses deliberate pedal commands in
+# our dynamic test (70% pedal at 300 KCAS produced only ~4 degrees rudder).
 #
-# Stage 021 restores the upstream commanded-yaw target structure: pilot pedal is
-# part of yaw-trim-error and also enters the final scheduler, while yaw-rate
-# feedback shapes the response. The lateral-acceleration feedback is gated out
-# only during deliberate pedal input so it cannot resist a desired sideslip.
+# Full Authority therefore keeps the stock/strengthened SAS when the pedals are
+# centered, but deliberately displaced pedals use an air-data-scheduled forward
+# path. Releasing the pedal immediately hands control back to the SAS.
 python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
 from pathlib import Path
 import sys
@@ -44,62 +44,75 @@ import sys
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
 
+# Modestly stronger feet-off-pedals yaw-rate normalization than upstream.
 old_rate = '''      80.0  0.0
       100.0    15.0
       150.0    100.0'''
 new_rate = '''      80.0  0.0
       100.0    15.0
-      150.0    112.0'''
+      150.0    125.0'''
 if text.count(old_rate) != 1:
     raise SystemExit(f"expected one yaw-rate schedule, found {text.count(old_rate)}")
 text = text.replace(old_rate, new_rate, 1)
 
-old_load = '''   <!-- Calculate the normalized yaw-load -->
-   <pure_gain name="fcs/yaw-load-norm">
-    <input>accelerations/n-pilot-y-norm</input>
-    <gain>0.25</gain>
-   </pure_gain>'''
-new_load = '''   <!-- Stage 021: lateral acceleration coordinates feet-off-pedals flight,
-        but does not resist a deliberate pilot sideslip command. -->
-   <pure_gain name="fcs/yaw-load-raw">
-    <input>accelerations/n-pilot-y-norm</input>
-    <gain>0.25</gain>
-   </pure_gain>
-   <switch name="fcs/yaw-load-norm">
-    <default value="fcs/yaw-load-raw"/>
-    <test logic="OR" value="0">
+start = text.index('   <summer name="fcs/yaw-scheduler">')
+end = text.index('   <kinematic name="fcs/rudder-position">', start)
+old_scheduler_region = text[start:end]
+if old_scheduler_region.count('<summer name="fcs/yaw-scheduler">') != 1:
+    raise SystemExit('unexpected yaw scheduler region')
+
+new_scheduler_region = '''   <!-- Full Authority Stage 021: centered-pedal SAS branch. -->
+   <summer name="fcs/fa-yaw-sas">
+     <input>fcs/rudder-cmd-norm</input>
+     <input>fcs/yaw-trim-cmd-norm</input>
+     <input>fcs/yaw-load-pid</input>
+     <clipto>
+      <min>-1</min>
+      <max>1</max>
+     </clipto>
+   </summer>
+
+   <!-- Rudder-pedal forward-loop authority scheduled by dynamic pressure.
+        Low-q flight retains nearly full available rudder; high-q flight reduces
+        pedal sensitivity to avoid an unrealistic full-tail-load command. -->
+   <scheduled_gain name="fcs/fa-pedal-rudder">
+    <input>fcs/rudder-cmd-norm</input>
+    <table>
+     <independentVar>aero/qbar-psf</independentVar>
+     <tableData>
+         0.0   1.00
+        50.0   0.95
+       100.0   0.80
+       200.0   0.55
+       350.0   0.38
+       600.0   0.24
+      1000.0   0.16
+     </tableData>
+    </table>
+   </scheduled_gain>
+
+   <switch name="fcs/yaw-scheduler">
+    <default value="fcs/fa-yaw-sas"/>
+    <test logic="OR" value="fcs/fa-pedal-rudder">
      fcs/rudder-cmd-norm gt 0.035
      fcs/rudder-cmd-norm lt -0.035
     </test>
-   </switch>'''
-if text.count(old_load) != 1:
-    raise SystemExit(f"expected one upstream yaw-load block, found {text.count(old_load)}")
-text = text.replace(old_load, new_load, 1)
+    <clipto>
+     <min>-1</min>
+     <max>1</max>
+    </clipto>
+   </switch>
 
-# Assert the upstream command-target structure remains intact. This is deliberate:
-# one command occurrence establishes the requested yaw in the PID error and the
-# second is the pilot feed into the final rudder scheduler.
-error_block = '''   <summer name="fcs/yaw-trim-error">
-    <input>fcs/rudder-cmd-norm</input>
-    <input>fcs/yaw-rate-norm</input>
-    <input>fcs/yaw-load-norm</input>
-   </summer>'''
-scheduler = '''   <summer name="fcs/yaw-scheduler">
-     <input>fcs/rudder-cmd-norm</input>
-     <input>fcs/yaw-trim-cmd-norm</input>
-     <input>fcs/yaw-load-pid</input>'''
-if text.count(error_block) != 1:
-    raise SystemExit(f"expected one commanded yaw error block, found {text.count(error_block)}")
-if text.count(scheduler) != 1:
-    raise SystemExit(f"expected one direct pilot yaw scheduler, found {text.count(scheduler)}")
-
+'''
+text = text[:start] + new_scheduler_region + text[end:]
 path.write_text(text, encoding="utf-8")
 PY
 
-grep -q '150.0    112.0' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
-grep -q 'Stage 021: lateral acceleration coordinates feet-off-pedals flight' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q '150.0    125.0' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'Full Authority Stage 021: centered-pedal SAS branch' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q '<scheduled_gain name="fcs/fa-pedal-rudder">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q '<independentVar>aero/qbar-psf</independentVar>' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q 'fcs/rudder-cmd-norm gt 0.035' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
-test "$(grep -c '<input>fcs/rudder-cmd-norm</input>' "$RESOURCE_ROOT/aircraft/f16/f16.xml")" -eq 2
 grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
 # Render art is bundled from the authored, MIT-licensed vazgriz/FlightSim_F16
@@ -166,4 +179,4 @@ for required in \
   test -s "$required"
 done
 
-echo "Staged JSBSim F-16 calibration data, Stage 021 commanded-yaw SAS correction and terrain texture"
+echo "Staged JSBSim F-16 calibration data, Stage 021 air-data-scheduled pedal authority and terrain texture"
