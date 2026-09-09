@@ -1,0 +1,28 @@
+name: Stage023 Terrain Rebuild
+on:
+  push:
+    branches: [stage023-terrain-system]
+    paths: ['.github/workflows/stage023-terrain-rebuild.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage023-terrain-system
+          submodules: false
+      - run: python3 scripts/stage023_terrain_rebuild.py
+      - run: |
+          set -euo pipefail
+          grep -q 'FATerrainHeightMeters' Simulation/FlightSimulation.swift
+          grep -q 'Stage023TerrainSystem.make' App/Stage2WorldFactory.swift
+          grep -q 'Stage023TerrainSystem.swift in Sources' FullAuthority.xcodeproj/project.pbxproj
+          git diff --check
+      - run: |
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add Simulation/Bridge/FAJSBSimBridge.h Simulation/Bridge/FAJSBSimBridge.mm Simulation/FlightSimulation.swift App/Stage2WorldFactory.swift App/PrototypeSceneView.swift App/Stage022MainMenu.swift FullAuthority.xcodeproj/project.pbxproj
+          git commit -m 'Stage 023: unify terrain collision and rebuild world landclass'
+          git push origin HEAD:stage023-terrain-system
