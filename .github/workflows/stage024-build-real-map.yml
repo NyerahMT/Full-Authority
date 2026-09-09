@@ -1,0 +1,54 @@
+name: Stage024 Build Real Reno Map
+on:
+  push:
+    branches: [stage024-real-reno-map]
+    paths: ['.github/workflows/stage024-build-real-map.yml']
+permissions:
+  contents: write
+jobs:
+  build-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage024-real-reno-map
+          submodules: false
+          fetch-depth: 1
+      - name: Install geospatial pipeline
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install numpy requests pillow pyproj shapely rasterio geopandas pyogrio
+      - name: Build KRNO real-world map package
+        run: python3 Scripts/build_stage024_reno_map.py
+      - name: Validate package
+        run: |
+          set -euo pipefail
+          test -s Assets/JSBSim/visuals/world/reno/reno_dem.bin
+          test -s Assets/JSBSim/visuals/world/reno/reno_imagery.jpg
+          test -s Assets/JSBSim/visuals/world/reno/reno_world.json
+          grep -q 'Stage024RealMapWorld.make' App/Stage2WorldFactory.swift
+          grep -q 'Stage024RealMap.swift in Sources' FullAuthority.xcodeproj/project.pbxproj
+          grep -q 'gTerrainGrid.Load' Simulation/Bridge/FAJSBSimBridge.mm
+          python3 - <<'PY'
+          import json, pathlib, struct
+          root = pathlib.Path('Assets/JSBSim/visuals/world/reno')
+          raw = (root/'reno_dem.bin').read_bytes()
+          magic, version, w, h, cell, minx, minz, ref = struct.unpack('<4sIIIffff', raw[:32])
+          assert magic == b'FAM2' and version == 1 and w > 500 and h > 500
+          world = json.loads((root/'reno_world.json').read_text())
+          assert len(world['buildings']) > 5000, len(world['buildings'])
+          assert len(world['roads']) > 500, len(world['roads'])
+          print('DEM', w, h, cell, 'buildings', len(world['buildings']), 'roads', len(world['roads']))
+          for p in root.iterdir():
+              print(p.name, round(p.stat().st_size/1024/1024, 2), 'MiB')
+          PY
+          git diff --check
+      - name: Commit generated real map
+        run: |
+          set -euo pipefail
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add Assets/JSBSim/visuals/world/reno App/Stage024RealMap.swift App/Stage2WorldFactory.swift App/Stage022MainMenu.swift Simulation/FlightSimulation.swift Simulation/Bridge/FAJSBSimBridge.mm FullAuthority.xcodeproj/project.pbxproj Docs/Stage024-Real-Reno-Map.md Scripts/build_stage024_reno_map.py
+          git commit -m 'Stage 024: replace procedural world with real Reno map'
+          git push origin HEAD:stage024-real-reno-map
