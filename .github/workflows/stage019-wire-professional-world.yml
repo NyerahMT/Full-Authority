@@ -1,0 +1,693 @@
+name: Stage019WireProfessionalWorld
+
+on:
+  push:
+    branches:
+      - stage019-professional-visuals
+    paths:
+      - '.github/workflows/stage019-wire-professional-world.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage019-professional-visuals
+          fetch-depth: 0
+
+      - name: Wire curated environment into Stage 017 renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('App/Stage2WorldFactory.swift')
+          source = path.read_text()
+
+          old = '''    private struct WorldTextureSet {
+              let baseColor: TextureResource?
+              let roughness: TextureResource?
+          }
+          '''
+          new = '''    private struct WorldTextureSet {
+              let baseColor: TextureResource?
+              let roughness: TextureResource?
+              let normal: TextureResource?
+          }
+          '''
+          if old not in source:
+              raise SystemExit('WorldTextureSet anchor missing')
+          source = source.replace(old, new, 1)
+
+          old = '''        addTerrain(to: root)
+              addCloudscape(to: root)
+              addGroundScaleCues(to: root)
+              addAirbase(to: root)
+              addRoads(to: root)
+              addTown(to: root)
+              addVegetation(to: root)
+          '''
+          new = '''        addTerrain(to: root)
+              addCloudscape(to: root)
+              addAirbase(to: root)
+              addRoads(to: root)
+              addStage019Environment(to: root)
+          '''
+          if old not in source:
+              raise SystemExit('make() environment anchor missing')
+          source = source.replace(old, new, 1)
+
+          old = '''        WorldTextureSet(
+                  baseColor: loadWorldTexture("\\(stem)_diff"),
+                  roughness: loadWorldTexture("\\(stem)_rough")
+              )
+          '''
+          new = '''        WorldTextureSet(
+                  baseColor: loadWorldTexture("\\(stem)_diff"),
+                  roughness: loadWorldTexture("\\(stem)_rough"),
+                  normal: loadWorldTexture("\\(stem)_nor")
+              )
+          '''
+          if old not in source:
+              raise SystemExit('worldTextureSet anchor missing')
+          source = source.replace(old, new, 1)
+
+          old = '''        material.metallic = .init(floatLiteral: 0.0)
+              material.specular = .init(floatLiteral: 0.38)
+              return material
+          '''
+          new = '''        if let normal = textures.normal {
+                  material.normal = PhysicallyBasedMaterial.Normal(
+                      texture: repeatedTexture(normal)
+                  )
+              }
+              material.metallic = .init(floatLiteral: 0.0)
+              material.specular = .init(floatLiteral: 0.30)
+              return material
+          '''
+          if old not in source:
+              raise SystemExit('PBR surface material anchor missing')
+          source = source.replace(old, new, 1)
+
+          old = '''        let normals = Array(repeating: SIMD3<Float>(0, 1, 0), count: 4)
+              let u = size.x / max(tileMeters, 0.5)
+          '''
+          new = '''        let normals = Array(repeating: SIMD3<Float>(0, 1, 0), count: 4)
+              let tangents = Array(repeating: SIMD3<Float>(1, 0, 0), count: 4)
+              let u = size.x / max(tileMeters, 0.5)
+          '''
+          if old not in source:
+              raise SystemExit('surface tangents anchor A missing')
+          source = source.replace(old, new, 1)
+
+          old = '''        descriptor.positions = MeshBuffers.Positions(positions)
+              descriptor.normals = MeshBuffers.Normals(normals)
+              descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
+          '''
+          new = '''        descriptor.positions = MeshBuffers.Positions(positions)
+              descriptor.normals = MeshBuffers.Normals(normals)
+              descriptor.tangents = MeshBuffers.Tangents(tangents)
+              descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
+          '''
+          # Only patch the flat PBR surface occurrence; terrain has the same first two lines
+          surface_index = source.find('var descriptor = MeshDescriptor(name: "Stage 016 PBR surface")')
+          if surface_index == -1:
+              raise SystemExit('Stage 016 PBR surface descriptor missing')
+          prefix = source[:surface_index]
+          tail = source[surface_index:]
+          if old not in tail:
+              raise SystemExit('surface tangents anchor B missing')
+          tail = tail.replace(old, new, 1)
+          source = prefix + tail
+
+          marker = '    // MARK: - Helpers\n'
+          if marker not in source:
+              raise SystemExit('helper marker missing')
+          if 'private static func addStage019Environment' in source:
+              raise SystemExit('Stage 019 environment already wired')
+
+          insertion = r'''    // MARK: - Stage 019 professional environment pass
+
+              private struct CuratedWorldModel {
+                  let mesh: MeshResource
+                  let materialNames: [String]
+                  let minimum: SIMD3<Float>
+                  let maximum: SIMD3<Float>
+
+                  var size: SIMD3<Float> { maximum - minimum }
+              }
+
+              /// Stage 019 deliberately leaves the Stage 017 camera, clouds, flight effects,
+              /// lighting and F-16 presentation untouched. This layer removes the strongest
+              /// procedural tells in the ground scene: regular field grids, one repeated tree,
+              /// and box-only settlements. Geometry comes from the audited Kenney CC0 subset;
+              /// Poly Haven CC0 normals add micro-surface response to existing PBR surfaces.
+              private static func addStage019Environment(to root: Entity) {
+                  let environment = Entity()
+                  environment.name = "FA.world.stage019.professional-environment"
+
+                  addStage019LandUse(to: environment)
+                  addStage019Vegetation(to: environment)
+                  addStage019Settlement(to: environment)
+                  addStage019AirbaseProps(to: environment)
+
+                  root.addChild(environment)
+              }
+
+              private static func stage019Hash(_ value: Int) -> Float {
+                  let x = sin(Float(value) * 12.9898 + 78.233) * 43_758.5453
+                  return x - floor(x)
+              }
+
+              private static func addStage019LandUse(to root: Entity) {
+                  let grass = worldTextureSet(named: "terrain_grass")
+                  let palette: [UIColor] = [
+                      UIColor(red: 0.36, green: 0.43, blue: 0.24, alpha: 1),
+                      UIColor(red: 0.31, green: 0.39, blue: 0.22, alpha: 1),
+                      UIColor(red: 0.43, green: 0.40, blue: 0.24, alpha: 1),
+                      UIColor(red: 0.39, green: 0.34, blue: 0.20, alpha: 1),
+                      UIColor(red: 0.29, green: 0.40, blue: 0.25, alpha: 1),
+                      UIColor(red: 0.40, green: 0.44, blue: 0.27, alpha: 1)
+                  ]
+
+                  // Agriculture is intentionally deterministic but no longer arranged on a
+                  // visible row/column lattice. Adjacent parcels still share a broadly similar
+                  // scale so the landscape reads as land use rather than camouflage noise.
+                  for index in 0..<52 {
+                      let x = -11_000 + stage019Hash(index * 7 + 1) * 22_000
+                      let z = -8_500 + stage019Hash(index * 7 + 2) * 17_000
+
+                      // Protect the runway/airbase footprint and the authored settlement.
+                      if abs(x) < 1_450 && z > -2_200 && z < 5_700 { continue }
+                      if x > 2_150 && x < 4_450 && z > 2_300 && z < 4_650 { continue }
+
+                      let normal = Stage2TerrainProfile.normal(east: x, north: z)
+                      if normal.y < 0.955 { continue }
+
+                      let width = 460 + stage019Hash(index * 7 + 3) * 920
+                      let depth = 330 + stage019Hash(index * 7 + 4) * 650
+                      let rotation = (stage019Hash(index * 7 + 5) - 0.5) * 0.78
+                      let shear = SIMD2<Float>(
+                          (stage019Hash(index * 7 + 6) - 0.5) * 0.22,
+                          (stage019Hash(index * 7 + 7) - 0.5) * 0.18
+                      )
+                      let tint = palette[index % palette.count]
+
+                      if let patch = makeStage019TerrainPatch(
+                          center: [x, z],
+                          size: [width, depth],
+                          rotation: rotation,
+                          shear: shear,
+                          textures: grass,
+                          tint: tint
+                      ) {
+                          patch.name = "FA.world.stage019.field.\(index)"
+                          root.addChild(patch)
+                      }
+                  }
+              }
+
+              private static func makeStage019TerrainPatch(
+                  center: SIMD2<Float>,
+                  size: SIMD2<Float>,
+                  rotation: Float,
+                  shear: SIMD2<Float>,
+                  textures: WorldTextureSet,
+                  tint: UIColor
+              ) -> ModelEntity? {
+                  let subdivisions = 5
+                  let pointsPerSide = subdivisions + 1
+                  let c = cos(rotation)
+                  let s = sin(rotation)
+
+                  var positions: [SIMD3<Float>] = []
+                  var normals: [SIMD3<Float>] = []
+                  var tangents: [SIMD3<Float>] = []
+                  var texcoords: [SIMD2<Float>] = []
+                  var indices: [UInt32] = []
+
+                  positions.reserveCapacity(pointsPerSide * pointsPerSide)
+                  normals.reserveCapacity(pointsPerSide * pointsPerSide)
+                  tangents.reserveCapacity(pointsPerSide * pointsPerSide)
+                  texcoords.reserveCapacity(pointsPerSide * pointsPerSide)
+
+                  for zIndex in 0...subdivisions {
+                      let v = Float(zIndex) / Float(subdivisions)
+                      for xIndex in 0...subdivisions {
+                          let u = Float(xIndex) / Float(subdivisions)
+                          let baseX = (u - 0.5) * size.x
+                          let baseZ = (v - 0.5) * size.y
+                          let localX = baseX + (v - 0.5) * size.x * shear.x
+                          let localZ = baseZ + (u - 0.5) * size.y * shear.y
+                          let worldX = center.x + localX * c - localZ * s
+                          let worldZ = center.y + localX * s + localZ * c
+                          let surfaceNormal = Stage2TerrainProfile.normal(east: worldX, north: worldZ)
+                          let height = Stage2TerrainProfile.heightMeters(east: worldX, north: worldZ) + 0.058
+
+                          let baseTangent = SIMD3<Float>(1, 0, 0)
+                          let projected = baseTangent - surfaceNormal * simd_dot(baseTangent, surfaceNormal)
+                          let tangent = simd_length_squared(projected) > 0.000001
+                              ? simd_normalize(projected)
+                              : SIMD3<Float>(0, 0, 1)
+
+                          positions.append([worldX, height, worldZ])
+                          normals.append(surfaceNormal)
+                          tangents.append(tangent)
+                          texcoords.append([worldX / 22, worldZ / 22])
+                      }
+                  }
+
+                  for zIndex in 0..<subdivisions {
+                      for xIndex in 0..<subdivisions {
+                          let i0 = UInt32(zIndex * pointsPerSide + xIndex)
+                          let i1 = i0 + 1
+                          let i2 = UInt32((zIndex + 1) * pointsPerSide + xIndex)
+                          let i3 = i2 + 1
+                          indices.append(contentsOf: [i0, i2, i1, i1, i2, i3])
+                      }
+                  }
+
+                  var descriptor = MeshDescriptor(name: "Stage 019 terrain parcel")
+                  descriptor.positions = MeshBuffers.Positions(positions)
+                  descriptor.normals = MeshBuffers.Normals(normals)
+                  descriptor.tangents = MeshBuffers.Tangents(tangents)
+                  descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
+                  descriptor.primitives = .triangles(indices)
+                  guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+
+                  var material = PhysicallyBasedMaterial()
+                  if let base = textures.baseColor {
+                      material.baseColor = .init(tint: tint, texture: repeatedTexture(base))
+                  } else {
+                      material.baseColor = .init(tint: tint)
+                  }
+                  if let rough = textures.roughness {
+                      material.roughness = .init(scale: 0.97, texture: repeatedTexture(rough))
+                  } else {
+                      material.roughness = .init(floatLiteral: 0.97)
+                  }
+                  if let normal = textures.normal {
+                      material.normal = .init(texture: repeatedTexture(normal))
+                  }
+                  material.metallic = .init(floatLiteral: 0.0)
+                  material.specular = .init(floatLiteral: 0.22)
+
+                  return ModelEntity(mesh: mesh, materials: [material])
+              }
+
+              private static func addStage019Vegetation(to root: Entity) {
+                  let candidates = [
+                      loadCuratedWorldModel(folder: "kenney_nature", name: "tree_default"),
+                      loadCuratedWorldModel(folder: "kenney_nature", name: "tree_oak"),
+                      loadCuratedWorldModel(folder: "kenney_nature", name: "tree_pineDefaultA"),
+                      loadCuratedWorldModel(folder: "kenney_nature", name: "tree_pineTallA")
+                  ].compactMap { $0 }
+                  guard !candidates.isEmpty else { return }
+
+                  let clusterCenters: [SIMD2<Float>] = [
+                      [-9_300, -5_800], [-7_500, -1_900], [-8_500, 3_300], [-7_100, 7_100],
+                      [-4_900, -6_600], [-4_600, 5_500], [-2_300, 8_000], [2_700, -7_300],
+                      [5_400, -5_100], [8_300, -2_700], [8_900, 1_800], [7_600, 6_100],
+                      [4_300, 7_800], [1_400, 8_700], [-9_800, 6_000], [9_800, 7_700]
+                  ]
+
+                  let group = Entity()
+                  group.name = "FA.world.stage019.vegetation"
+
+                  for (clusterIndex, center) in clusterCenters.enumerated() {
+                      let count = 16 + clusterIndex % 9
+                      let radius: Float = 520 + Float((clusterIndex * 83) % 420)
+
+                      for treeIndex in 0..<count {
+                          let seed = clusterIndex * 101 + treeIndex * 13
+                          let radial = sqrt(stage019Hash(seed + 1)) * radius
+                          let angle = stage019Hash(seed + 2) * 2 * .pi
+                          let x = center.x + cos(angle) * radial
+                          let z = center.y + sin(angle) * radial * (0.72 + stage019Hash(seed + 3) * 0.42)
+
+                          if abs(x) < 1_100 && z > -2_000 && z < 5_600 { continue }
+                          let terrainNormal = Stage2TerrainProfile.normal(east: x, north: z)
+                          if terrainNormal.y < 0.90 { continue }
+
+                          let model = candidates[(seed + treeIndex) % candidates.count]
+                          let targetHeight = 11 + stage019Hash(seed + 4) * 17
+                          let sourceHeight = max(model.size.y, 0.05)
+                          let scale = targetHeight / sourceHeight
+                          let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
+
+                          let tree = ModelEntity(
+                              mesh: model.mesh,
+                              materials: stage019NatureMaterials(for: model, selector: seed)
+                          )
+                          tree.position = [x, terrain - model.minimum.y * scale, z]
+                          tree.scale = [scale, scale, scale]
+                          tree.orientation = simd_quatf(
+                              angle: stage019Hash(seed + 5) * 2 * .pi,
+                              axis: [0, 1, 0]
+                          )
+                          group.addChild(tree)
+                      }
+                  }
+
+                  root.addChild(group)
+              }
+
+              private static func addStage019Settlement(to root: Entity) {
+                  let candidates = [
+                      loadCuratedWorldModel(folder: "kenney_industrial", name: "building-h"),
+                      loadCuratedWorldModel(folder: "kenney_industrial", name: "building-i"),
+                      loadCuratedWorldModel(folder: "kenney_industrial", name: "building-k"),
+                      loadCuratedWorldModel(folder: "kenney_industrial", name: "building-s")
+                  ].compactMap { $0 }
+                  guard !candidates.isEmpty else { return }
+
+                  let group = Entity()
+                  group.name = "FA.world.stage019.settlement"
+
+                  // A loose industrial/service settlement sits beside the existing road
+                  // network. Buildings align broadly to two street directions, but their
+                  // spacing and setbacks vary enough to avoid the previous debug-grid read.
+                  for index in 0..<32 {
+                      let model = candidates[index % candidates.count]
+                      let x = 2_380 + stage019Hash(index * 11 + 1) * 1_760
+                      let z = 2_560 + stage019Hash(index * 11 + 2) * 1_430
+                      let terrainNormal = Stage2TerrainProfile.normal(east: x, north: z)
+                      if terrainNormal.y < 0.94 { continue }
+
+                      let targetFootprint = 34 + stage019Hash(index * 11 + 3) * 48
+                      let sourceFootprint = max(max(model.size.x, model.size.z), 0.08)
+                      let scale = targetFootprint / sourceFootprint
+                      let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
+                      let quarterTurn = (index % 3 == 0) ? Float.pi / 2 : 0
+                      let yaw = quarterTurn + (stage019Hash(index * 11 + 4) - 0.5) * 0.16
+
+                      let building = ModelEntity(
+                          mesh: model.mesh,
+                          materials: stage019IndustrialMaterials(for: model, selector: index)
+                      )
+                      building.position = [x, terrain - model.minimum.y * scale, z]
+                      building.scale = [scale, scale, scale]
+                      building.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
+                      group.addChild(building)
+                  }
+
+                  root.addChild(group)
+              }
+
+              private static func addStage019AirbaseProps(to root: Entity) {
+                  let group = Entity()
+                  group.name = "FA.world.stage019.airbase-props"
+
+                  if let waterTower = loadCuratedWorldModel(folder: "kenney_industrial", name: "water-tower") {
+                      let targetHeight: Float = 34
+                      let scale = targetHeight / max(waterTower.size.y, 0.05)
+                      let x: Float = 1_020
+                      let z: Float = 1_080
+                      let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
+                      let entity = ModelEntity(
+                          mesh: waterTower.mesh,
+                          materials: stage019IndustrialMaterials(for: waterTower, selector: 80)
+                      )
+                      entity.position = [x, terrain - waterTower.minimum.y * scale, z]
+                      entity.scale = [scale, scale, scale]
+                      group.addChild(entity)
+                  }
+
+                  if let tank = loadCuratedWorldModel(folder: "kenney_industrial", name: "detail-tank") {
+                      for index in 0..<3 {
+                          let targetWidth: Float = 18 + Float(index) * 2.5
+                          let scale = targetWidth / max(tank.size.x, 0.05)
+                          let x: Float = 790 + Float(index) * 31
+                          let z: Float = 390 + Float(index % 2) * 34
+                          let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
+                          let entity = ModelEntity(
+                              mesh: tank.mesh,
+                              materials: stage019IndustrialMaterials(for: tank, selector: 90 + index)
+                          )
+                          entity.position = [x, terrain - tank.minimum.y * scale, z]
+                          entity.scale = [scale, scale, scale]
+                          entity.orientation = simd_quatf(angle: Float(index) * 0.41, axis: [0, 1, 0])
+                          group.addChild(entity)
+                      }
+                  }
+
+                  if let container = loadCuratedWorldModel(folder: "kenney_industrial", name: "shipping-container-a") {
+                      for index in 0..<8 {
+                          let targetLength: Float = 11.5
+                          let sourceLength = max(max(container.size.x, container.size.z), 0.05)
+                          let scale = targetLength / sourceLength
+                          let x: Float = 760 + Float(index % 4) * 14.0
+                          let z: Float = 810 + Float(index / 4) * 10.5
+                          let terrain = Stage2TerrainProfile.heightMeters(east: x, north: z)
+                          let entity = ModelEntity(
+                              mesh: container.mesh,
+                              materials: stage019IndustrialMaterials(for: container, selector: 110 + index)
+                          )
+                          entity.position = [x, terrain - container.minimum.y * scale, z]
+                          entity.scale = [scale, scale, scale]
+                          entity.orientation = simd_quatf(angle: .pi / 2, axis: [0, 1, 0])
+                          group.addChild(entity)
+                      }
+                  }
+
+                  root.addChild(group)
+              }
+
+              private static func stage019NatureMaterials(
+                  for model: CuratedWorldModel,
+                  selector: Int
+              ) -> [PhysicallyBasedMaterial] {
+                  let foliage: [UIColor] = [
+                      UIColor(red: 0.075, green: 0.155, blue: 0.070, alpha: 1),
+                      UIColor(red: 0.095, green: 0.185, blue: 0.082, alpha: 1),
+                      UIColor(red: 0.060, green: 0.135, blue: 0.064, alpha: 1),
+                      UIColor(red: 0.110, green: 0.190, blue: 0.090, alpha: 1)
+                  ]
+                  let bark: [UIColor] = [
+                      UIColor(red: 0.155, green: 0.115, blue: 0.082, alpha: 1),
+                      UIColor(red: 0.125, green: 0.095, blue: 0.070, alpha: 1),
+                      UIColor(red: 0.175, green: 0.125, blue: 0.085, alpha: 1)
+                  ]
+
+                  return model.materialNames.enumerated().map { index, name in
+                      let lowered = name.lowercased()
+                      let isWood = lowered.contains("wood") || lowered.contains("bark")
+                      var material = PhysicallyBasedMaterial()
+                      material.baseColor = .init(
+                          tint: isWood
+                              ? bark[(selector + index) % bark.count]
+                              : foliage[(selector + index) % foliage.count]
+                      )
+                      material.roughness = .init(floatLiteral: isWood ? 0.97 : 0.94)
+                      material.metallic = .init(floatLiteral: 0.0)
+                      material.specular = .init(floatLiteral: 0.18)
+                      return material
+                  }
+              }
+
+              private static func stage019IndustrialMaterials(
+                  for model: CuratedWorldModel,
+                  selector: Int
+              ) -> [PhysicallyBasedMaterial] {
+                  let palette: [UIColor] = [
+                      UIColor(red: 0.36, green: 0.37, blue: 0.35, alpha: 1),
+                      UIColor(red: 0.43, green: 0.42, blue: 0.37, alpha: 1),
+                      UIColor(red: 0.31, green: 0.33, blue: 0.33, alpha: 1),
+                      UIColor(red: 0.48, green: 0.46, blue: 0.40, alpha: 1),
+                      UIColor(red: 0.33, green: 0.35, blue: 0.31, alpha: 1)
+                  ]
+
+                  return model.materialNames.enumerated().map { index, name in
+                      let detail = name.lowercased().contains("specular")
+                      var material = PhysicallyBasedMaterial()
+                      material.baseColor = .init(tint: palette[(selector + index) % palette.count])
+                      material.roughness = .init(floatLiteral: detail ? 0.77 : 0.91)
+                      material.metallic = .init(floatLiteral: detail ? 0.04 : 0.0)
+                      material.specular = .init(floatLiteral: detail ? 0.30 : 0.20)
+                      return material
+                  }
+              }
+
+              private static func loadCuratedWorldModel(
+                  folder: String,
+                  name: String
+              ) -> CuratedWorldModel? {
+                  guard let url = Bundle.main.url(
+                      forResource: name,
+                      withExtension: "obj",
+                      subdirectory: "JSBSim/visuals/world/models/\(folder)"
+                  ), let source = try? String(contentsOf: url, encoding: .utf8) else {
+                      return nil
+                  }
+
+                  let lines = source.split(whereSeparator: \.isNewline)
+                  var sourcePositions: [SIMD3<Float>] = []
+                  var sourceNormals: [SIMD3<Float>] = []
+
+                  for line in lines {
+                      if line.hasPrefix("v ") {
+                          let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                          if fields.count >= 4,
+                             let x = Float(fields[1]),
+                             let y = Float(fields[2]),
+                             let z = Float(fields[3]) {
+                              sourcePositions.append([x, y, z])
+                          }
+                      } else if line.hasPrefix("vn ") {
+                          let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                          if fields.count >= 4,
+                             let x = Float(fields[1]),
+                             let y = Float(fields[2]),
+                             let z = Float(fields[3]) {
+                              let normal = SIMD3<Float>(x, y, z)
+                              sourceNormals.append(
+                                  simd_length_squared(normal) > 0.000001
+                                      ? simd_normalize(normal)
+                                      : SIMD3<Float>(0, 1, 0)
+                              )
+                          }
+                      }
+                  }
+
+                  guard let firstPosition = sourcePositions.first else { return nil }
+
+                  func resolved(_ raw: Int, count: Int) -> Int? {
+                      if raw > 0 {
+                          let index = raw - 1
+                          return index < count ? index : nil
+                      }
+                      if raw < 0 {
+                          let index = count + raw
+                          return index >= 0 && index < count ? index : nil
+                      }
+                      return nil
+                  }
+
+                  func parsedVertex(_ token: Substring) -> (position: SIMD3<Float>, normal: SIMD3<Float>?)? {
+                      let components = token.split(separator: "/", omittingEmptySubsequences: false)
+                      guard let rawPosition = components.first.flatMap({ Int($0) }),
+                            let positionIndex = resolved(rawPosition, count: sourcePositions.count) else {
+                          return nil
+                      }
+
+                      var normal: SIMD3<Float>?
+                      if components.count >= 3,
+                         !components[2].isEmpty,
+                         let rawNormal = Int(components[2]),
+                         let normalIndex = resolved(rawNormal, count: sourceNormals.count) {
+                          normal = sourceNormals[normalIndex]
+                      }
+                      return (sourcePositions[positionIndex], normal)
+                  }
+
+                  var materialOrder: [String] = []
+                  var currentMaterial = "default"
+                  var partPositions: [String: [SIMD3<Float>]] = [:]
+                  var partNormals: [String: [SIMD3<Float>]] = [:]
+                  var partIndices: [String: [UInt32]] = [:]
+
+                  for line in lines {
+                      if line.hasPrefix("usemtl ") {
+                          currentMaterial = String(line.dropFirst("usemtl ".count))
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+                          if !materialOrder.contains(currentMaterial) {
+                              materialOrder.append(currentMaterial)
+                          }
+                          continue
+                      }
+
+                      guard line.hasPrefix("f ") else { continue }
+                      if !materialOrder.contains(currentMaterial) {
+                          materialOrder.append(currentMaterial)
+                      }
+
+                      let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                      guard fields.count >= 4 else { continue }
+                      let face = fields.dropFirst().compactMap(parsedVertex)
+                      guard face.count == fields.count - 1, face.count >= 3 else { continue }
+
+                      for i in 1..<(face.count - 1) {
+                          let triangle = [face[0], face[i], face[i + 1]]
+                          let cross = simd_cross(
+                              triangle[1].position - triangle[0].position,
+                              triangle[2].position - triangle[0].position
+                          )
+                          let geometricNormal = simd_length_squared(cross) > 0.000001
+                              ? simd_normalize(cross)
+                              : SIMD3<Float>(0, 1, 0)
+
+                          for vertex in triangle {
+                              let nextIndex = UInt32(partPositions[currentMaterial, default: []].count)
+                              partIndices[currentMaterial, default: []].append(nextIndex)
+                              partPositions[currentMaterial, default: []].append(vertex.position)
+                              partNormals[currentMaterial, default: []].append(vertex.normal ?? geometricNormal)
+                          }
+                      }
+                  }
+
+                  var descriptors: [MeshDescriptor] = []
+                  var finalMaterialNames: [String] = []
+                  for materialName in materialOrder {
+                      guard let positions = partPositions[materialName],
+                            let normals = partNormals[materialName],
+                            let indices = partIndices[materialName],
+                            !positions.isEmpty,
+                            !indices.isEmpty else { continue }
+
+                      var descriptor = MeshDescriptor(name: "Stage 019 \(name) \(materialName)")
+                      descriptor.positions = MeshBuffers.Positions(positions)
+                      descriptor.normals = MeshBuffers.Normals(normals)
+                      descriptor.primitives = .triangles(indices)
+                      descriptors.append(descriptor)
+                      finalMaterialNames.append(materialName)
+                  }
+
+                  guard !descriptors.isEmpty,
+                        let mesh = try? MeshResource.generate(from: descriptors) else {
+                      return nil
+                  }
+
+                  var minimum = firstPosition
+                  var maximum = firstPosition
+                  for position in sourcePositions.dropFirst() {
+                      minimum = SIMD3<Float>(
+                          Swift.min(minimum.x, position.x),
+                          Swift.min(minimum.y, position.y),
+                          Swift.min(minimum.z, position.z)
+                      )
+                      maximum = SIMD3<Float>(
+                          Swift.max(maximum.x, position.x),
+                          Swift.max(maximum.y, position.y),
+                          Swift.max(maximum.z, position.z)
+                      )
+                  }
+
+                  return CuratedWorldModel(
+                      mesh: mesh,
+                      materialNames: finalMaterialNames,
+                      minimum: minimum,
+                      maximum: maximum
+                  )
+              }
+
+          '''
+          source = source.replace(marker, insertion + marker, 1)
+          path.write_text(source)
+          PY
+
+      - name: Commit renderer wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/stage019-wire-professional-world.yml
+          git config user.name 'Full Authority Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add App/Stage2WorldFactory.swift .github/workflows/stage019-wire-professional-world.yml
+          git commit -m 'Stage 019: wire professional environment pass'
+          git push origin HEAD:stage019-professional-visuals
