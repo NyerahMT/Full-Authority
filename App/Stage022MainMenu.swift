@@ -36,7 +36,7 @@ private final class Stage022MenuRuntime: ObservableObject {
         // The flyby crosses the runway-side camera at ~120 seconds. Start the
         // pressure/whoosh transient just before closest approach so the event is
         // heard as something arriving, not as a UI sound effect.
-        if !lowPassAudioPlayed && elapsed >= 117.35 {
+        if !lowPassAudioPlayed && elapsed >= 117.55 {
             lowPassAudioPlayed = true
             audio.playSupersonicPass()
         }
@@ -518,7 +518,7 @@ private enum Stage022MenuScene {
     private static func updateFlybyJet(_ jet: Entity, elapsed: TimeInterval) {
         // With the runway-side camera moved downfield, this start time keeps
         // closest approach centered at essentially the two-minute mark.
-        let eventStart: TimeInterval = 116.8
+        let eventStart: TimeInterval = 117.03
         let t = Float(elapsed - eventStart)
         guard t >= 0, t <= 16.0 else {
             jet.isEnabled = false
@@ -530,9 +530,10 @@ private enum Stage022MenuScene {
         setGearVisible(jet, visible: false)
         jet.findEntity(named: PrototypeAircraftFactory.afterburnerName)?.isEnabled = true
 
-        // 340 m/s puts the scripted pass in the transonic neighborhood. The path
-        // crosses the camera's runway station almost exactly at two minutes.
-        let z = -1_275 + 340 * t
+        // 365 m/s is a deliberately low-supersonic pass at this altitude: fast
+        // enough to support a real shock/boom event without turning this into an
+        // arcade high-Mach flyby. It crosses the camera at essentially 2:00.
+        let z = -1_275 + 365 * t
         let y: Float = 34 + 1.2 * sin(t * 0.72)
         jet.position = [22, y, z]
         jet.orientation = simd_quatf(angle: 0, axis: [0, 1, 0])
