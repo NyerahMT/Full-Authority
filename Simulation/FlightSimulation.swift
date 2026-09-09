@@ -293,11 +293,11 @@ final class FlightSimulation: ObservableObject {
         let aileron = clamp(trimAileronCommand - Double(controls.roll), min: -1, max: 1)
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
 
-        // Full Authority's touch control is screen-centric: dragging right means
-        // right pedal / nose-right. Stage 020 feeds this pilot command into the
-        // F-16 scheduler once; stability feedback remains a separate SAS signal.
-        let pilotYawCommand = -Double(controls.rudder)
-        let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
+        // Airborne rudder and nosewheel steering use opposite sign conventions
+        // in the current JSBSim F-16 model. Preserve the already-correct ground
+        // steering direction while making touch-right command aerodynamic nose-right.
+        let pilotRudderCommand = Double(controls.rudder)
+        let rudder = clamp(trimRudderCommand + pilotRudderCommand, min: -1, max: 1)
 
         let throttle = clamp(Double(controls.throttle), min: 0, max: 1)
         let brake = clamp(Double(controls.wheelBrake), min: 0, max: 1)
@@ -313,8 +313,9 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/right-brake-cmd-norm", value: brake)
         bridge.setProperty("fcs/center-brake-cmd-norm", value: brake)
 
+        let steeringCommand = -Double(controls.rudder)
         let steering = state.weightOnWheels && state.gearPosition > 0.8
-            ? clamp(pilotYawCommand, min: -1, max: 1)
+            ? clamp(steeringCommand, min: -1, max: 1)
             : 0
         bridge.setProperty("fcs/steer-cmd-norm", value: steering)
     }

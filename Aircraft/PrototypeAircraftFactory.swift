@@ -248,10 +248,10 @@ enum PrototypeAircraftFactory {
         let halo = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.34,
-                green: 0.47,
-                blue: 1.00,
-                alpha: 0.075
+                red: 1.00,
+                green: 0.18,
+                blue: 0.015,
+                alpha: 0.055
             ))]
         )
         halo.name = afterburnerHaloName
