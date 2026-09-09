@@ -43,18 +43,21 @@ struct PrototypeSceneView: View {
                 RealityView { content in
                     content.camera = .virtual
                     content.environment = .default
+                    if let environment = await Stage020SkyEnvironment.load() {
+                        content.environment = .skybox(environment)
+                    }
 
                     let world = Stage2WorldFactory.make()
                     // Stage 016 cinematic lighting: reduce the flat default IBL so
                     // directional sunlight and material roughness can actually shape terrain.
                     world.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.48
+                        environmentLightingWeight: 0.70
                     ))
                     content.add(world)
 
                     let aircraft = PrototypeAircraftFactory.make()
                     aircraft.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.56
+                        environmentLightingWeight: 0.66
                     ))
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
@@ -78,8 +81,8 @@ struct PrototypeSceneView: View {
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1),
-                            intensity: 10_400
+                            color: UIColor(red: 1.0, green: 0.965, blue: 0.90, alpha: 1),
+                            intensity: 7_800
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
@@ -89,8 +92,8 @@ struct PrototypeSceneView: View {
                     let fill = Entity()
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.42, green: 0.58, blue: 0.86, alpha: 1),
-                        intensity: 210
+                        color: UIColor(red: 0.58, green: 0.66, blue: 0.76, alpha: 1),
+                        intensity: 70
                     ))
                     fill.look(at: .zero, from: [6_800, 6_200, 7_600], relativeTo: nil)
                     content.add(fill)
@@ -163,11 +166,11 @@ struct PrototypeSceneView: View {
         // warmer low horizon is intentionally pushed for a readable game palette.
         LinearGradient(
             stops: [
-                .init(color: Color(red: 0.008, green: 0.070, blue: 0.205), location: 0.00),
-                .init(color: Color(red: 0.025, green: 0.205, blue: 0.455), location: 0.38),
-                .init(color: Color(red: 0.225, green: 0.455, blue: 0.655), location: 0.68),
-                .init(color: Color(red: 0.565, green: 0.625, blue: 0.640), location: 0.86),
-                .init(color: Color(red: 0.760, green: 0.665, blue: 0.535), location: 1.00)
+                .init(color: Color(red: 0.018, green: 0.105, blue: 0.260), location: 0.00),
+                .init(color: Color(red: 0.060, green: 0.245, blue: 0.470), location: 0.42),
+                .init(color: Color(red: 0.285, green: 0.505, blue: 0.665), location: 0.72),
+                .init(color: Color(red: 0.640, green: 0.705, blue: 0.730), location: 0.90),
+                .init(color: Color(red: 0.750, green: 0.775, blue: 0.770), location: 1.00)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -486,6 +489,16 @@ struct PrototypeSceneView: View {
                 angle: -state.rudderRadians,
                 axis: PrototypeAircraftFactory.rudderVisualAxis
             )
+        }
+        let pedalCommand = clamp(simulation.controls.rudder, -1, 1)
+        aircraft.findEntity(named: Stage020CockpitDetails.leftPedalName)?.orientation = simd_quatf(
+            angle: pedalCommand * 0.16, axis: [1, 0, 0]
+        )
+        aircraft.findEntity(named: Stage020CockpitDetails.rightPedalName)?.orientation = simd_quatf(
+            angle: -pedalCommand * 0.16, axis: [1, 0, 0]
+        )
+        if let beacon = aircraft.findEntity(named: Stage020AircraftDetails.antiCollisionName) {
+            beacon.isEnabled = simulation.simulationTime.truncatingRemainder(dividingBy: 1.20) < 0.11
         }
 
         let speedbrakeAngle = clamp(state.speedbrakePosition, 0, 1) * PrototypeAircraftFactory.authoredSpeedbrakeLimitRadians

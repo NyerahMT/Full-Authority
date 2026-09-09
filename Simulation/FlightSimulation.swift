@@ -294,8 +294,8 @@ final class FlightSimulation: ObservableObject {
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
 
         // Full Authority's touch control is screen-centric: dragging right means
-        // right pedal / nose-right. The current F-16 resource patch converts this
-        // sign again at the model boundary; NWS uses this sign directly.
+        // right pedal / nose-right. Stage 020 feeds this pilot command into the
+        // F-16 scheduler once; stability feedback remains a separate SAS signal.
         let pilotYawCommand = -Double(controls.rudder)
         let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
 

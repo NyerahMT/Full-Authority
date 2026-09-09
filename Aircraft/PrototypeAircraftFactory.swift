@@ -156,6 +156,7 @@ enum PrototypeAircraftFactory {
             )
 
             try addAfterburner(to: visualRoot)
+            visualRoot.addChild(Stage020AircraftDetails.make())
             addLandingGear(to: aircraft)
 
             let cockpit = PrototypeCockpitFactory.make()

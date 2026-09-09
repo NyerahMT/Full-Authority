@@ -26,27 +26,59 @@ cp "$SOURCE_ROOT/engine/F100-PW-229.xml" "$RESOURCE_ROOT/engine/F100-PW-229.xml"
 cp "$SOURCE_ROOT/engine/direct.xml" "$RESOURCE_ROOT/engine/direct.xml"
 cp "$SOURCE_ROOT/COPYING" "$RESOURCE_ROOT/licenses/JSBSim-COPYING.txt"
 
-# Keep the upstream yaw controller intact and add only a small feed-forward term
-# in the final rudder scheduler. The stock yaw PID still owns yaw-rate and
-# lateral-load damping; this adds 28% of pedal command after that loop so touch
-# input has meaningfully more authority without creating another feedback system.
+# Stage 020 yaw-control correction.
+#
+# The upstream XML feeds rudder-cmd-norm into the yaw feedback error and then
+# adds the same pilot command again in yaw-scheduler. Our older patch compounded
+# that with another 28% feed-forward. Stage 020 removes that extra feed-forward
+# and separates the pilot pedal from SAS feedback. Yaw-rate/lateral-acceleration
+# feedback damps the aircraft; the pilot command enters the scheduler once.
 python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-needle = '''   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>'''
-replacement = '''   <!-- Full Authority: stock JSBSim yaw controller + stronger pedal feed-forward. -->\n   <pure_gain name="fcs/fa-pedal-feedforward">\n    <input>fcs/rudder-cmd-norm</input>\n    <gain>0.28</gain>\n   </pure_gain>\n\n   <summer name="fcs/yaw-scheduler">\n     <input>fcs/rudder-cmd-norm</input>\n     <input>fcs/fa-pedal-feedforward</input>'''
-if text.count(needle) != 1:
-    raise SystemExit(f"expected one upstream F-16 yaw scheduler, found {text.count(needle)}")
-text = text.replace(needle, replacement, 1)
+old_error = '''   <!--
+     - Calculate the difference between the current yaw-rate
+     - and the one requiested for.
+     -->
+   <summer name="fcs/yaw-trim-error">
+    <input>fcs/rudder-cmd-norm</input>
+    <input>fcs/yaw-rate-norm</input>
+    <input>fcs/yaw-load-norm</input>
+   </summer>'''
+new_error = '''   <!-- Full Authority Stage 020: SAS feedback only. Pilot pedal
+     command is summed once in yaw-scheduler below. -->
+   <summer name="fcs/yaw-trim-error">
+    <input>fcs/yaw-rate-norm</input>
+    <input>fcs/yaw-load-norm</input>
+   </summer>'''
+if text.count(old_error) != 1:
+    raise SystemExit(f"expected one upstream yaw feedback block, found {text.count(old_error)}")
+text = text.replace(old_error, new_error, 1)
+old_rate = '''      80.0  0.0
+      100.0    15.0
+      150.0    100.0'''
+new_rate = '''      80.0  0.0
+      100.0    15.0
+      150.0    112.0'''
+if text.count(old_rate) != 1:
+    raise SystemExit(f"expected one yaw-rate schedule, found {text.count(old_rate)}")
+text = text.replace(old_rate, new_rate, 1)
+scheduler = '''   <summer name="fcs/yaw-scheduler">
+     <input>fcs/rudder-cmd-norm</input>
+     <input>fcs/yaw-trim-cmd-norm</input>
+     <input>fcs/yaw-load-pid</input>'''
+if text.count(scheduler) != 1:
+    raise SystemExit(f"expected one direct pilot yaw scheduler, found {text.count(scheduler)}")
 path.write_text(text, encoding="utf-8")
 PY
 
-grep -q 'stock JSBSim yaw controller + stronger pedal feed-forward' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'Full Authority Stage 020: SAS feedback only' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q '150.0    112.0' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+test "$(grep -c '<input>fcs/rudder-cmd-norm</input>' "$RESOURCE_ROOT/aircraft/f16/f16.xml")" -eq 1
 grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
-grep -q '<gain>0.28</gain>' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
 # Render art is now bundled from the authored, MIT-licensed vazgriz/FlightSim_F16
 # import under JSBSim/visuals/f16. Do not download or stage the retired R4 OBJ here.
@@ -112,4 +144,4 @@ for required in \
   test -s "$required"
 done
 
-echo "Staged JSBSim F-16 calibration data, yaw damping, pedal feed-forward and terrain texture"
+echo "Staged JSBSim F-16 calibration data, Stage 020 yaw SAS correction and terrain texture"

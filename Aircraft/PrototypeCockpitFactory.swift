@@ -296,6 +296,7 @@ enum PrototypeCockpitFactory {
             material: frame
         ))
 
+        root.addChild(Stage020CockpitDetails.make())
         return root
     }
 

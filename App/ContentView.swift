@@ -42,7 +42,7 @@ struct ContentView: View {
                 F16HUD(state: simulation.state, controls: simulation.controls)
                     // Keep full symbology in the cockpit; in chase view the jet
                     // becomes the hero instead of fighting a neon-green overlay.
-                    .opacity(cameraMode == .cockpit ? 1.0 : 0.78)
+                    .opacity(cameraMode == .cockpit ? 1.0 : 0.66)
                     .allowsHitTesting(false)
             }
 
@@ -125,7 +125,8 @@ struct ContentView: View {
                     }
                 }
                 .safeAreaPadding(.horizontal, 26)
-                .padding(.bottom, 10)
+                .safeAreaPadding(.bottom, 12)
+                .padding(.bottom, 2)
             }
         }
     }
@@ -192,7 +193,7 @@ struct ContentView: View {
                         .offset(y: -8)
 
                     HStack(spacing: 9) {
-                        Text("STAGE 2")
+                        Text("F-16A BLOCK 32")
                             .font(.system(size: 10, weight: .black, design: .monospaced))
                             .tracking(1.2)
                             .padding(.horizontal, 9)
@@ -200,13 +201,13 @@ struct ContentView: View {
                             .background(.white, in: RoundedRectangle(cornerRadius: 6))
                             .foregroundStyle(.black)
 
-                        Text("F-16A / RUNWAY SORTIE")
+                        Text("DAY VFR / TRAINING RANGE")
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .tracking(1.0)
                             .foregroundStyle(.white.opacity(0.76))
                     }
 
-                    Text("Runway start, direct JSBSim F-16 dynamics, native terrain contact and aircraft-relative cameras.")
+                    Text("Cold start is skipped. You have the airplane, a live range, direct JSBSim dynamics, and enough world to actually fly it.")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white.opacity(0.68))
                         .frame(maxWidth: 470, alignment: .leading)
@@ -273,7 +274,7 @@ struct ContentView: View {
                     .font(.system(size: 23, weight: .black, design: .rounded))
                     .tracking(0.5)
 
-                Text("F-16A · JSBSim direct FDM · STAGE 2")
+                Text("F-16A BLOCK 32 · JSBSim direct FDM")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
 
@@ -1005,7 +1006,7 @@ private struct CompactRudderControl: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            Text("RUDDER / NWS")
+            Text("RUDDER  /  NWS")
                 .font(.system(size: 7, weight: .black, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.44))
 
@@ -1023,7 +1024,7 @@ private struct CompactRudderControl: View {
                         .frame(width: 1, height: 21)
                     Circle()
                         .fill(.white.opacity(0.92))
-                        .frame(width: 26, height: 26)
+                        .frame(width: 34, height: 34)
                         .position(x: x, y: geometry.size.height * 0.5)
                 }
                 .contentShape(Rectangle())
@@ -1032,12 +1033,12 @@ private struct CompactRudderControl: View {
                         .onChanged { gesture in
                             let normalized = Float((gesture.location.x - width * 0.5) / max(travel * 0.5, 1))
                             let clamped = min(max(normalized, -1), 1)
-                            onChange(abs(clamped) < 0.04 ? 0 : clamped)
+                            onChange(abs(clamped) < 0.025 ? 0 : clamped)
                         }
                         .onEnded { _ in onChange(0) }
                 )
             }
-            .frame(width: 180, height: 29)
+            .frame(width: 224, height: 52)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)

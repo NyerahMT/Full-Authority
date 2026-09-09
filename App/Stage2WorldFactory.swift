@@ -27,6 +27,7 @@ enum Stage2WorldFactory {
         addAirbase(to: root)
         addRoads(to: root)
         addStage019Environment(to: root)
+        root.addChild(Stage020WorldUpgrade.make())
 
         return root
     }
@@ -47,7 +48,7 @@ enum Stage2WorldFactory {
 
         // Broad overhead/near-field puffs. Two offset cards per cloud give a little
         // parallax and stop the layer from reading like a single painted ceiling.
-        for index in 0..<14 {
+        for index in 0..<7 {
             let angle = Float(index) * 2.3999632 + 0.37
             let radius = Float(4_800 + (index * 1_917) % 10_800)
             let x = cos(angle) * radius
@@ -84,8 +85,8 @@ enum Stage2WorldFactory {
 
         // Distant vertical banks break up the horizon and make the atmosphere read
         // in kilometres, not as a flat blue background.
-        for index in 0..<10 {
-            let angle = Float(index) / 10 * 2 * Float.pi + 0.21
+        for index in 0..<3 {
+            let angle = Float(index) / 3 * 2 * Float.pi + 0.21
             let radius = Float(15_000 + (index * 1_037) % 4_800)
             let x = cos(angle) * radius
             let z = 2_000 + sin(angle) * radius
@@ -218,12 +219,12 @@ enum Stage2WorldFactory {
         selector: Int
     ) -> PhysicallyBasedMaterial {
         let tints: [UIColor] = [
-            UIColor(red: 0.72, green: 0.78, blue: 0.58, alpha: 1),
-            UIColor(red: 0.82, green: 0.78, blue: 0.54, alpha: 1),
-            UIColor(red: 0.64, green: 0.73, blue: 0.51, alpha: 1),
-            UIColor(red: 0.82, green: 0.69, blue: 0.47, alpha: 1),
-            UIColor(red: 0.68, green: 0.68, blue: 0.47, alpha: 1),
-            UIColor(red: 0.76, green: 0.79, blue: 0.57, alpha: 1)
+            UIColor(red: 0.68, green: 0.74, blue: 0.62, alpha: 1),
+            UIColor(red: 0.73, green: 0.76, blue: 0.65, alpha: 1),
+            UIColor(red: 0.62, green: 0.70, blue: 0.58, alpha: 1),
+            UIColor(red: 0.70, green: 0.72, blue: 0.61, alpha: 1),
+            UIColor(red: 0.64, green: 0.69, blue: 0.57, alpha: 1),
+            UIColor(red: 0.71, green: 0.75, blue: 0.63, alpha: 1)
         ]
 
         var material = PhysicallyBasedMaterial()
@@ -244,6 +245,9 @@ enum Stage2WorldFactory {
             )
         } else {
             material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)
+        }
+        if let normal = textures.normal {
+            material.normal = PhysicallyBasedMaterial.Normal(texture: repeatedTexture(normal))
         }
         material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
         material.specular = PhysicallyBasedMaterial.Specular(floatLiteral: 0.32)
@@ -303,11 +307,13 @@ enum Stage2WorldFactory {
         let vertexCount = resolution * resolution
         var positions: [SIMD3<Float>] = []
         var normals: [SIMD3<Float>] = []
+        var tangents: [SIMD3<Float>] = []
         var texcoords: [SIMD2<Float>] = []
         var indices: [UInt32] = []
         var rockIndices: [UInt32] = []
         positions.reserveCapacity(vertexCount)
         normals.reserveCapacity(vertexCount)
+        tangents.reserveCapacity(vertexCount)
         texcoords.reserveCapacity(vertexCount)
         indices.reserveCapacity((resolution - 1) * (resolution - 1) * 6)
         rockIndices.reserveCapacity(indices.capacity / 5)
@@ -323,7 +329,11 @@ enum Stage2WorldFactory {
                 let globalZ = centerZ + localZ
                 let height = Stage2TerrainProfile.heightMeters(east: globalX, north: globalZ)
                 positions.append([localX, height, localZ])
-                normals.append(Stage2TerrainProfile.normal(east: globalX, north: globalZ))
+                let surfaceNormal = Stage2TerrainProfile.normal(east: globalX, north: globalZ)
+                normals.append(surfaceNormal)
+                let xAxis = SIMD3<Float>(1, 0, 0)
+                let projected = xAxis - surfaceNormal * simd_dot(xAxis, surfaceNormal)
+                tangents.append(simd_length_squared(projected) > 0.000001 ? simd_normalize(projected) : SIMD3<Float>(0, 0, 1))
 
                 // World-space UVs keep ground detail at a readable physical scale
                 // instead of stretching one texture across a 6 km tile. 24 m is
@@ -361,6 +371,7 @@ enum Stage2WorldFactory {
         var descriptor = MeshDescriptor(name: "Stage2 Terrain Ground")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.tangents = MeshBuffers.Tangents(tangents)
         descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
         descriptor.primitives = .triangles(indices)
         guard let groundMesh = try? MeshResource.generate(from: [descriptor]) else { return nil }

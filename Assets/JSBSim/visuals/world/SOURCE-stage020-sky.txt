@@ -1,0 +1,4 @@
+Farm Field (Pure Sky) by Poly Haven contributors.
+Source: https://polyhaven.com/a/farm_field_puresky
+License: CC0 1.0.
+Imported at 1K EXR for RealityKit skybox/default environment lighting.

@@ -196,12 +196,12 @@ enum Stage020CockpitDetails {
 
         for side: Float in [-1, 1] {
             let pane = ModelEntity(
-                mesh: .generatePlane(width: 0.68, height: 1.25),
+                mesh: .generatePlane(width: 0.68, depth: 1.25),
                 materials: [material]
             )
             pane.position = [side * 0.66, 0.95, 3.43]
             pane.orientation = simd_quatf(angle: side * 0.23, axis: [0, 1, 0])
-                * simd_quatf(angle: -0.08, axis: [1, 0, 0])
+                * simd_quatf(angle: .pi / 2 - 0.08, axis: [1, 0, 0])
             root.addChild(pane)
         }
     }
