@@ -17,7 +17,6 @@ enum Stage020AircraftDetails {
         addNavigationLights(to: root)
         addFormationLights(to: root)
         addNoseProbe(to: root)
-        addStaticSurfaceCues(to: root)
 
         return root
     }
@@ -81,39 +80,6 @@ enum Stage020AircraftDetails {
             material: metal
         )
         root.addChild(probe)
-    }
-
-    private static func addStaticSurfaceCues(to root: Entity) {
-        // Radome seam and restrained exhaust heat bands are geometry-level tonal
-        // cues, not fake random panel noise. They intentionally disappear with distance.
-        let seamMaterial = SimpleMaterial(
-            color: UIColor(red: 0.075, green: 0.080, blue: 0.080, alpha: 0.34),
-            roughness: 0.94,
-            isMetallic: false
-        )
-        let seam = ModelEntity(
-            mesh: .generateCylinder(height: 0.012, radius: 0.61),
-            materials: [seamMaterial]
-        )
-        seam.position = [0, 0.01, 5.15]
-        seam.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
-        seam.scale = [1.0, 1.0, 0.74]
-        root.addChild(seam)
-
-        let heat = SimpleMaterial(
-            color: UIColor(red: 0.16, green: 0.13, blue: 0.105, alpha: 0.22),
-            roughness: 0.55,
-            isMetallic: true
-        )
-        for index in 0..<3 {
-            let ring = ModelEntity(
-                mesh: .generateCylinder(height: 0.026, radius: 0.62 + Float(index) * 0.025),
-                materials: [heat]
-            )
-            ring.position = [0, 0, -6.48 - Float(index) * 0.18]
-            ring.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
-            root.addChild(ring)
-        }
     }
 
     private static func cylinder(
