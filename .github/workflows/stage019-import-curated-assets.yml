@@ -1,0 +1,113 @@
+name: Stage019ImportCuratedAssets
+
+on:
+  push:
+    branches:
+      - stage019-professional-visuals
+    paths:
+      - '.github/workflows/stage019-import-curated-assets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Import verified Poly Haven surface maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          world='Assets/JSBSim/visuals/world'
+          mkdir -p "$world/models/kenney_nature" "$world/models/kenney_industrial"
+          base='https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k'
+
+          curl --fail --location --silent --show-error \
+            "$base/leafy_grass/leafy_grass_nor_gl_1k.jpg" \
+            --output "$world/terrain_grass_nor.jpg"
+          curl --fail --location --silent --show-error \
+            "$base/asphalt_02/asphalt_02_nor_gl_1k.jpg" \
+            --output "$world/runway_asphalt_nor.jpg"
+          curl --fail --location --silent --show-error \
+            "$base/concrete_floor_01/concrete_floor_01_nor_gl_1k.jpg" \
+            --output "$world/apron_concrete_nor.jpg"
+
+          curl --fail --location --silent --show-error \
+            "$base/forrest_ground_01/forrest_ground_01_diff_1k.jpg" \
+            --output "$world/terrain_forest_diff.jpg"
+          curl --fail --location --silent --show-error \
+            "$base/forrest_ground_01/forrest_ground_01_rough_1k.jpg" \
+            --output "$world/terrain_forest_rough.jpg"
+          curl --fail --location --silent --show-error \
+            "$base/forrest_ground_01/forrest_ground_01_nor_gl_1k.jpg" \
+            --output "$world/terrain_forest_nor.jpg"
+
+          test -s "$world/terrain_grass_nor.jpg"
+          test -s "$world/runway_asphalt_nor.jpg"
+          test -s "$world/apron_concrete_nor.jpg"
+          test -s "$world/terrain_forest_diff.jpg"
+          test -s "$world/terrain_forest_rough.jpg"
+          test -s "$world/terrain_forest_nor.jpg"
+
+      - name: Import curated Kenney CC0 geometry only
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          world='Assets/JSBSim/visuals/world'
+
+          curl --fail --location --silent --show-error \
+            'https://opengameart.org/sites/default/files/Nature%20Kit%20%282.1%29.zip' \
+            --output "$tmp/nature.zip"
+          curl --fail --location --silent --show-error \
+            'https://opengameart.org/sites/default/files/kenney_city-kit-industrial_2.0.zip' \
+            --output "$tmp/industrial.zip"
+          unzip -q "$tmp/nature.zip" -d "$tmp/nature"
+          unzip -q "$tmp/industrial.zip" -d "$tmp/industrial"
+
+          nature="$tmp/nature/Models/OBJ format"
+          industrial="$tmp/industrial/Models/OBJ format"
+
+          for name in tree_default tree_oak tree_pineDefaultA tree_pineTallA rock_largeA; do
+            cp "$nature/$name.obj" "$world/models/kenney_nature/$name.obj"
+          done
+
+          for name in building-h building-i building-k building-s detail-tank water-tower shipping-container-a; do
+            cp "$industrial/$name.obj" "$world/models/kenney_industrial/$name.obj"
+          done
+
+          cat > "$world/models/LICENSE-KENNEY-CC0.txt" <<'EOF'
+          Full Authority uses a deliberately small geometry subset from two Kenney asset packs:
+
+          Kenney Nature Kit
+          https://kenney.nl/assets/nature-kit
+          Mirror/download source used for the development import:
+          https://opengameart.org/content/nature-kit
+
+          Kenney City Kit (Industrial)
+          https://kenney.nl/assets/city-kit-industrial
+          Mirror/download source used for the development import:
+          https://opengameart.org/content/city-kit-industrial
+
+          Both packs are released under Creative Commons CC0 1.0 / public domain dedication.
+          https://creativecommons.org/publicdomain/zero/1.0/
+
+          Full Authority imports geometry only from the selected OBJ files and supplies its own restrained RealityKit materials. Original Kenney color textures are intentionally not shipped.
+          EOF
+
+      - name: Commit curated assets and remove temporary audit workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/stage019-import-curated-assets.yml
+          rm -f .github/workflows/stage019-asset-audit.yml
+          git config user.name 'Full Authority Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Stage 019: add curated CC0 environment assets'
+          git push origin HEAD:stage019-professional-visuals
