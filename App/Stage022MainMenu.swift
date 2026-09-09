@@ -752,8 +752,10 @@ private final class Stage022MenuAudio {
             let thump = dt > 0
                 ? (0.55 * sin(2 * .pi * 43 * dt) + 0.24 * sin(2 * .pi * 71 * dt + 0.4)) * exp(-4.6 * dt)
                 : 0
-            let stereo = channel == 0 ? 0.98 : 1.0
-            return min(max(stereo * (0.93 * shock + 0.42 * thump), -0.98), 0.98)
+            let stereo: Float = channel == 0 ? 0.98 : 1.0
+            let pressureMix: Float = 0.93 * shock + 0.42 * thump
+            let output: Float = stereo * pressureMix
+            return Swift.min(Swift.max(output, -0.98), 0.98)
         }
     }
 
