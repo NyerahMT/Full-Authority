@@ -1,0 +1,95 @@
+name: Stage019AssetAudit
+
+on:
+  push:
+    branches:
+      - stage019-professional-visuals
+    paths:
+      - '.github/workflows/stage019-asset-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify Poly Haven CC0 material maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fa-audit/polyhaven
+          base='https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k'
+          urls=(
+            "$base/leafy_grass/leafy_grass_nor_gl_1k.jpg"
+            "$base/asphalt_02/asphalt_02_nor_gl_1k.jpg"
+            "$base/concrete_floor_01/concrete_floor_01_nor_gl_1k.jpg"
+            "$base/forrest_ground_01/forrest_ground_01_diff_1k.jpg"
+            "$base/forrest_ground_01/forrest_ground_01_rough_1k.jpg"
+            "$base/forrest_ground_01/forrest_ground_01_nor_gl_1k.jpg"
+          )
+          for url in "${urls[@]}"; do
+            file="/tmp/fa-audit/polyhaven/$(basename "$url")"
+            curl --fail --location --silent --show-error "$url" --output "$file"
+            test -s "$file"
+            printf '%-42s %10s bytes\n' "$(basename "$file")" "$(stat -c%s "$file")"
+          done
+
+      - name: Download Kenney CC0 candidate packs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fa-audit/kenney
+          curl --fail --location --silent --show-error \
+            'https://opengameart.org/sites/default/files/Nature%20Kit%20%282.1%29.zip' \
+            --output /tmp/fa-audit/kenney/nature.zip
+          curl --fail --location --silent --show-error \
+            'https://opengameart.org/sites/default/files/kenney_city-kit-industrial_2.0.zip' \
+            --output /tmp/fa-audit/kenney/industrial.zip
+          unzip -q /tmp/fa-audit/kenney/nature.zip -d /tmp/fa-audit/kenney/nature
+          unzip -q /tmp/fa-audit/kenney/industrial.zip -d /tmp/fa-audit/kenney/industrial
+
+      - name: Audit useful model names and source sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '--- Nature candidates ---'
+          find /tmp/fa-audit/kenney/nature -type f \( \
+            -iname 'tree_default.obj' -o \
+            -iname 'tree_oak.obj' -o \
+            -iname 'tree_pineDefaultA.obj' -o \
+            -iname 'tree_pineTallA.obj' -o \
+            -iname 'plant_bush.obj' -o \
+            -iname 'rock_largeA.obj' \
+          \) -printf '%p | %s bytes\n' | sort
+
+          echo '--- Industrial OBJ inventory ---'
+          find /tmp/fa-audit/kenney/industrial -type f -iname '*.obj' \
+            -printf '%f | %s bytes | %p\n' | sort | head -120
+
+          echo '--- Material / texture inventory ---'
+          find /tmp/fa-audit/kenney -type f \( -iname '*.mtl' -o -iname '*.png' -o -iname '*.jpg' \) \
+            -printf '%f | %s bytes | %p\n' | sort | head -160
+
+      - name: Preserve audit manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '# Stage 019 CC0 asset audit'
+            echo
+            echo '## Nature OBJ files'
+            find /tmp/fa-audit/kenney/nature -type f -iname '*.obj' -printf '%f\n' | sort
+            echo
+            echo '## Industrial OBJ files'
+            find /tmp/fa-audit/kenney/industrial -type f -iname '*.obj' -printf '%f\n' | sort
+          } > /tmp/fa-audit/manifest.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage019-asset-audit
+          path: /tmp/fa-audit/manifest.txt
+          retention-days: 7
