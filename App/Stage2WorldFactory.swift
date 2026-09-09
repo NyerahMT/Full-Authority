@@ -28,6 +28,7 @@ enum Stage2WorldFactory {
         addRoads(to: root)
         addStage019Environment(to: root)
         root.addChild(Stage020WorldUpgrade.make())
+        root.addChild(Stage023TerrainSystem.make())
 
         return root
     }
@@ -157,8 +158,8 @@ enum Stage2WorldFactory {
                     centerZ: centerZ,
                     size: tileSize,
                     resolution: resolution,
-                    mirrorU: tileX.isMultiple(of: 2),
-                    mirrorV: tileZ.isMultiple(of: 2)
+                    mirrorU: false,
+                    mirrorV: false
                 ) else { continue }
 
                 let selector = abs(tileX * 19 + tileZ * 11)
@@ -168,15 +169,6 @@ enum Stage2WorldFactory {
                 )
                 ground.position = [centerX, 0, centerZ]
                 root.addChild(ground)
-
-                if let rockMesh = meshes.rock {
-                    let rock = ModelEntity(
-                        mesh: rockMesh,
-                        materials: [rockMaterial(selector: selector)]
-                    )
-                    rock.position = [centerX, 0.045, centerZ]
-                    root.addChild(rock)
-                }
             }
         }
     }
@@ -219,12 +211,12 @@ enum Stage2WorldFactory {
         selector: Int
     ) -> PhysicallyBasedMaterial {
         let tints: [UIColor] = [
-            UIColor(red: 0.68, green: 0.74, blue: 0.62, alpha: 1),
-            UIColor(red: 0.73, green: 0.76, blue: 0.65, alpha: 1),
-            UIColor(red: 0.62, green: 0.70, blue: 0.58, alpha: 1),
-            UIColor(red: 0.70, green: 0.72, blue: 0.61, alpha: 1),
-            UIColor(red: 0.64, green: 0.69, blue: 0.57, alpha: 1),
-            UIColor(red: 0.71, green: 0.75, blue: 0.63, alpha: 1)
+            UIColor(red: 0.46, green: 0.54, blue: 0.34, alpha: 1),
+            UIColor(red: 0.50, green: 0.56, blue: 0.37, alpha: 1),
+            UIColor(red: 0.42, green: 0.50, blue: 0.31, alpha: 1),
+            UIColor(red: 0.48, green: 0.52, blue: 0.34, alpha: 1),
+            UIColor(red: 0.43, green: 0.49, blue: 0.30, alpha: 1),
+            UIColor(red: 0.49, green: 0.55, blue: 0.35, alpha: 1)
         ]
 
         var material = PhysicallyBasedMaterial()
@@ -240,17 +232,18 @@ enum Stage2WorldFactory {
         }
         if let rough = textures.roughness {
             material.roughness = PhysicallyBasedMaterial.Roughness(
-                scale: 0.94,
+                scale: 1.0,
                 texture: repeatedTexture(rough)
             )
         } else {
-            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)
+            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 1.0)
         }
-        if let normal = textures.normal {
-            material.normal = PhysicallyBasedMaterial.Normal(texture: repeatedTexture(normal))
-        }
+        // Fine normal detail belongs close to the eye. On the 48 km base mesh it
+        // aliases into the glossy/shimmering look seen from altitude, so Stage 023
+        // leaves the far terrain on geometric normals and lets landclass provide
+        // macro variation.
         material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
-        material.specular = PhysicallyBasedMaterial.Specular(floatLiteral: 0.32)
+        material.specular = PhysicallyBasedMaterial.Specular(floatLiteral: 0.08)
         return material
     }
 
@@ -335,10 +328,10 @@ enum Stage2WorldFactory {
                 let projected = xAxis - surfaceNormal * simd_dot(xAxis, surfaceNormal)
                 tangents.append(simd_length_squared(projected) > 0.000001 ? simd_normalize(projected) : SIMD3<Float>(0, 0, 1))
 
-                // World-space UVs keep ground detail at a readable physical scale
-                // instead of stretching one texture across a 6 km tile. 24 m is
-                // deliberately stylized: visible from low altitude without noisy moire.
-                let textureScaleMeters: Float = 24
+                // A calmer base frequency survives mip filtering from altitude.
+                // Macro landclass variation now carries the large-scale read; this
+                // texture only provides medium-scale surface identity.
+                let textureScaleMeters: Float = 42
                 var u = globalX / textureScaleMeters
                 var v = globalZ / textureScaleMeters
                 if mirrorU { u = -u }
@@ -376,20 +369,7 @@ enum Stage2WorldFactory {
         descriptor.primitives = .triangles(indices)
         guard let groundMesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
 
-        var rockMesh: MeshResource?
-        if !rockIndices.isEmpty {
-            var rockPositions = positions
-            for index in rockPositions.indices {
-                rockPositions[index].y += 0.035
-            }
-            var rockDescriptor = MeshDescriptor(name: "Stage2 Terrain Rock")
-            rockDescriptor.positions = MeshBuffers.Positions(rockPositions)
-            rockDescriptor.normals = MeshBuffers.Normals(normals)
-            rockDescriptor.primitives = .triangles(rockIndices)
-            rockMesh = try? MeshResource.generate(from: [rockDescriptor])
-        }
-
-        return TerrainMeshes(ground: groundMesh, rock: rockMesh)
+        return TerrainMeshes(ground: groundMesh, rock: nil)
     }
 
 

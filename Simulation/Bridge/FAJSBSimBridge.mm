@@ -43,31 +43,6 @@ double SmoothStep(double value) {
 // This function is intentionally mirrored in Stage2TerrainProfile on the Swift
 // side. JSBSim owns contact with the mathematical surface; RealityKit renders
 // the same surface so the airplane can no longer fly through decorative hills.
-double TerrainHeightMeters(double eastMeters, double northMeters) {
-    double base =
-        55.0 * std::sin(northMeters / 2800.0) * std::cos(eastMeters / 3600.0) +
-        38.0 * std::sin((eastMeters + northMeters) / 1900.0) +
-        28.0 * std::cos((eastMeters - 0.45 * northMeters) / 2400.0);
-
-    const double ridge1East = (eastMeters + 6500.0) / 2500.0;
-    const double ridge1North = (northMeters - 9000.0) / 3500.0;
-    base += 145.0 * std::exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North));
-
-    const double ridge2East = (eastMeters - 7200.0) / 2800.0;
-    const double ridge2North = (northMeters - 6500.0) / 3000.0;
-    base += 105.0 * std::exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North));
-
-    // Keep the entire airfield/runway basin genuinely flat, then blend into
-    // rolling terrain. That gives the gear model a sane runway while still
-    // allowing real terrain contact once the player leaves the field.
-    const double dx = std::max(std::abs(eastMeters) - 1000.0, 0.0);
-    const double dz = std::max(std::abs(northMeters - 2000.0) - 3600.0, 0.0);
-    const double distanceOutsideAirfield = std::hypot(dx, dz);
-    const double terrainBlend = SmoothStep(distanceOutsideAirfield / 1800.0);
-
-    return base * terrainBlend;
-}
-
 class FATerrainGroundCallback final : public JSBSim::FGGroundCallback {
 public:
     FATerrainGroundCallback(double semiMajor, double semiMinor)
@@ -89,15 +64,15 @@ public:
         const double longitude = local.GetLongitude();
         const double eastMeters = longitude * kEarthRadiusMeters;
         const double northMeters = latitude * kEarthRadiusMeters;
-        const double heightMeters = TerrainHeightMeters(eastMeters, northMeters);
+        const double heightMeters = FATerrainHeightMeters(eastMeters, northMeters);
 
         const double dhde = (
-            TerrainHeightMeters(eastMeters + kTerrainSampleMeters, northMeters) -
-            TerrainHeightMeters(eastMeters - kTerrainSampleMeters, northMeters)
+            FATerrainHeightMeters(eastMeters + kTerrainSampleMeters, northMeters) -
+            FATerrainHeightMeters(eastMeters - kTerrainSampleMeters, northMeters)
         ) / (2.0 * kTerrainSampleMeters);
         const double dhdn = (
-            TerrainHeightMeters(eastMeters, northMeters + kTerrainSampleMeters) -
-            TerrainHeightMeters(eastMeters, northMeters - kTerrainSampleMeters)
+            FATerrainHeightMeters(eastMeters, northMeters + kTerrainSampleMeters) -
+            FATerrainHeightMeters(eastMeters, northMeters - kTerrainSampleMeters)
         ) / (2.0 * kTerrainSampleMeters);
 
         const double cosLat = std::cos(latitude);
@@ -138,6 +113,41 @@ private:
     double a;
     double b;
 };
+}
+
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
+    // Stage 023 single source of truth. RealityKit calls this exact function
+    // through the Swift bridging header, and JSBSim's ground callback calls it
+    // directly. There is no second approximated terrain formula anymore.
+    double base =
+        78.0 * std::sin(northMeters / 2750.0) * std::cos(eastMeters / 3500.0) +
+        52.0 * std::sin((eastMeters + northMeters) / 1820.0) +
+        36.0 * std::cos((eastMeters - 0.45 * northMeters) / 2250.0) +
+        19.0 * std::sin((1.25 * eastMeters + 0.72 * northMeters) / 820.0) +
+        12.0 * std::cos((0.65 * eastMeters - 1.10 * northMeters) / 510.0) +
+        6.5 * std::sin((1.80 * eastMeters + 1.35 * northMeters) / 285.0);
+
+    const double ridge1East = (eastMeters + 6500.0) / 2350.0;
+    const double ridge1North = (northMeters - 9000.0) / 3300.0;
+    base += 245.0 * std::exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North));
+
+    const double ridge2East = (eastMeters - 7200.0) / 2500.0;
+    const double ridge2North = (northMeters - 6500.0) / 2750.0;
+    base += 185.0 * std::exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North));
+
+    const double ridge3East = (eastMeters + 10500.0) / 3200.0;
+    const double ridge3North = (northMeters + 2500.0) / 2600.0;
+    base += 210.0 * std::exp(-0.5 * (ridge3East * ridge3East + ridge3North * ridge3North));
+
+    const double valleyEast = (eastMeters - 4200.0) / 2300.0;
+    const double valleyNorth = (northMeters - 9800.0) / 5000.0;
+    base -= 92.0 * std::exp(-0.5 * (valleyEast * valleyEast + valleyNorth * valleyNorth));
+
+    const double dx = std::max(std::abs(eastMeters) - 1000.0, 0.0);
+    const double dz = std::max(std::abs(northMeters - 2000.0) - 3600.0, 0.0);
+    const double distanceOutsideAirfield = std::hypot(dx, dz);
+    const double terrainBlend = SmoothStep(distanceOutsideAirfield / 1250.0);
+    return base * terrainBlend;
 }
 
 @interface FAJSBSimBridge ()

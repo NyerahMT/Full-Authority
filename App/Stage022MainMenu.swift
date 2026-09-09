@@ -134,6 +134,10 @@ struct Stage022MainMenuView: View {
                         cameraLookYaw: lookYawRadians,
                         cameraLookPitch: lookPitchRadians
                     )
+
+                    if let world = content.entities.first(where: { $0.name == "FA.world.stage2" }) {
+                        Stage023TerrainSystem.update(worldRoot: world, elapsed: elapsed)
+                    }
                 }
                 .onChange(of: timeline.date) { _, newDate in
                     runtime.advance(to: newDate)

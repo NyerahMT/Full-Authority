@@ -26,6 +26,7 @@
 		FA0210000000000000000001 /* Stage021Atmosphere.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0210000000000000000011 /* Stage021Atmosphere.swift */; };
 		FA0220000000000000000001 /* Stage022RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0220000000000000000011 /* Stage022RootView.swift */; };
 		FA0220000000000000000002 /* Stage022MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0220000000000000000012 /* Stage022MainMenu.swift */; };
+		FA0230000000000000000001 /* Stage023TerrainSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0230000000000000000011 /* Stage023TerrainSystem.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 		FA0210000000000000000011 /* Stage021Atmosphere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage021Atmosphere.swift; sourceTree = "<group>"; };
 		FA0220000000000000000011 /* Stage022RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage022RootView.swift; sourceTree = "<group>"; };
 		FA0220000000000000000012 /* Stage022MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage022MainMenu.swift; sourceTree = "<group>"; };
+		FA0230000000000000000011 /* Stage023TerrainSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage023TerrainSystem.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +90,7 @@
 				FA0210000000000000000011 /* Stage021Atmosphere.swift */,
 				FA0220000000000000000011 /* Stage022RootView.swift */,
 				FA0220000000000000000012 /* Stage022MainMenu.swift */,
+				FA0230000000000000000011 /* Stage023TerrainSystem.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -211,6 +214,7 @@
 				FA0210000000000000000001 /* Stage021Atmosphere.swift in Sources */,
 				FA0220000000000000000001 /* Stage022RootView.swift in Sources */,
 				FA0220000000000000000002 /* Stage022MainMenu.swift in Sources */,
+				FA0230000000000000000001 /* Stage023TerrainSystem.swift in Sources */,
 				FA0200000000000000000003 /* Stage020AircraftDetails.swift in Sources */,
 				FA0200000000000000000004 /* Stage020CockpitDetails.swift in Sources */,
 				FA0000000000000000000004 /* PrototypeAircraftFactory.swift in Sources */,

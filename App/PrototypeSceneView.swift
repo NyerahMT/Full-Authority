@@ -114,6 +114,10 @@ struct PrototypeSceneView: View {
                         Stage021Atmosphere.update(atmosphere, aircraftPosition: simulation.state.positionMeters)
                     }
 
+                    if let world = content.entities.first(where: { $0.name == "FA.world.stage2" }) {
+                        Stage023TerrainSystem.update(worldRoot: world, elapsed: simulation.simulationTime)
+                    }
+
                     let cockpitMode = cameraMode == .cockpit
                     aircraft.findEntity(named: PrototypeAircraftFactory.visualRootName)?.isEnabled = !cockpitMode
                     aircraft.findEntity(named: PrototypeAircraftFactory.cockpitRootName)?.isEnabled = cockpitMode
