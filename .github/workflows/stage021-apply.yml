@@ -1,0 +1,98 @@
+name: Stage021Apply
+
+on:
+  push:
+    branches:
+      - stage021-vfx-audio-atmosphere
+    paths:
+      - '.github/workflows/stage021-apply.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage021-vfx-audio-atmosphere
+          fetch-depth: 0
+
+      - name: Generate Stage 021 haze transfer texture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p Assets/JSBSim/visuals/world
+          python3 - <<'PY'
+          from pathlib import Path
+          import math
+          import struct
+          import zlib
+
+          out = Path('Assets/JSBSim/visuals/world/stage021_haze.png')
+          w, h = 1024, 512
+          rows = []
+          for y in range(h):
+              v = y / (h - 1)
+              latitude = (0.5 - v) * math.pi
+              horizon = math.exp(-((latitude / 0.115) ** 2))
+              lower = 0.55 + 0.45 * max(0.0, -math.sin(latitude))
+              alpha = int(max(0, min(255, 255 * horizon * lower)))
+              warm = max(0.0, 1.0 - abs(latitude) / 0.22)
+              r = int(190 + 16 * warm)
+              g = int(207 + 12 * warm)
+              b = int(221 + 7 * warm)
+              row = bytearray([0])
+              for _ in range(w):
+                  row.extend((r, g, b, alpha))
+              rows.append(bytes(row))
+          raw = b''.join(rows)
+
+          def chunk(kind, payload):
+              return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', zlib.crc32(kind + payload) & 0xffffffff)
+
+          png = b'\x89PNG\r\n\x1a\n'
+          png += chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0))
+          png += chunk(b'IDAT', zlib.compress(raw, 9))
+          png += chunk(b'IEND', b'')
+          out.write_bytes(png)
+          PY
+          test -s Assets/JSBSim/visuals/world/stage021_haze.png
+
+      - name: Apply Stage 021 source changes
+        run: python3 scripts/stage021_patch.py
+
+      - name: Verify intended guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'Stage021Atmosphere.make()' App/PrototypeSceneView.swift
+          grep -q 'PED %+03.0f  RUD %+03.0f' App/ContentView.swift
+          grep -q 'fcs/rudder-cmd-norm gt 0.035' scripts/stage-f16-calibration.sh
+          grep -q 'let meander = min(4.5' App/Stage2FlightEffects.swift
+          grep -q 'aoaBuffet' App/PrototypeSceneView.swift
+          # Do not permit Stage 018 camera architecture to sneak back in.
+          ! grep -q 'cameraLag\|horizonLock\|speedLines' App/PrototypeSceneView.swift
+
+      - name: Commit Stage 021 implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Full Authority Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add FullAuthority.xcodeproj/project.pbxproj \
+                  App/PrototypeSceneView.swift \
+                  App/Stage021Atmosphere.swift \
+                  App/Stage2FlightEffects.swift \
+                  Aircraft/PrototypeAircraftFactory.swift \
+                  App/ContentView.swift \
+                  scripts/stage-f16-calibration.sh \
+                  Assets/JSBSim/visuals/world/stage021_haze.png
+          if git diff --cached --quiet; then
+            echo 'Nothing to commit'
+          else
+            git commit -m 'Stage 021: atmosphere, VFX, audio and pedal-aware yaw control'
+            git push origin HEAD:stage021-vfx-audio-atmosphere
+          fi
