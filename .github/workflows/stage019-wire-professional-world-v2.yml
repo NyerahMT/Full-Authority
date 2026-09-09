@@ -1,0 +1,120 @@
+name: Stage019WireProfessionalWorldV2
+
+on:
+  push:
+    branches:
+      - stage019-professional-visuals
+    paths:
+      - '.github/workflows/stage019-wire-professional-world-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage019-professional-visuals
+          fetch-depth: 0
+
+      - name: Patch Stage 017 world with audited Stage 019 layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          world_path = Path('App/Stage2WorldFactory.swift')
+          workflow_path = Path('.github/workflows/stage019-wire-professional-world.yml')
+          source = world_path.read_text()
+          workflow = workflow_path.read_text()
+
+          # Reuse the already-reviewed Swift insertion from the first patcher, but
+          # strip the YAML block indentation from its continuation lines.
+          begin_marker = "          insertion = r'''"
+          end_marker = "\n          '''\n          source = source.replace(marker, insertion + marker, 1)"
+          begin = workflow.index(begin_marker) + len(begin_marker)
+          end = workflow.index(end_marker, begin)
+          raw = workflow[begin:end]
+          lines = raw.splitlines()
+          swift_lines = []
+          for i, line in enumerate(lines):
+              if i == 0:
+                  swift_lines.append(line)
+              elif line.startswith('          '):
+                  swift_lines.append(line[10:])
+              else:
+                  swift_lines.append(line)
+          insertion = '\n'.join(swift_lines)
+          if not insertion.endswith('\n'):
+              insertion += '\n'
+
+          def replace_once(old, new, label):
+              global source
+              if old not in source:
+                  raise SystemExit(f'{label} anchor missing')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "    private struct WorldTextureSet {\n        let baseColor: TextureResource?\n        let roughness: TextureResource?\n    }",
+              "    private struct WorldTextureSet {\n        let baseColor: TextureResource?\n        let roughness: TextureResource?\n        let normal: TextureResource?\n    }",
+              'WorldTextureSet'
+          )
+
+          replace_once(
+              "        addTerrain(to: root)\n        addCloudscape(to: root)\n        addGroundScaleCues(to: root)\n        addAirbase(to: root)\n        addRoads(to: root)\n        addTown(to: root)\n        addVegetation(to: root)",
+              "        addTerrain(to: root)\n        addCloudscape(to: root)\n        addAirbase(to: root)\n        addRoads(to: root)\n        addStage019Environment(to: root)",
+              'make environment'
+          )
+
+          replace_once(
+              '        WorldTextureSet(\n            baseColor: loadWorldTexture("\\(stem)_diff"),\n            roughness: loadWorldTexture("\\(stem)_rough")\n        )',
+              '        WorldTextureSet(\n            baseColor: loadWorldTexture("\\(stem)_diff"),\n            roughness: loadWorldTexture("\\(stem)_rough"),\n            normal: loadWorldTexture("\\(stem)_nor")\n        )',
+              'worldTextureSet'
+          )
+
+          replace_once(
+              "        material.metallic = .init(floatLiteral: 0.0)\n        material.specular = .init(floatLiteral: 0.38)\n        return material",
+              "        if let normal = textures.normal {\n            material.normal = PhysicallyBasedMaterial.Normal(\n                texture: repeatedTexture(normal)\n            )\n        }\n        material.metallic = .init(floatLiteral: 0.0)\n        material.specular = .init(floatLiteral: 0.30)\n        return material",
+              'PBR surface material'
+          )
+
+          replace_once(
+              "        let normals = Array(repeating: SIMD3<Float>(0, 1, 0), count: 4)\n        let u = size.x / max(tileMeters, 0.5)",
+              "        let normals = Array(repeating: SIMD3<Float>(0, 1, 0), count: 4)\n        let tangents = Array(repeating: SIMD3<Float>(1, 0, 0), count: 4)\n        let u = size.x / max(tileMeters, 0.5)",
+              'surface tangent declaration'
+          )
+
+          descriptor_anchor = 'var descriptor = MeshDescriptor(name: "Stage 016 PBR surface")'
+          descriptor_index = source.index(descriptor_anchor)
+          before, after = source[:descriptor_index], source[descriptor_index:]
+          old = "        descriptor.positions = MeshBuffers.Positions(positions)\n        descriptor.normals = MeshBuffers.Normals(normals)\n        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)"
+          new = "        descriptor.positions = MeshBuffers.Positions(positions)\n        descriptor.normals = MeshBuffers.Normals(normals)\n        descriptor.tangents = MeshBuffers.Tangents(tangents)\n        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)"
+          if old not in after:
+              raise SystemExit('surface descriptor tangent anchor missing')
+          after = after.replace(old, new, 1)
+          source = before + after
+
+          marker = '    // MARK: - Helpers\n'
+          if marker not in source:
+              raise SystemExit('helper marker missing')
+          if 'private static func addStage019Environment' in source:
+              raise SystemExit('Stage 019 already inserted')
+          source = source.replace(marker, insertion + marker, 1)
+          world_path.write_text(source)
+          PY
+
+      - name: Commit Stage 019 renderer implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/stage019-wire-professional-world.yml
+          rm -f .github/workflows/stage019-wire-professional-world-v2.yml
+          git config user.name 'Full Authority Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add App/Stage2WorldFactory.swift .github/workflows/stage019-wire-professional-world.yml .github/workflows/stage019-wire-professional-world-v2.yml
+          git commit -m 'Stage 019: wire professional environment pass'
+          git push origin HEAD:stage019-professional-visuals
