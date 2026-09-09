@@ -1,0 +1,42 @@
+name: Stage022 Menu Feedback
+
+on:
+  push:
+    branches:
+      - stage022-main-menu-attract-mode
+    paths:
+      - '.github/workflows/stage022-menu-feedback.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage022-main-menu-attract-mode
+
+      - name: Apply menu feedback fixes
+        run: python3 scripts/stage022_menu_feedback_patch.py
+
+      - name: Verify intent
+        run: |
+          set -euo pipefail
+          grep -q 'DRAG RIGHT SIDE TO LOOK' App/Stage022MainMenu.swift
+          grep -q 'private static func updateCamera' App/Stage022MainMenu.swift
+          grep -q 'let startZ: Float = -420' App/Stage022MainMenu.swift
+          grep -q 'makeBuffer(seconds: 18.5' App/Stage022MainMenu.swift
+          grep -q 'pauseButton("END FLIGHT"' App/ContentView.swift
+          grep -q 'ContentView(onEndFlight: endFlight)' App/Stage022RootView.swift
+          git diff --check
+
+      - name: Commit menu fixes
+        run: |
+          set -euo pipefail
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add App/Stage022MainMenu.swift App/ContentView.swift App/Stage022RootView.swift
+          git commit -m 'Stage 022: add menu freelook, fix departure, and end flight'
+          git push origin HEAD:stage022-main-menu-attract-mode
