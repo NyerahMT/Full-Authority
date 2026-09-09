@@ -1,0 +1,96 @@
+name: Stage021PhoneHotfix
+
+on:
+  push:
+    branches:
+      - stage021-vfx-audio-atmosphere
+    paths:
+      - '.github/workflows/stage021-phone-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage021-vfx-audio-atmosphere
+
+      - name: Apply on-device feedback fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          sim = Path('Simulation/FlightSimulation.swift')
+          text = sim.read_text(encoding='utf-8')
+          old = '''        // Full Authority's touch control is screen-centric: dragging right means
+          // right pedal / nose-right. Stage 020 feeds this pilot command into the
+          // F-16 scheduler once; stability feedback remains a separate SAS signal.
+          let pilotYawCommand = -Double(controls.rudder)
+          let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
+'''
+          new = '''        // Airborne rudder and nosewheel steering use opposite sign conventions
+          // in the current JSBSim F-16 model. Preserve the already-correct ground
+          // steering direction while making touch-right command aerodynamic nose-right.
+          let pilotRudderCommand = Double(controls.rudder)
+          let rudder = clamp(trimRudderCommand + pilotRudderCommand, min: -1, max: 1)
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one airborne rudder command block, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          old_steer = '''        let steering = state.weightOnWheels && state.gearPosition > 0.8
+            ? clamp(pilotYawCommand, min: -1, max: 1)
+            : 0
+'''
+          new_steer = '''        let steeringCommand = -Double(controls.rudder)
+          let steering = state.weightOnWheels && state.gearPosition > 0.8
+            ? clamp(steeringCommand, min: -1, max: 1)
+            : 0
+'''
+          if text.count(old_steer) != 1:
+              raise SystemExit(f'expected one steering block, found {text.count(old_steer)}')
+          text = text.replace(old_steer, new_steer, 1)
+          sim.write_text(text, encoding='utf-8')
+
+          aircraft = Path('Aircraft/PrototypeAircraftFactory.swift')
+          text = aircraft.read_text(encoding='utf-8')
+          old_blue = '''            materials: [UnlitMaterial(color: UIColor(
+                red: 0.34,
+                green: 0.47,
+                blue: 1.00,
+                alpha: 0.075
+            ))]
+'''
+          new_warm = '''            materials: [UnlitMaterial(color: UIColor(
+                red: 1.00,
+                green: 0.18,
+                blue: 0.015,
+                alpha: 0.055
+            ))]
+'''
+          if text.count(old_blue) != 1:
+              raise SystemExit(f'expected one blue afterburner halo, found {text.count(old_blue)}')
+          text = text.replace(old_blue, new_warm, 1)
+          aircraft.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify hotfix intent
+        run: |
+          set -euo pipefail
+          grep -q 'let pilotRudderCommand = Double(controls.rudder)' Simulation/FlightSimulation.swift
+          grep -q 'let steeringCommand = -Double(controls.rudder)' Simulation/FlightSimulation.swift
+          ! grep -q 'red: 0.34' Aircraft/PrototypeAircraftFactory.swift
+          ! grep -q 'blue: 1.00' Aircraft/PrototypeAircraftFactory.swift
+
+      - name: Commit hotfix
+        run: |
+          set -euo pipefail
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add Simulation/FlightSimulation.swift Aircraft/PrototypeAircraftFactory.swift
+          git diff --cached --check
+          git commit -m 'Stage 021: correct airborne rudder sign and remove blue burner halo'
+          git push origin HEAD:stage021-vfx-audio-atmosphere
