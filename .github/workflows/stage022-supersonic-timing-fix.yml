@@ -1,0 +1,26 @@
+name: Stage022 Supersonic Timing Fix
+on:
+  push:
+    branches: [stage022-main-menu-attract-mode]
+    paths: ['.github/workflows/stage022-supersonic-timing-fix.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage022-main-menu-attract-mode
+      - run: python3 scripts/stage022_supersonic_timing_fix.py
+      - run: |
+          set -euo pipefail
+          grep -q 'let z = -1_275 + 365 \* t' App/Stage022MainMenu.swift
+          grep -q 'elapsed >= 117.55' App/Stage022MainMenu.swift
+          git diff --check
+      - run: |
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add App/Stage022MainMenu.swift
+          git commit -m 'Stage 022: make special pass low supersonic and retime boom'
+          git push origin HEAD:stage022-main-menu-attract-mode
