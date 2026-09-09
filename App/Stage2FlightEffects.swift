@@ -639,6 +639,39 @@ enum Stage2FlightEffects {
         }
     }
 
+    static func setAttractModeTransonicVapor(
+        root: Entity,
+        visible: Bool,
+        intensity: Float
+    ) {
+        let i = clamp(intensity, 0, 1)
+
+        if let halo = root.findEntity(named: transonicHaloName) {
+            halo.isEnabled = visible
+            if visible {
+                halo.scale = [1.08 + 0.12 * i, 1.08 + 0.12 * i, 1.0]
+                setVaporOpacity(entity: halo, opacity: 0.040 + 0.055 * i)
+            }
+        }
+
+        if let shell = root.findEntity(named: transonicShellName) {
+            shell.isEnabled = visible
+            if visible {
+                shell.scale = [1.00 + 0.08 * i, 1.00 + 0.08 * i, 1.0]
+                setVaporOpacity(entity: shell, opacity: 0.085 + 0.095 * i)
+            }
+        }
+
+        // Keep the menu pass visually transonic, not high-AoA.
+        for name in [
+            lerxLeftName, lerxRightName,
+            leadingLeftName, leadingRightName,
+            tipLeftName, tipRightName
+        ] {
+            root.findEntity(named: name)?.isEnabled = false
+        }
+    }
+
     private static func makeTransonicVaporEntity(
         name: String,
         opacity: Float,

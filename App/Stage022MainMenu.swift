@@ -36,9 +36,9 @@ private final class Stage022MenuRuntime: ObservableObject {
         // The flyby crosses the runway-side camera at ~120 seconds. Start the
         // pressure/whoosh transient just before closest approach so the event is
         // heard as something arriving, not as a UI sound effect.
-        if !lowPassAudioPlayed && elapsed >= 118.4 {
+        if !lowPassAudioPlayed && elapsed >= 117.35 {
             lowPassAudioPlayed = true
-            audio.playLowPass()
+            audio.playSupersonicPass()
         }
     }
 }
@@ -420,8 +420,10 @@ private enum Stage022MenuScene {
 
     // Start beside the runway looking toward the departure end so the
     // takeoff roll is visible before the jet reaches the camera station.
-    static let cameraPosition = SIMD3<Float>(188, 6.6, 720)
-    static let cameraTarget = SIMD3<Float>(0, 7.0, 80)
+    // Move the spectator closer to the departure start so the idle/spool
+    // phase and first few hundred metres of the ground roll are visually legible.
+    static let cameraPosition = SIMD3<Float>(145, 5.8, -190)
+    static let cameraTarget = SIMD3<Float>(0, 4.3, -420)
 
     static func makeMenuJet(name: String) -> Entity {
         let jet = PrototypeAircraftFactory.make()
@@ -516,11 +518,11 @@ private enum Stage022MenuScene {
     private static func updateFlybyJet(_ jet: Entity, elapsed: TimeInterval) {
         // With the runway-side camera moved downfield, this start time keeps
         // closest approach centered at essentially the two-minute mark.
-        let eventStart: TimeInterval = 114.1
+        let eventStart: TimeInterval = 116.8
         let t = Float(elapsed - eventStart)
         guard t >= 0, t <= 16.0 else {
             jet.isEnabled = false
-            setTransonicVapor(jet, visible: false)
+            Stage2FlightEffects.setAttractModeTransonicVapor(root: jet, visible: false, intensity: 0)
             return
         }
 
@@ -536,7 +538,15 @@ private enum Stage022MenuScene {
         jet.orientation = simd_quatf(angle: 0, axis: [0, 1, 0])
 
         let distanceFromCameraStation = abs(z - cameraPosition.z)
-        setTransonicVapor(jet, visible: distanceFromCameraStation < 620)
+        let coneVisible = distanceFromCameraStation < 900
+        let coneIntensity = coneVisible
+            ? min(max(1.0 - distanceFromCameraStation / 900.0, 0), 1)
+            : 0
+        Stage2FlightEffects.setAttractModeTransonicVapor(
+            root: jet,
+            visible: coneVisible,
+            intensity: 0.58 + 0.42 * coneIntensity
+        )
     }
 
     private static func setGearVisible(_ jet: Entity, visible: Bool) {
@@ -549,39 +559,22 @@ private enum Stage022MenuScene {
         }
     }
 
-    private static func setTransonicVapor(_ jet: Entity, visible: Bool) {
-        let names = [
-            "FA.effects.transonic.halo",
-            "FA.effects.transonic.shell"
-        ]
-        for name in names {
-            jet.findEntity(named: name)?.isEnabled = visible
-        }
-
-        // The low-pass menu event should not accidentally turn on maneuver-vapor
-        // streamers that imply high AoA. Only the transonic shell is used here.
-        for name in [
-            "FA.effects.vapor.lerx.left",
-            "FA.effects.vapor.lerx.right",
-            "FA.effects.vapor.leading.left",
-            "FA.effects.vapor.leading.right",
-            "FA.effects.vapor.tip.left",
-            "FA.effects.vapor.tip.right"
-        ] {
-            jet.findEntity(named: name)?.isEnabled = false
-        }
-    }
 }
 
 private final class Stage022MenuAudio {
     private let engine = AVAudioEngine()
     private let ambience = AVAudioPlayerNode()
-    private let event = AVAudioPlayerNode()
+    private let takeoff = AVAudioPlayerNode()
+    private let burner = AVAudioPlayerNode()
+    private let flyby = AVAudioPlayerNode()
+    private let sonicBoom = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
 
     private lazy var ambienceBuffer = makeAmbienceBuffer()
     private lazy var takeoffBuffer = makeTakeoffBuffer()
-    private lazy var lowPassBuffer = makeLowPassBuffer()
+    private lazy var burnerBuffer = makeTakeoffAfterburnerBuffer()
+    private lazy var flybyBuffer = makeFlybyBuffer()
+    private lazy var sonicBoomBuffer = makeSonicBoomBuffer()
 
     init() {
         do {
@@ -589,18 +582,18 @@ private final class Stage022MenuAudio {
             try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
 
-            engine.attach(ambience)
-            engine.attach(event)
-            engine.connect(ambience, to: engine.mainMixerNode, format: format)
-            engine.connect(event, to: engine.mainMixerNode, format: format)
-            engine.mainMixerNode.outputVolume = 0.62
+            for node in [ambience, takeoff, burner, flyby, sonicBoom] {
+                engine.attach(node)
+                engine.connect(node, to: engine.mainMixerNode, format: format)
+            }
+            engine.mainMixerNode.outputVolume = 0.68
             try engine.start()
 
             ambience.scheduleBuffer(ambienceBuffer, at: nil, options: .loops)
-            ambience.volume = 0.25
+            ambience.volume = 0.22
             ambience.play()
         } catch {
-            // The menu remains fully functional if the audio session is unavailable.
+            // Menu remains usable if audio is unavailable.
         }
     }
 
@@ -610,18 +603,30 @@ private final class Stage022MenuAudio {
 
     func playTakeoff() {
         guard engine.isRunning else { return }
-        event.stop()
-        event.scheduleBuffer(takeoffBuffer, at: nil, options: .interrupts)
-        event.volume = 0.74
-        event.play()
+
+        takeoff.stop()
+        burner.stop()
+
+        takeoff.scheduleBuffer(takeoffBuffer, at: nil, options: .interrupts)
+        burner.scheduleBuffer(burnerBuffer, at: nil, options: .interrupts)
+        takeoff.volume = 0.72
+        burner.volume = 0.88
+        takeoff.play()
+        burner.play()
     }
 
-    func playLowPass() {
+    func playSupersonicPass() {
         guard engine.isRunning else { return }
-        event.stop()
-        event.scheduleBuffer(lowPassBuffer, at: nil, options: .interrupts)
-        event.volume = 0.92
-        event.play()
+
+        flyby.stop()
+        sonicBoom.stop()
+
+        flyby.scheduleBuffer(flybyBuffer, at: nil, options: .interrupts)
+        sonicBoom.scheduleBuffer(sonicBoomBuffer, at: nil, options: .interrupts)
+        flyby.volume = 0.82
+        sonicBoom.volume = 1.0
+        flyby.play()
+        sonicBoom.play()
     }
 
     private func makeAmbienceBuffer() -> AVAudioPCMBuffer {
@@ -634,38 +639,121 @@ private final class Stage022MenuAudio {
     }
 
     private func makeTakeoffBuffer() -> AVAudioPCMBuffer {
-        makeBuffer(seconds: 18.5, seed: 0xF160_0220) { t, _, noise in
+        // Dry engine / ground-roll bed. Deliberately very little broadband noise:
+        // the afterburner has its own source below, like DCS/Unity-style layering.
+        makeBuffer(seconds: 19.0, seed: 0xF160_0220) { t, _, noise in
             let spool = min(max(t / 2.8, 0), 1)
             let roll = min(max((t - 2.5) / 11.5, 0), 1)
-            let departureFade = max(0, 1 - max(0, t - 15.0) / 3.5)
-            let envelope = (0.22 + 0.78 * spool) * departureFade
-            let rpm = 48 + 33 * spool + 24 * roll
-            let rumble =
-                0.72 * sin(2 * .pi * rpm * t) +
-                0.34 * sin(2 * .pi * rpm * 1.86 * t + 0.8) +
-                0.16 * sin(2 * .pi * 31 * t)
-            let exhaust = noise * (0.15 + 0.20 * spool + 0.35 * roll)
-            return envelope * (0.16 * rumble + 0.036 * exhaust)
+            let departureFade = max(0, 1 - max(0, t - 15.5) / 3.5)
+            let envelope = (0.20 + 0.80 * spool) * departureFade
+            let fundamental = 42 + 22 * spool + 17 * roll
+            let combustion =
+                0.78 * sin(2 * .pi * fundamental * t) +
+                0.31 * sin(2 * .pi * fundamental * 1.47 * t + 0.6) +
+                0.18 * sin(2 * .pi * 31 * t + 1.1)
+            let roughness = 0.012 * noise * (0.25 + 0.75 * roll)
+            return envelope * (0.18 * combustion + roughness)
         }
     }
 
-    private func makeLowPassBuffer() -> AVAudioPCMBuffer {
-        makeBuffer(seconds: 5.4, seed: 0x0220_BEEF) { t, channel, noise in
-            let center: Float = 2.05
-            let distance = abs(t - center)
-            let approach = exp(-powf(distance / 0.92, 2))
-            let pressure = exp(-powf(distance / 0.34, 2))
-            let frequency = 78 + 42 * (1 - min(1, t / 5.4))
-            let body =
-                0.68 * sin(2 * .pi * frequency * t) +
-                0.28 * sin(2 * .pi * frequency * 0.51 * t + 0.6)
-            let rip = noise * (0.12 + 0.88 * approach)
+    private func makeTakeoffAfterburnerBuffer() -> AVAudioPCMBuffer {
+        let seconds: Float = 19.0
+        let sampleRate = Float(format.sampleRate)
+        let frames = AVAudioFrameCount(seconds * sampleRate)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        guard let channels = buffer.floatChannelData else { return buffer }
 
-            let pan = min(max((t - center) / 1.45, -1), 1)
-            let channelPan: Float = channel == 0 ? (1 - pan) * 0.5 : (1 + pan) * 0.5
-            let gain = sqrt(max(0.08, channelPan))
+        var seeds: [UInt32] = [0xF16A_B001, 0xF16A_B002]
+        var slow: [Float] = [0, 0]
+        var low: [Float] = [0, 0]
+        var body: [Float] = [0, 0]
 
-            return gain * (0.20 * approach * body + 0.060 * rip * approach + 0.11 * pressure)
+        for frame in 0..<Int(frames) {
+            let t = Float(frame) / sampleRate
+            let abOn = min(max((t - 3.15) / 0.70, 0), 1)
+            let fade = max(0, 1 - max(0, t - 16.0) / 3.0)
+            let envelope = abOn * fade
+
+            for ch in 0..<2 {
+                seeds[ch] = 1_664_525 &* seeds[ch] &+ 1_013_904_223
+                let raw = Float(Int32(bitPattern: seeds[ch])) / Float(Int32.max)
+                slow[ch] = 0.9982 * slow[ch] + 0.0018 * raw
+                low[ch] = 0.9850 * low[ch] + 0.0150 * raw
+                body[ch] = 0.9350 * body[ch] + 0.0650 * raw
+
+                let lowBand = low[ch] - slow[ch]
+                let bodyBand = body[ch] - low[ch]
+                let phase = Float(ch) * 0.17
+                let pressure =
+                    0.40 * sin(2 * .pi * 53 * t + phase) +
+                    0.24 * sin(2 * .pi * 79 * t + 0.5) +
+                    0.11 * sin(2 * .pi * 106 * t + 1.2)
+                let modulation = 0.90 + 0.07 * sin(2 * .pi * 2.1 * t + phase)
+                let roar = (1.45 * slow[ch] + 1.95 * lowBand + 0.34 * bodyBand) * modulation
+                let sample = envelope * (0.28 * pressure + 0.88 * roar)
+                channels[ch][frame] = min(max(sample, -0.92), 0.92)
+            }
+        }
+        return buffer
+    }
+
+    private func makeFlybyBuffer() -> AVAudioPCMBuffer {
+        let seconds: Float = 5.8
+        let sampleRate = Float(format.sampleRate)
+        let frames = AVAudioFrameCount(seconds * sampleRate)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        guard let channels = buffer.floatChannelData else { return buffer }
+
+        var seeds: [UInt32] = [0xFA26_0001, 0xFA26_0002]
+        var low: [Float] = [0, 0]
+        var body: [Float] = [0, 0]
+
+        for frame in 0..<Int(frames) {
+            let t = Float(frame) / sampleRate
+            let closest: Float = 2.65
+            let distance = abs(t - closest)
+            let approach = exp(-powf(distance / 1.05, 2))
+            let doppler = 118 - 46 * min(max(t / seconds, 0), 1)
+            let pan = min(max((t - closest) / 1.55, -1), 1)
+
+            for ch in 0..<2 {
+                seeds[ch] = 1_664_525 &* seeds[ch] &+ 1_013_904_223
+                let raw = Float(Int32(bitPattern: seeds[ch])) / Float(Int32.max)
+                low[ch] = 0.988 * low[ch] + 0.012 * raw
+                body[ch] = 0.925 * body[ch] + 0.075 * raw
+                let turbulent = 1.3 * low[ch] + 0.35 * (body[ch] - low[ch])
+                let engineBody =
+                    0.62 * sin(2 * .pi * doppler * t) +
+                    0.27 * sin(2 * .pi * doppler * 0.52 * t + 0.5)
+                let channelPan: Float = ch == 0 ? (1 - pan) * 0.5 : (1 + pan) * 0.5
+                let gain = sqrt(max(0.08, channelPan))
+                channels[ch][frame] = gain * approach * (0.15 * engineBody + 0.13 * turbulent)
+            }
+        }
+        return buffer
+    }
+
+    private func makeSonicBoomBuffer() -> AVAudioPCMBuffer {
+        // Delayed double shock: two short bipolar pressure impulses plus a low
+        // structural tail. This is intentionally a discrete event, not more hiss.
+        makeBuffer(seconds: 5.8, seed: 0xB00D_0220) { t, channel, _ in
+            let first: Float = 2.42
+            let second: Float = 2.57
+
+            func nWave(_ center: Float, amplitude: Float) -> Float {
+                let x = (t - center) / 0.016
+                return amplitude * x * exp(-x * x * 1.35)
+            }
+
+            let shock = nWave(first, amplitude: 1.0) + nWave(second, amplitude: 0.82)
+            let dt = max(0, t - first)
+            let thump = dt > 0
+                ? (0.55 * sin(2 * .pi * 43 * dt) + 0.24 * sin(2 * .pi * 71 * dt + 0.4)) * exp(-4.6 * dt)
+                : 0
+            let stereo = channel == 0 ? 0.98 : 1.0
+            return min(max(stereo * (0.93 * shock + 0.42 * thump), -0.98), 0.98)
         }
     }
 
