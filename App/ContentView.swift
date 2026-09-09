@@ -104,7 +104,10 @@ struct ContentView: View {
                     HStack(alignment: .bottom, spacing: 8) {
                         wheelBrakeButton
 
-                        CompactRudderControl(value: simulation.controls.rudder) { value in
+                        CompactRudderControl(
+                            value: simulation.controls.rudder,
+                            actual: simulation.state.rudderPosition
+                        ) { value in
                             var controls = simulation.controls
                             controls.rudder = value
                             simulation.controls = controls
@@ -1002,13 +1005,20 @@ private struct CompactThrottleControl: View {
 
 private struct CompactRudderControl: View {
     let value: Float
+    let actual: Float
     let onChange: (Float) -> Void
 
     var body: some View {
         VStack(spacing: 3) {
-            Text("RUDDER  /  NWS")
-                .font(.system(size: 7, weight: .black, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.44))
+            HStack(spacing: 7) {
+                Text("RUDDER  /  NWS")
+                if abs(value) > 0.025 {
+                    Text(String(format: "PED %+03.0f  RUD %+03.0f", value * 100, actual * 100))
+                        .foregroundStyle(.white.opacity(0.78))
+                }
+            }
+            .font(.system(size: 7, weight: .black, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.44))
 
             GeometryReader { geometry in
                 let width = geometry.size.width

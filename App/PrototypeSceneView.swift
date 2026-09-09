@@ -55,6 +55,9 @@ struct PrototypeSceneView: View {
                     ))
                     content.add(world)
 
+                    let atmosphere = Stage021Atmosphere.make()
+                    content.add(atmosphere)
+
                     let aircraft = PrototypeAircraftFactory.make()
                     aircraft.components.set(EnvironmentLightingConfigurationComponent(
                         environmentLightingWeight: 0.66
@@ -106,6 +109,10 @@ struct PrototypeSceneView: View {
                     aircraft.orientation = simulation.state.orientation
                     aircraft.isEnabled = true
                     updateAircraftPresentation(aircraft)
+
+                    if let atmosphere = content.entities.first(where: { $0.name == Stage021Atmosphere.rootName }) {
+                        Stage021Atmosphere.update(atmosphere, aircraftPosition: simulation.state.positionMeters)
+                    }
 
                     let cockpitMode = cameraMode == .cockpit
                     aircraft.findEntity(named: PrototypeAircraftFactory.visualRootName)?.isEnabled = !cockpitMode
@@ -547,21 +554,21 @@ struct PrototypeSceneView: View {
             let length = (0.82 + 0.58 * intensity) * pressureExpansion * speedCompression
 
             if let halo = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerHaloName) {
-                halo.scale = [1.15 * width, 2.15 * length, 1.15 * width]
+                halo.scale = [1.04 * width, 1.82 * length, 1.04 * width]
                 halo.position = [0, 0, 0.5 * halo.scale.y]
             }
             if let outer = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerOuterName) {
-                outer.scale = [0.94 * width, 1.90 * length, 1.02 * width]
+                outer.scale = [0.84 * width, 1.64 * length, 0.90 * width]
                 outer.position = [0, 0, 0.5 * outer.scale.y]
             }
             if let inner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerInnerName) {
                 let pulse = 1.0 + 0.016 * sin(time * 61.0 + 0.9)
-                inner.scale = [0.58 * width * pulse, 1.52 * length, 0.66 * width * pulse]
+                inner.scale = [0.50 * width * pulse, 1.34 * length, 0.56 * width * pulse]
                 inner.position = [0, 0, 0.5 * inner.scale.y]
             }
             if let core = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerCoreName) {
                 let pulse = 1.0 + 0.026 * sin(time * 73.0 + 0.35)
-                core.scale = [0.24 * width * pulse, 1.12 * length, 0.30 * width * pulse]
+                core.scale = [0.19 * width * pulse, 0.96 * length, 0.23 * width * pulse]
                 core.position = [0, 0, 0.5 * core.scale.y]
             }
 
@@ -735,24 +742,27 @@ private final class Stage0108JetAudio {
         let fuel = clamp(state.engineFuelFlowPoundsPerSecond / 1.8, 0, 1.2)
         let live: Float = isPaused ? 0 : 1
         let dryPower = max(n1, fuel)
+        let aoaBuffet = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 11.0, 0, 1)
+        let betaBuffet = clamp((abs(state.sideslipDegrees) - 2.0) / 8.0, 0, 1)
+        let buffet = max(aoaBuffet, betaBuffet)
 
-        rumbleRate.rate = 0.78 + 0.33 * n1
-        turbineRate.rate = 0.70 + 1.00 * n2
+        rumbleRate.rate = 0.72 + 0.30 * n1
+        turbineRate.rate = 0.62 + 0.74 * n2
 
-        // The persistent high-pitched whir is the synthetic compressor/turbine
-        // layer, not an APU. In the cockpit it was actually louder than outside.
-        // Helmet/canopy attenuation now knocks that layer down hard while leaving
-        // enough low-frequency engine body to know the jet is alive.
-        let cockpitRumble: Float = isCockpit ? 0.52 : 1.0
-        let cockpitTurbine: Float = isCockpit ? 0.30 : 0.82
-        let cockpitExhaust: Float = isCockpit ? 0.18 : 1.0
-        let cockpitWind: Float = isCockpit ? 0.22 : 1.0
+        // Stage 021 is referenced against public-domain F-16 burner/test-cell
+        // recordings: outside is exhaust-body dominant; cockpit is strongly
+        // attenuated and never becomes a constant compressor whistle.
+        let cockpitRumble: Float = isCockpit ? 0.46 : 1.0
+        let cockpitTurbine: Float = isCockpit ? 0.10 : 0.50
+        let cockpitExhaust: Float = isCockpit ? 0.10 : 1.0
+        let cockpitWind: Float = isCockpit ? 0.17 : 1.0
 
-        rumble.volume = live * cockpitRumble * (0.050 + 0.18 * n1)
-        turbine.volume = live * cockpitTurbine * (0.014 + 0.095 * n2 * n2)
-        exhaust.volume = live * cockpitExhaust * (0.025 + 0.20 * dryPower)
-        afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.16 + 0.14 * n2 : 0)
-        wind.volume = live * cockpitWind * (0.004 + 0.030 * min(powf(mach, 1.55), 1.40))
+        rumble.volume = live * cockpitRumble * (0.055 + 0.205 * n1)
+        turbine.volume = live * cockpitTurbine * (0.008 + 0.062 * n2 * n2)
+        exhaust.volume = live * cockpitExhaust * (0.032 + 0.245 * dryPower)
+        afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.13 + 0.15 * n2 : 0)
+        let baseWind = 0.003 + 0.024 * min(powf(mach, 1.55), 1.40)
+        wind.volume = live * cockpitWind * baseWind * (1.0 + 1.65 * buffet)
 
         if state.afterburnerActive && !lastAfterburnerActive && !isPaused {
             fireIgnitionTransient(isCockpit: isCockpit)
@@ -806,7 +816,7 @@ private final class Stage0108JetAudio {
         let exhaustBands = exhaustEQ.bands
         exhaustBands[0].filterType = .lowShelf
         exhaustBands[0].frequency = 120
-        exhaustBands[0].gain = 4.5
+        exhaustBands[0].gain = 6.5
         exhaustBands[0].bypass = false
         exhaustBands[1].filterType = .parametric
         exhaustBands[1].frequency = 340
@@ -815,13 +825,13 @@ private final class Stage0108JetAudio {
         exhaustBands[1].bypass = false
         exhaustBands[2].filterType = .highShelf
         exhaustBands[2].frequency = 1_850
-        exhaustBands[2].gain = -11.0
+        exhaustBands[2].gain = -14.5
         exhaustBands[2].bypass = false
 
         let burnerBands = burnerEQ.bands
         burnerBands[0].filterType = .lowShelf
         burnerBands[0].frequency = 105
-        burnerBands[0].gain = 6.0
+        burnerBands[0].gain = 7.5
         burnerBands[0].bypass = false
         burnerBands[1].filterType = .parametric
         burnerBands[1].frequency = 260
@@ -830,7 +840,7 @@ private final class Stage0108JetAudio {
         burnerBands[1].bypass = false
         burnerBands[2].filterType = .highShelf
         burnerBands[2].frequency = 2_200
-        burnerBands[2].gain = -12.5
+        burnerBands[2].gain = -15.5
         burnerBands[2].bypass = false
 
         let windBands = windEQ.bands
@@ -873,12 +883,12 @@ private final class Stage0108JetAudio {
         makeStereoBuffer(format: format, seconds: seconds) { t, channel, random in
             let phase: Float = channel == 0 ? 0 : 0.11
             let blade =
-                0.52 * sin(2 * .pi * 315 * t + phase) +
-                0.27 * sin(2 * .pi * 630 * t + 0.3) +
-                0.13 * sin(2 * .pi * 945 * t + 0.9) +
-                0.06 * sin(2 * .pi * 1_575 * t + 1.4)
+                0.45 * sin(2 * .pi * 255 * t + phase) +
+                0.23 * sin(2 * .pi * 510 * t + 0.3) +
+                0.10 * sin(2 * .pi * 765 * t + 0.9) +
+                0.035 * sin(2 * .pi * 1_275 * t + 1.4)
             let shimmer = 0.90 + 0.07 * sin(2 * .pi * 7.0 * t) + 0.03 * sin(2 * .pi * 13.0 * t + phase)
-            return (blade * shimmer + random * 0.006) * 0.34
+            return (blade * shimmer + random * 0.004) * 0.27
         }
     }
 
@@ -932,16 +942,16 @@ private final class Stage0108JetAudio {
                 if afterburner {
                     colored =
                         1.20 * sub[ch] +
-                        1.55 * lowBand +
-                        0.58 * bodyBand +
-                        0.020 * edge +
+                        1.72 * lowBand +
+                        0.66 * bodyBand +
+                        0.007 * edge +
                         0.15 * crackle[ch]
                 } else {
                     colored =
                         1.00 * sub[ch] +
-                        1.28 * lowBand +
-                        0.44 * bodyBand +
-                        0.010 * edge
+                        1.42 * lowBand +
+                        0.52 * bodyBand +
+                        0.004 * edge
                 }
 
                 let sample = (colored * breathing + combustion + pressurePulse)

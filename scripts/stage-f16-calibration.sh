@@ -63,6 +63,27 @@ old_rate = '''      80.0  0.0
 new_rate = '''      80.0  0.0
       100.0    15.0
       150.0    112.0'''
+old_load = '''   <!-- Calculate the normalized yaw-load -->
+   <pure_gain name="fcs/yaw-load-norm">
+    <input>accelerations/n-pilot-y-norm</input>
+    <gain>0.25</gain>
+   </pure_gain>'''
+new_load = '''   <!-- Stage 021: lateral acceleration coordinates feet-off-pedals flight,
+        but does not resist a deliberate pilot sideslip command. -->
+   <pure_gain name="fcs/yaw-load-raw">
+    <input>accelerations/n-pilot-y-norm</input>
+    <gain>0.25</gain>
+   </pure_gain>
+   <switch name="fcs/yaw-load-norm">
+    <default value="fcs/yaw-load-raw"/>
+    <test logic="OR" value="0">
+     fcs/rudder-cmd-norm gt 0.035
+     fcs/rudder-cmd-norm lt -0.035
+    </test>
+   </switch>'''
+if text.count(old_load) != 1:
+    raise SystemExit(f"expected one upstream yaw-load block, found {text.count(old_load)}")
+text = text.replace(old_load, new_load, 1)
 if text.count(old_rate) != 1:
     raise SystemExit(f"expected one yaw-rate schedule, found {text.count(old_rate)}")
 text = text.replace(old_rate, new_rate, 1)
@@ -77,6 +98,8 @@ PY
 
 grep -q 'Full Authority Stage 020: SAS feedback only' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q '150.0    112.0' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'Stage 021: lateral acceleration coordinates feet-off-pedals flight' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+grep -q 'fcs/rudder-cmd-norm gt 0.035' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 test "$(grep -c '<input>fcs/rudder-cmd-norm</input>' "$RESOURCE_ROOT/aircraft/f16/f16.xml")" -eq 1
 grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
@@ -144,4 +167,4 @@ for required in \
   test -s "$required"
 done
 
-echo "Staged JSBSim F-16 calibration data, Stage 020 yaw SAS correction and terrain texture"
+echo "Staged JSBSim F-16 calibration data, Stage 021 pedal-aware yaw SAS correction and terrain texture"
