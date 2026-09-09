@@ -21,7 +21,7 @@ struct Stage022RootView: View {
                     )
                     .transition(.opacity)
                 case .flight:
-                    ContentView()
+                    ContentView(onEndFlight: endFlight)
                         .transition(.opacity)
                 }
             }
@@ -58,6 +58,12 @@ struct Stage022RootView: View {
     private func launchFlight() {
         withAnimation(.easeInOut(duration: 0.34)) {
             phase = .flight
+        }
+    }
+
+    private func endFlight() {
+        withAnimation(.easeInOut(duration: 0.30)) {
+            phase = .menu
         }
     }
 }

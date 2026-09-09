@@ -9,9 +9,11 @@ import simd
 @MainActor
 private final class Stage022MenuRuntime: ObservableObject {
     private let startDate = Date()
-    private let takeoffIntervals: [TimeInterval] = [52, 61, 47, 58]
+    // A first departure happens soon enough to make the menu feel alive.
+    // The longer second gap intentionally leaves the two-minute transonic event clear.
+    private let takeoffIntervals: [TimeInterval] = [50, 75, 54, 62]
     private var takeoffIntervalIndex = 0
-    private var nextTakeoffAt: TimeInterval = 22
+    private var nextTakeoffAt: TimeInterval = 12
     private var lowPassAudioPlayed = false
 
     fileprivate private(set) var latestTakeoffStart: TimeInterval?
@@ -54,6 +56,10 @@ struct Stage022MainMenuView: View {
 
     @StateObject private var runtime = Stage022MenuRuntime()
     @State private var panel: Panel?
+    @State private var lookYawRadians: Float = 0
+    @State private var lookPitchRadians: Float = 0
+    @State private var lookGestureOrigin = SIMD2<Float>.zero
+    @State private var lookGestureActive = false
 
     var body: some View {
         ZStack {
@@ -124,7 +130,9 @@ struct Stage022MainMenuView: View {
                     Stage022MenuScene.update(
                         content: content,
                         elapsed: elapsed,
-                        takeoffStart: runtime.latestTakeoffStart
+                        takeoffStart: runtime.latestTakeoffStart,
+                        cameraLookYaw: lookYawRadians,
+                        cameraLookPitch: lookPitchRadians
                     )
                 }
                 .onChange(of: timeline.date) { _, newDate in
@@ -133,6 +141,10 @@ struct Stage022MainMenuView: View {
             }
             .background(menuSky)
             .ignoresSafeArea()
+
+            if panel == nil {
+                menuLookSurface
+            }
 
             LinearGradient(
                 colors: [
@@ -170,6 +182,42 @@ struct Stage022MainMenuView: View {
             endPoint: .bottom
         )
         .ignoresSafeArea()
+    }
+
+    private var menuLookSurface: some View {
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+
+                Rectangle()
+                    // Nearly transparent instead of Color.clear so the view remains
+                    // hit-testable without visibly tinting the menu scene.
+                    .fill(Color.black.opacity(0.001))
+                    .frame(width: geometry.size.width * 0.54)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if !lookGestureActive {
+                                    lookGestureActive = true
+                                    lookGestureOrigin = [lookYawRadians, lookPitchRadians]
+                                }
+
+                                let sensitivity: Float = 0.0042
+                                let yaw = lookGestureOrigin.x - Float(value.translation.width) * sensitivity
+                                let pitch = lookGestureOrigin.y + Float(value.translation.height) * sensitivity
+                                lookYawRadians = min(max(yaw, -2.35), 2.35)
+                                lookPitchRadians = min(max(pitch, -0.68), 0.58)
+                            }
+                            .onEnded { _ in
+                                lookGestureActive = false
+                            }
+                    )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .ignoresSafeArea()
+        .zIndex(1)
     }
 
     private var menuChrome: some View {
@@ -245,7 +293,7 @@ struct Stage022MainMenuView: View {
                         Text("AIRFIELD / 36")
                             .font(.system(size: 8, weight: .black, design: .monospaced))
                             .tracking(1.2)
-                        Text("ATTRACT CAMERA")
+                        Text("DRAG RIGHT SIDE TO LOOK")
                             .font(.system(size: 7, weight: .medium, design: .monospaced))
                             .tracking(1.0)
                             .foregroundStyle(.white.opacity(0.40))
@@ -370,8 +418,10 @@ private enum Stage022MenuScene {
     static let takeoffJetName = "FA.menu.jet.takeoff"
     static let flybyJetName = "FA.menu.jet.flyby"
 
-    static let cameraPosition = SIMD3<Float>(188, 6.6, 1_445)
-    static let cameraTarget = SIMD3<Float>(0, 8.0, 1_850)
+    // Start beside the runway looking toward the departure end so the
+    // takeoff roll is visible before the jet reaches the camera station.
+    static let cameraPosition = SIMD3<Float>(188, 6.6, 720)
+    static let cameraTarget = SIMD3<Float>(0, 7.0, 80)
 
     static func makeMenuJet(name: String) -> Entity {
         let jet = PrototypeAircraftFactory.make()
@@ -389,8 +439,14 @@ private enum Stage022MenuScene {
     static func update(
         content: RealityViewCameraContent,
         elapsed: TimeInterval,
-        takeoffStart: TimeInterval?
+        takeoffStart: TimeInterval?,
+        cameraLookYaw: Float,
+        cameraLookPitch: Float
     ) {
+        if let camera = content.entities.first(where: { $0.name == cameraName }) {
+            updateCamera(camera, yawOffset: cameraLookYaw, pitchOffset: cameraLookPitch)
+        }
+
         if let takeoff = content.entities.first(where: { $0.name == takeoffJetName }) {
             updateTakeoffJet(takeoff, elapsed: elapsed, start: takeoffStart)
         }
@@ -400,6 +456,17 @@ private enum Stage022MenuScene {
         }
     }
 
+    private static func updateCamera(_ camera: Entity, yawOffset: Float, pitchOffset: Float) {
+        let base = simd_normalize(cameraTarget - cameraPosition)
+        let baseYaw = atan2(base.x, base.z)
+        let basePitch = asin(min(max(base.y, -1), 1))
+        let yaw = baseYaw + yawOffset
+        let pitch = min(max(basePitch + pitchOffset, -1.15), 0.82)
+        let cp = cos(pitch)
+        let direction = SIMD3<Float>(sin(yaw) * cp, sin(pitch), cos(yaw) * cp)
+        camera.look(at: cameraPosition + direction * 1_000, from: cameraPosition, relativeTo: nil)
+    }
+
     private static func updateTakeoffJet(_ jet: Entity, elapsed: TimeInterval, start: TimeInterval?) {
         guard let start else {
             jet.isEnabled = false
@@ -407,33 +474,49 @@ private enum Stage022MenuScene {
         }
 
         let t = Float(elapsed - start)
-        guard t >= 0, t <= 14.2 else {
+        guard t >= 0, t <= 23.0 else {
             jet.isEnabled = false
             return
         }
 
         jet.isEnabled = true
 
-        // Longitudinal acceleration is deliberately obvious from the fixed
-        // runway-side camera while still using plausible fighter takeoff timing.
-        let z = -620 + 34.0 * t * t
-        let liftoff: Float = 8.15
+        // The menu departure is intentionally phase-based instead of using the
+        // old z = a*t^2 shortcut, which made the jet effectively supersonic while
+        // still on the runway and sent it behind the default camera.
+        let startZ: Float = -420
+        let spoolEnd: Float = 2.5
+        let liftoff: Float = 14.0
+        let groundRollDuration = liftoff - spoolEnd
+        let groundAcceleration: Float = 7.5
+        let groundTime = min(max(t - spoolEnd, 0), groundRollDuration)
+        let groundDistance = 0.5 * groundAcceleration * groundTime * groundTime
+        let rotationZ = startZ + 0.5 * groundAcceleration * groundRollDuration * groundRollDuration
+        let rotationSpeed = groundAcceleration * groundRollDuration
+
         let airborne = max(0, t - liftoff)
-        let climb = 1.8 + 2.8 * powf(airborne, 1.72)
+        let z = t <= liftoff
+            ? startZ + groundDistance
+            : rotationZ + rotationSpeed * airborne + 3.8 * airborne * airborne
+        let climb = t <= liftoff ? 1.8 : 1.8 + 3.2 * powf(airborne, 1.50)
         jet.position = [0, climb, z]
 
-        let pitchDegrees = min(12.0, airborne * 3.4)
+        let pitchDegrees = t < liftoff
+            ? max(0, (t - (liftoff - 1.0)) * 5.0)
+            : min(13.0, 5.0 + airborne * 2.0)
         jet.orientation = simd_quatf(
             angle: -pitchDegrees * .pi / 180,
             axis: [1, 0, 0]
         )
 
-        setGearVisible(jet, visible: t < 10.4)
-        jet.findEntity(named: PrototypeAircraftFactory.afterburnerName)?.isEnabled = t > 4.0
+        setGearVisible(jet, visible: t < 16.4)
+        jet.findEntity(named: PrototypeAircraftFactory.afterburnerName)?.isEnabled = t > 3.2
     }
 
     private static func updateFlybyJet(_ jet: Entity, elapsed: TimeInterval) {
-        let eventStart: TimeInterval = 112.0
+        // With the runway-side camera moved downfield, this start time keeps
+        // closest approach centered at essentially the two-minute mark.
+        let eventStart: TimeInterval = 114.1
         let t = Float(elapsed - eventStart)
         guard t >= 0, t <= 16.0 else {
             jet.isEnabled = false
@@ -551,18 +634,18 @@ private final class Stage022MenuAudio {
     }
 
     private func makeTakeoffBuffer() -> AVAudioPCMBuffer {
-        makeBuffer(seconds: 9.5, seed: 0xF160_0220) { t, _, noise in
-            let normalized = min(max(t / 9.5, 0), 1)
-            let rise = min(1, normalized * 2.2)
-            let depart = max(0, 1 - max(0, normalized - 0.72) / 0.28)
-            let envelope = rise * depart
-            let rpm = 52 + 42 * normalized
+        makeBuffer(seconds: 18.5, seed: 0xF160_0220) { t, _, noise in
+            let spool = min(max(t / 2.8, 0), 1)
+            let roll = min(max((t - 2.5) / 11.5, 0), 1)
+            let departureFade = max(0, 1 - max(0, t - 15.0) / 3.5)
+            let envelope = (0.22 + 0.78 * spool) * departureFade
+            let rpm = 48 + 33 * spool + 24 * roll
             let rumble =
                 0.72 * sin(2 * .pi * rpm * t) +
                 0.34 * sin(2 * .pi * rpm * 1.86 * t + 0.8) +
                 0.16 * sin(2 * .pi * 31 * t)
-            let exhaust = noise * (0.18 + 0.42 * normalized)
-            return envelope * (0.16 * rumble + 0.035 * exhaust)
+            let exhaust = noise * (0.15 + 0.20 * spool + 0.35 * roll)
+            return envelope * (0.16 * rumble + 0.036 * exhaust)
         }
     }
 

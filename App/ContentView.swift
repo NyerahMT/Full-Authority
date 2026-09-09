@@ -8,10 +8,16 @@ struct ContentView: View {
         case paused
     }
 
+    let onEndFlight: () -> Void
+
     @StateObject private var simulation = FlightSimulation()
     @State private var phase: GamePhase = .briefing
     @State private var cameraMode: FlightCameraMode = .chase
     @State private var hmdEnabled = true
+
+    init(onEndFlight: @escaping () -> Void = {}) {
+        self.onEndFlight = onEndFlight
+    }
 
     var body: some View {
         ZStack {
@@ -284,7 +290,7 @@ struct ContentView: View {
                 HStack(spacing: 10) {
                     pauseButton("RESUME", systemImage: "play.fill", primary: true, action: resumeFlight)
                     pauseButton("RESTART", systemImage: "arrow.counterclockwise", primary: false, action: restartFlight)
-                    pauseButton("BRIEFING", systemImage: "rectangle.portrait.and.arrow.right", primary: false, action: returnToBriefing)
+                    pauseButton("END FLIGHT", systemImage: "xmark.circle", primary: false, action: endFlight)
                 }
             }
             .padding(.horizontal, 28)
@@ -402,11 +408,10 @@ struct ContentView: View {
         }
     }
 
-    private func returnToBriefing() {
+    private func endFlight() {
+        simulation.pause()
         _ = simulation.resetFlight()
-        withAnimation(.easeOut(duration: 0.20)) {
-            phase = .briefing
-        }
+        onEndFlight()
     }
 }
 
