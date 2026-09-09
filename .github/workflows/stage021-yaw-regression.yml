@@ -1,0 +1,106 @@
+name: Stage021YawRegression
+
+on:
+  push:
+    branches:
+      - stage021-vfx-audio-atmosphere
+    paths:
+      - '.github/workflows/stage021-yaw-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  yaw-response:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage021-vfx-audio-atmosphere
+          submodules: recursive
+
+      - name: Install JSBSim Python package
+        run: python3 -m pip install --quiet jsbsim
+
+      - name: Stage Full Authority F-16 resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/FullAuthority.app
+          scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
+
+      - name: Verify pedal creates in-flight yaw response
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import math
+          import jsbsim
+
+          root = '/tmp/FullAuthority.app/JSBSim'
+          fdm = jsbsim.FGFDMExec(root)
+          fdm.set_debug_level(0)
+          fdm.set_dt(1.0 / 120.0)
+          if not fdm.load_model('f16'):
+              raise SystemExit('failed to load staged F-16')
+
+          initial = {
+              'ic/lat-geod-deg': 0.0,
+              'ic/long-gc-deg': 0.0,
+              'ic/h-sl-ft': 15000.0,
+              'ic/vc-kts': 300.0,
+              'ic/alpha-deg': 2.0,
+              'ic/beta-deg': 0.0,
+              'ic/phi-deg': 0.0,
+              'ic/theta-deg': 2.0,
+              'ic/psi-true-deg': 0.0,
+              'ic/gamma-deg': 0.0,
+          }
+          for prop, value in initial.items():
+              fdm[prop] = value
+          fdm['propulsion/set-running'] = -1
+          fdm['fcs/throttle-cmd-norm'] = 0.62
+          fdm['fcs/throttle-cmd-norm[0]'] = 0.62
+          fdm['fcs/aileron-cmd-norm'] = 0.0
+          fdm['fcs/elevator-cmd-norm'] = 0.0
+          fdm['fcs/rudder-cmd-norm'] = 0.0
+          if not fdm.run_ic():
+              raise SystemExit('run_ic failed')
+          fdm['propulsion/set-running'] = -1
+
+          for _ in range(120):
+              fdm['fcs/throttle-cmd-norm'] = 0.62
+              fdm['fcs/throttle-cmd-norm[0]'] = 0.62
+              fdm['fcs/rudder-cmd-norm'] = 0.0
+              if not fdm.run():
+                  raise SystemExit('neutral settle failed')
+
+          beta0 = float(fdm['aero/beta-deg'])
+          heading0 = float(fdm['attitude/psi-deg'])
+          max_rudder = 0.0
+          max_beta_delta = 0.0
+          max_yaw_rate = 0.0
+
+          for _ in range(180):
+              fdm['fcs/throttle-cmd-norm'] = 0.62
+              fdm['fcs/throttle-cmd-norm[0]'] = 0.62
+              fdm['fcs/rudder-cmd-norm'] = 0.70
+              if not fdm.run():
+                  raise SystemExit('pedal response run failed')
+              rudder = abs(float(fdm['fcs/rudder-pos-rad']))
+              beta = abs(float(fdm['aero/beta-deg']) - beta0)
+              yaw_rate = abs(float(fdm['velocities/r-aero-rad_sec']))
+              max_rudder = max(max_rudder, rudder)
+              max_beta_delta = max(max_beta_delta, beta)
+              max_yaw_rate = max(max_yaw_rate, yaw_rate)
+
+          heading1 = float(fdm['attitude/psi-deg'])
+          heading_delta = abs((heading1 - heading0 + 180.0) % 360.0 - 180.0)
+
+          print(f'max actual rudder: {math.degrees(max_rudder):.2f} deg')
+          print(f'max beta change: {max_beta_delta:.2f} deg')
+          print(f'max aero yaw rate: {math.degrees(max_yaw_rate):.2f} deg/s')
+          print(f'heading change: {heading_delta:.2f} deg')
+
+          if max_rudder < math.radians(4.0):
+              raise SystemExit('FAIL: held 70% pedal does not generate useful actual rudder deflection')
+          if max_beta_delta < 0.35 and max_yaw_rate < math.radians(1.0) and heading_delta < 0.5:
+              raise SystemExit('FAIL: rudder surface moves but aircraft has no meaningful in-flight lateral response')
+          PY
