@@ -27,6 +27,9 @@ jobs:
           mkdir -p /tmp/FullAuthority.app
           bash scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
 
+      # This is intentionally a dynamic FDM test rather than an XML grep. It has
+      # already caught a version that moved the external rudder but produced only
+      # ~1 degree of actual FLCS rudder under a 70% pedal command.
       - name: Verify pedal creates in-flight yaw response
         shell: bash
         run: |
