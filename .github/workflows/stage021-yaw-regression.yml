@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/FullAuthority.app
-          scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
+          bash scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
 
       - name: Verify pedal creates in-flight yaw response
         shell: bash
