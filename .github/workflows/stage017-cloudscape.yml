@@ -1,0 +1,36 @@
+name: Stage017Cloudscape
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/stage017-cloudscape.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cloudscape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install image tooling
+        run: python3 -m pip install --disable-pip-version-check Pillow
+
+      - name: Import CC0 clouds and apply Stage 017
+        run: python3 Scripts/stage017_cloudscape.py
+
+      - name: Commit Stage 017
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/stage017-cloudscape.yml Scripts/stage017_cloudscape.py
+          git config user.name "Full Authority Build Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Stage 017: sourced cloudscape and matte aircraft"
+          git push
