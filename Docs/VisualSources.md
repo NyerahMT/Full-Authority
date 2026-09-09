@@ -56,3 +56,16 @@ The exterior remains based on the MIT-licensed FlightSim_F16 geometry. Painted b
 
 Reference: https://quicksearch.dla.mil/qsDocDetails.aspx?ident_number=95909
 
+## Stage 018 visual-generation overhaul
+
+Stage 018 is the first cohesive art-direction pass rather than another isolated effect tweak. It keeps the iOS 18 / RealityKit baseline and applies ideas from production atmosphere/cloud literature through mobile-friendly scene construction, while leaving a future Metal renderer path open.
+
+References:
+
+- Sébastien Hillaire, *A Scalable and Production Ready Sky and Atmosphere Rendering Technique* (2020): https://onlinelibrary.wiley.com/doi/10.1111/cgf.14050
+- Eric Bruneton & Fabrice Neyret, *Precomputed Atmospheric Scattering*: https://github.com/ebruneton/precomputed_atmospheric_scattering
+- Andrew Schneider / Guerrilla Games, *The Real-time Volumetric Cloudscapes of Horizon Zero Dawn*: https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn
+- Apple RealityKit postprocessing documentation (future GPU finishing path): https://developer.apple.com/documentation/realitykit/postprocessing-effects
+
+The Stage 018 cloud pass still uses the existing CC0 WickedInsignia cloud alpha art, but clusters multiple crossed layers with separate top/underside values to produce parallax and pseudo-volume instead of single cards. The chase camera uses a critically damped spring and partial horizon inertia rather than screen shake, large FOV pumping, speed lines, or other arcade-camera devices.
+

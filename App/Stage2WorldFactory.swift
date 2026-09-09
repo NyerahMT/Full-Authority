@@ -46,66 +46,105 @@ enum Stage2WorldFactory {
         let cloudRoot = Entity()
         cloudRoot.name = "FA.world.cloudscape"
 
-        // Broad overhead/near-field puffs. Two offset cards per cloud give a little
-        // parallax and stop the layer from reading like a single painted ceiling.
-        for index in 0..<14 {
-            let angle = Float(index) * 2.3999632 + 0.37
-            let radius = Float(4_800 + (index * 1_917) % 10_800)
+        // Stage 018 turns each old single billboard into a small crossed-card cloud
+        // volume. It keeps the CC0 art/mobile cost while adding real parallax, bright
+        // tops and darker undersides in the spirit of Schneider/Nubis cloud lighting.
+        for index in 0..<18 {
+            let angle = Float(index) * 2.3999632 + 0.31
+            let radius = Float(3_900 + (index * 1_777) % 13_800)
             let x = cos(angle) * radius
             let z = 2_000 + sin(angle) * radius
-            let altitude = Float(2_200 + (index * 347) % 1_650)
-            let width = Float(2_900 + (index * 733) % 3_700)
-            let depth = Float(1_700 + (index * 419) % 2_700)
-            let texture = textures[index % textures.count]
+            let altitude = Float(2_150 + (index * 337) % 2_050)
+            let width = Float(2_700 + (index * 701) % 4_400)
+            let depth = Float(1_700 + (index * 431) % 3_100)
+            let height = Float(760 + (index * 233) % 1_150)
 
             let underside = cloudCard(
-                texture: texture,
+                texture: textures[index % textures.count],
                 size: [width, depth],
-                tint: UIColor(red: 0.73, green: 0.76, blue: 0.79, alpha: 0.64)
+                tint: UIColor(red: 0.61, green: 0.66, blue: 0.71, alpha: 0.50)
             )
-            underside.position = [x, altitude, z]
+            underside.position = [x, altitude - height * 0.18, z]
             underside.orientation = simd_quatf(
-                angle: Float(index) * 0.71,
+                angle: Float(index) * 0.43,
                 axis: SIMD3<Float>(0, 1, 0)
             )
             cloudRoot.addChild(underside)
 
-            let highlight = cloudCard(
+            let top = cloudCard(
                 texture: textures[(index + 1) % textures.count],
-                size: [width * 0.78, depth * 0.82],
-                tint: UIColor(red: 0.94, green: 0.94, blue: 0.91, alpha: 0.34)
+                size: [width * 0.86, depth * 0.80],
+                tint: UIColor(red: 0.985, green: 0.975, blue: 0.94, alpha: 0.46)
             )
-            highlight.position = [x + 140, altitude + 135, z - 95]
-            highlight.orientation = simd_quatf(
-                angle: Float(index) * 0.71 + 0.42,
+            top.position = [x + 90, altitude + height * 0.34, z - 75]
+            top.orientation = simd_quatf(
+                angle: Float(index) * 0.43 + 0.28,
                 axis: SIMD3<Float>(0, 1, 0)
             )
-            cloudRoot.addChild(highlight)
+            cloudRoot.addChild(top)
+
+            for slice in 0..<3 {
+                let face = cloudCard(
+                    texture: textures[(index + slice + 2) % textures.count],
+                    size: [width * (0.78 - Float(slice) * 0.08), height * (1.10 - Float(slice) * 0.08)],
+                    tint: UIColor(
+                        red: 0.86 + CGFloat(slice) * 0.035,
+                        green: 0.875 + CGFloat(slice) * 0.030,
+                        blue: 0.88 + CGFloat(slice) * 0.025,
+                        alpha: 0.30
+                    )
+                )
+                face.position = [
+                    x + Float(slice - 1) * 115,
+                    altitude + Float(slice) * height * 0.08,
+                    z + Float(1 - slice) * 90
+                ]
+                let upright = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+                let yaw = simd_quatf(
+                    angle: angle + Float(slice) * Float.pi / 3,
+                    axis: SIMD3<Float>(0, 1, 0)
+                )
+                face.orientation = yaw * upright
+                cloudRoot.addChild(face)
+            }
         }
 
-        // Distant vertical banks break up the horizon and make the atmosphere read
-        // in kilometres, not as a flat blue background.
-        for index in 0..<10 {
-            let angle = Float(index) / 10 * 2 * Float.pi + 0.21
-            let radius = Float(15_000 + (index * 1_037) % 4_800)
+        // Towering banks around the horizon create a huge sense of world scale and
+        // break the hard terrain/sky seam. These remain well outside the airbase.
+        for index in 0..<14 {
+            let angle = Float(index) / 14 * 2 * Float.pi + 0.17
+            let radius = Float(18_500 + (index * 1_081) % 6_400)
             let x = cos(angle) * radius
             let z = 2_000 + sin(angle) * radius
-            let width = Float(5_000 + (index * 911) % 3_800)
-            let height = Float(2_400 + (index * 557) % 2_100)
-            let centerY = Float(2_300 + (index * 229) % 1_500)
-            let texture = textures[(index + 2) % textures.count]
+            let width = Float(5_400 + (index * 827) % 4_600)
+            let height = Float(2_600 + (index * 503) % 2_800)
+            let centerY = Float(2_350 + (index * 241) % 1_800)
 
             let bank = cloudCard(
-                texture: texture,
+                texture: textures[(index + 2) % textures.count],
                 size: [width, height],
-                tint: UIColor(red: 0.86, green: 0.87, blue: 0.86, alpha: 0.50)
+                tint: UIColor(red: 0.84, green: 0.86, blue: 0.87, alpha: 0.43)
             )
             bank.position = [x, centerY, z]
-
-            let pitch = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
-            let yaw = simd_quatf(angle: -angle + .pi / 2, axis: SIMD3<Float>(0, 1, 0))
-            bank.orientation = yaw * pitch
+            let upright = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+            let facing = simd_quatf(angle: -angle + .pi / 2, axis: SIMD3<Float>(0, 1, 0))
+            bank.orientation = facing * upright
             cloudRoot.addChild(bank)
+        }
+
+        // Very high, broad wisps stop the upper sky from feeling empty while staying
+        // faint enough to preserve the clean military-aviation art direction.
+        for index in 0..<8 {
+            let angle = Float(index) * 0.91 + 0.4
+            let radius = Float(6_000 + index * 1_450)
+            let wisp = cloudCard(
+                texture: textures[(index + 1) % textures.count],
+                size: [6_500 + Float(index % 3) * 1_300, 2_000 + Float(index % 4) * 650],
+                tint: UIColor(red: 0.97, green: 0.98, blue: 1.0, alpha: 0.12)
+            )
+            wisp.position = [cos(angle) * radius, 6_200 + Float(index % 3) * 800, 2_000 + sin(angle) * radius]
+            wisp.orientation = simd_quatf(angle: angle * 0.7, axis: SIMD3<Float>(0, 1, 0))
+            cloudRoot.addChild(wisp)
         }
 
         root.addChild(cloudRoot)
@@ -144,7 +183,7 @@ enum Stage2WorldFactory {
     private static func addTerrain(to root: Entity) {
         // The FDM and renderer continue to share Stage2TerrainProfile. This is a
         // denser render of the exact JSBSim contact surface, not a decorative hill layer.
-        let tileSize: Float = 6_000
+        let tileSize: Float = 7_200
         let resolution = 81
         let terrainTextures = worldTextureSet(named: "terrain_grass")
 
@@ -218,12 +257,12 @@ enum Stage2WorldFactory {
         selector: Int
     ) -> PhysicallyBasedMaterial {
         let tints: [UIColor] = [
-            UIColor(red: 0.72, green: 0.78, blue: 0.58, alpha: 1),
-            UIColor(red: 0.82, green: 0.78, blue: 0.54, alpha: 1),
-            UIColor(red: 0.64, green: 0.73, blue: 0.51, alpha: 1),
-            UIColor(red: 0.82, green: 0.69, blue: 0.47, alpha: 1),
-            UIColor(red: 0.68, green: 0.68, blue: 0.47, alpha: 1),
-            UIColor(red: 0.76, green: 0.79, blue: 0.57, alpha: 1)
+            UIColor(red: 0.54, green: 0.61, blue: 0.39, alpha: 1),
+            UIColor(red: 0.64, green: 0.61, blue: 0.38, alpha: 1),
+            UIColor(red: 0.47, green: 0.57, blue: 0.34, alpha: 1),
+            UIColor(red: 0.68, green: 0.55, blue: 0.34, alpha: 1),
+            UIColor(red: 0.52, green: 0.52, blue: 0.35, alpha: 1),
+            UIColor(red: 0.59, green: 0.64, blue: 0.40, alpha: 1)
         ]
 
         var material = PhysicallyBasedMaterial()
@@ -323,7 +362,7 @@ enum Stage2WorldFactory {
                 // World-space UVs keep ground detail at a readable physical scale
                 // instead of stretching one texture across a 6 km tile. 24 m is
                 // deliberately stylized: visible from low altitude without noisy moire.
-                let textureScaleMeters: Float = 24
+                let textureScaleMeters: Float = 42
                 var u = globalX / textureScaleMeters
                 var v = globalZ / textureScaleMeters
                 if mirrorU { u = -u }
