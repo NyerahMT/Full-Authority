@@ -1,0 +1,126 @@
+name: Stage021YawDirectPrototype
+
+on:
+  push:
+    branches:
+      - stage021-vfx-audio-atmosphere
+    paths:
+      - '.github/workflows/stage021-yaw-direct-prototype.yml'
+
+jobs:
+  prototype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage021-vfx-audio-atmosphere
+          submodules: recursive
+      - run: python3 -m pip install --quiet jsbsim
+      - name: Stage baseline
+        run: |
+          mkdir -p /tmp/FullAuthority.app
+          bash scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
+      - name: Install prototype pedal branch and measure response
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import math
+          import jsbsim
+
+          xml = Path('/tmp/FullAuthority.app/JSBSim/aircraft/f16/f16.xml')
+          text = xml.read_text()
+          old = '''   <summer name="fcs/yaw-scheduler">
+             <input>fcs/rudder-cmd-norm</input>
+             <input>fcs/yaw-trim-cmd-norm</input>
+             <input>fcs/yaw-load-pid</input>
+             <clipto>
+            <min>-1</min>
+            <max>1</max>
+             </clipto>
+           </summer>'''
+          # Whitespace in upstream is exact after staging; fall back to a normalized anchor.
+          if old not in text:
+              old = '''   <summer name="fcs/yaw-scheduler">
+             <input>fcs/rudder-cmd-norm</input>
+             <input>fcs/yaw-trim-cmd-norm</input>
+             <input>fcs/yaw-load-pid</input>
+             <clipto>
+            <min>-1</min>
+            <max>1</max>
+             </clipto>
+           </summer>'''
+          # Use a direct slice instead of trusting indentation if needed.
+          start = text.index('   <summer name="fcs/yaw-scheduler">')
+          end = text.index('   <kinematic name="fcs/rudder-position">', start)
+          replacement = '''   <summer name="fcs/fa-yaw-sas">
+             <input>fcs/rudder-cmd-norm</input>
+             <input>fcs/yaw-trim-cmd-norm</input>
+             <input>fcs/yaw-load-pid</input>
+             <clipto>
+              <min>-1</min>
+              <max>1</max>
+             </clipto>
+           </summer>
+
+           <!-- Full Authority prototype: F-16-style air-data scheduled pedal forward loop. -->
+           <scheduled_gain name="fcs/fa-pedal-rudder">
+            <input>fcs/rudder-cmd-norm</input>
+            <table>
+             <independentVar>aero/qbar-psf</independentVar>
+             <tableData>
+                0.0   1.00
+               50.0   0.95
+              100.0   0.80
+              200.0   0.55
+              350.0   0.38
+              600.0   0.24
+             1000.0   0.16
+             </tableData>
+            </table>
+           </scheduled_gain>
+
+           <switch name="fcs/yaw-scheduler">
+            <default value="fcs/fa-yaw-sas"/>
+            <test logic="OR" value="fcs/fa-pedal-rudder">
+             fcs/rudder-cmd-norm gt 0.035
+             fcs/rudder-cmd-norm lt -0.035
+            </test>
+            <clipto>
+             <min>-1</min>
+             <max>1</max>
+            </clipto>
+           </switch>
+
+'''
+          text = text[:start] + replacement + text[end:]
+          xml.write_text(text)
+
+          root='/tmp/FullAuthority.app/JSBSim'
+          def run_case(speed, altitude, command):
+              fdm=jsbsim.FGFDMExec(root); fdm.set_debug_level(0); fdm.set_dt(1/120)
+              if not fdm.load_model('f16'): raise RuntimeError('load failed')
+              vals={'ic/lat-geod-deg':0,'ic/long-gc-deg':0,'ic/h-sl-ft':altitude,'ic/vc-kts':speed,
+                    'ic/alpha-deg':2,'ic/beta-deg':0,'ic/phi-deg':0,'ic/theta-deg':2,
+                    'ic/psi-true-deg':0,'ic/gamma-deg':0}
+              for k,v in vals.items(): fdm[k]=v
+              fdm['propulsion/set-running']=-1; fdm['fcs/throttle-cmd-norm']=0.62; fdm['fcs/throttle-cmd-norm[0]']=0.62
+              if not fdm.run_ic(): raise RuntimeError('ic')
+              for _ in range(120):
+                  fdm['fcs/rudder-cmd-norm']=0; fdm.run()
+              b0=float(fdm['aero/beta-deg']); h0=float(fdm['attitude/psi-deg']); q=float(fdm['aero/qbar-psf'])
+              mr=mb=my=0.0
+              for _ in range(180):
+                  fdm['fcs/rudder-cmd-norm']=command; fdm.run()
+                  mr=max(mr,abs(float(fdm['fcs/rudder-pos-rad'])))
+                  mb=max(mb,abs(float(fdm['aero/beta-deg'])-b0))
+                  my=max(my,abs(float(fdm['velocities/r-aero-rad_sec'])))
+              h1=float(fdm['attitude/psi-deg']); dh=abs((h1-h0+180)%360-180)
+              return q,math.degrees(mr),mb,math.degrees(my),dh
+
+          print('KCAS ALTft CMD Qbar RUDdeg BETAdeg YAWdeg/s HDGdeg')
+          for speed,alt in [(160,15000),(300,15000),(450,15000),(300,0),(500,0)]:
+              for cmd in (0.7,1.0):
+                  q,r,b,y,h=run_case(speed,alt,cmd)
+                  print(f'{speed:4.0f} {alt:5.0f} {cmd:3.1f} {q:5.0f} {r:6.2f} {b:7.2f} {y:8.2f} {h:6.2f}')
+          PY
