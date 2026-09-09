@@ -18,51 +18,42 @@ RESOURCE_ROOT="$APP_PATH/JSBSim"
 rm -rf "$RESOURCE_ROOT/aircraft/f16"
 mkdir -p "$RESOURCE_ROOT/aircraft" "$RESOURCE_ROOT/engine" "$RESOURCE_ROOT/licenses"
 
-# Preserve the complete upstream aircraft directory. This deliberately restores
-# the stock JSBSim F-16 yaw-rate / lateral-load controller. Full Authority does
-# not replace that stability logic anymore.
+# Preserve the complete upstream aircraft directory. Full Authority keeps the
+# published JSBSim F-16 aerodynamic model and yaw-rate controller rather than
+# inventing a separate lateral flight model.
 cp -R "$SOURCE_ROOT/aircraft/f16" "$RESOURCE_ROOT/aircraft/f16"
 cp "$SOURCE_ROOT/engine/F100-PW-229.xml" "$RESOURCE_ROOT/engine/F100-PW-229.xml"
 cp "$SOURCE_ROOT/engine/direct.xml" "$RESOURCE_ROOT/engine/direct.xml"
 cp "$SOURCE_ROOT/COPYING" "$RESOURCE_ROOT/licenses/JSBSim-COPYING.txt"
 
-# Stage 020 yaw-control correction.
+# Stage 021 directional-control correction.
 #
-# The upstream XML feeds rudder-cmd-norm into the yaw feedback error and then
-# adds the same pilot command again in yaw-scheduler. Our older patch compounded
-# that with another 28% feed-forward. Stage 020 removes that extra feed-forward
-# and separates the pilot pedal from SAS feedback. Yaw-rate/lateral-acceleration
-# feedback damps the aircraft; the pilot command enters the scheduler once.
+# Earlier Full Authority builds added an extra 28% raw rudder feed-forward; that
+# patch is gone. Stage 020 then over-corrected by removing pilot pedal command
+# from yaw-trim-error, which turned the yaw PID into a pure damper that almost
+# completely cancelled the commanded rudder in flight.
+#
+# Stage 021 restores the upstream commanded-yaw target structure: pilot pedal is
+# part of yaw-trim-error and also enters the final scheduler, while yaw-rate
+# feedback shapes the response. The lateral-acceleration feedback is gated out
+# only during deliberate pedal input so it cannot resist a desired sideslip.
 python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-old_error = '''   <!--
-     - Calculate the difference between the current yaw-rate
-     - and the one requiested for.
-     -->
-   <summer name="fcs/yaw-trim-error">
-    <input>fcs/rudder-cmd-norm</input>
-    <input>fcs/yaw-rate-norm</input>
-    <input>fcs/yaw-load-norm</input>
-   </summer>'''
-new_error = '''   <!-- Full Authority Stage 020: SAS feedback only. Pilot pedal
-     command is summed once in yaw-scheduler below. -->
-   <summer name="fcs/yaw-trim-error">
-    <input>fcs/yaw-rate-norm</input>
-    <input>fcs/yaw-load-norm</input>
-   </summer>'''
-if text.count(old_error) != 1:
-    raise SystemExit(f"expected one upstream yaw feedback block, found {text.count(old_error)}")
-text = text.replace(old_error, new_error, 1)
+
 old_rate = '''      80.0  0.0
       100.0    15.0
       150.0    100.0'''
 new_rate = '''      80.0  0.0
       100.0    15.0
       150.0    112.0'''
+if text.count(old_rate) != 1:
+    raise SystemExit(f"expected one yaw-rate schedule, found {text.count(old_rate)}")
+text = text.replace(old_rate, new_rate, 1)
+
 old_load = '''   <!-- Calculate the normalized yaw-load -->
    <pure_gain name="fcs/yaw-load-norm">
     <input>accelerations/n-pilot-y-norm</input>
@@ -84,31 +75,39 @@ new_load = '''   <!-- Stage 021: lateral acceleration coordinates feet-off-pedal
 if text.count(old_load) != 1:
     raise SystemExit(f"expected one upstream yaw-load block, found {text.count(old_load)}")
 text = text.replace(old_load, new_load, 1)
-if text.count(old_rate) != 1:
-    raise SystemExit(f"expected one yaw-rate schedule, found {text.count(old_rate)}")
-text = text.replace(old_rate, new_rate, 1)
+
+# Assert the upstream command-target structure remains intact. This is deliberate:
+# one command occurrence establishes the requested yaw in the PID error and the
+# second is the pilot feed into the final rudder scheduler.
+error_block = '''   <summer name="fcs/yaw-trim-error">
+    <input>fcs/rudder-cmd-norm</input>
+    <input>fcs/yaw-rate-norm</input>
+    <input>fcs/yaw-load-norm</input>
+   </summer>'''
 scheduler = '''   <summer name="fcs/yaw-scheduler">
      <input>fcs/rudder-cmd-norm</input>
      <input>fcs/yaw-trim-cmd-norm</input>
      <input>fcs/yaw-load-pid</input>'''
+if text.count(error_block) != 1:
+    raise SystemExit(f"expected one commanded yaw error block, found {text.count(error_block)}")
 if text.count(scheduler) != 1:
     raise SystemExit(f"expected one direct pilot yaw scheduler, found {text.count(scheduler)}")
+
 path.write_text(text, encoding="utf-8")
 PY
 
-grep -q 'Full Authority Stage 020: SAS feedback only' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q '150.0    112.0' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q 'Stage 021: lateral acceleration coordinates feet-off-pedals flight' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 grep -q 'fcs/rudder-cmd-norm gt 0.035' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
-test "$(grep -c '<input>fcs/rudder-cmd-norm</input>' "$RESOURCE_ROOT/aircraft/f16/f16.xml")" -eq 1
+test "$(grep -c '<input>fcs/rudder-cmd-norm</input>' "$RESOURCE_ROOT/aircraft/f16/f16.xml")" -eq 2
 grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
 
-# Render art is now bundled from the authored, MIT-licensed vazgriz/FlightSim_F16
+# Render art is bundled from the authored, MIT-licensed vazgriz/FlightSim_F16
 # import under JSBSim/visuals/f16. Do not download or stage the retired R4 OBJ here.
 
 # Generate a deterministic terrain albedo directly into the app bundle. It is
 # intentionally low-frequency and earthy: RealityKit supplies lighting while
-# the material's very high roughness prevents the old plastic/shiny terrain.
+# the material's very high roughness prevents plastic/shiny terrain.
 python3 - "$APP_PATH/terrain_albedo.png" <<'PY'
 from pathlib import Path
 import math
@@ -167,4 +166,4 @@ for required in \
   test -s "$required"
 done
 
-echo "Staged JSBSim F-16 calibration data, Stage 021 pedal-aware yaw SAS correction and terrain texture"
+echo "Staged JSBSim F-16 calibration data, Stage 021 commanded-yaw SAS correction and terrain texture"
