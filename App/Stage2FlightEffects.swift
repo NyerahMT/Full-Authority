@@ -321,10 +321,10 @@ enum Stage2FlightEffects {
             layerMinAge: 2.0,
             layerMaxAge: 160,
             radialSides: 6,
-            baseRadius: 0.62,
-            radialGrowthPerSecond: 0.086,
-            driftScale: 0.88,
-            opacity: 0.14
+            baseRadius: 0.54,
+            radialGrowthPerSecond: 0.068,
+            driftScale: 0.84,
+            opacity: 0.16
         )
         updateTrailEntity(
             root: root,
@@ -334,10 +334,10 @@ enum Stage2FlightEffects {
             layerMinAge: 0.55,
             layerMaxAge: 130,
             radialSides: 6,
-            baseRadius: 0.40,
-            radialGrowthPerSecond: 0.064,
-            driftScale: 0.83,
-            opacity: 0.085
+            baseRadius: 0.36,
+            radialGrowthPerSecond: 0.052,
+            driftScale: 0.80,
+            opacity: 0.10
         )
         updateTrailEntity(
             root: root,
@@ -347,10 +347,10 @@ enum Stage2FlightEffects {
             layerMinAge: 0,
             layerMaxAge: 18,
             radialSides: 6,
-            baseRadius: 0.145,
-            radialGrowthPerSecond: 0.017,
-            driftScale: 0.26,
-            opacity: 0.20
+            baseRadius: 0.17,
+            radialGrowthPerSecond: 0.020,
+            driftScale: 0.24,
+            opacity: 0.22
         )
     }
 
@@ -512,27 +512,27 @@ enum Stage2FlightEffects {
 
         if isTip {
             entity.scale = [
-                (0.105 + 0.075 * i) * shimmer,
-                (0.105 + 0.055 * i) * shimmer,
-                7.2 + 9.8 * i
+                (0.13 + 0.09 * i) * shimmer,
+                (0.13 + 0.07 * i) * shimmer,
+                4.6 + 4.8 * i
             ]
         } else if isLeading {
             entity.scale = [
-                (0.34 + 0.30 * i) * shimmer,
-                (0.070 + 0.045 * i) * shimmer,
-                4.0 + 6.4 * i
+                (0.42 + 0.32 * i) * shimmer,
+                (0.095 + 0.055 * i) * shimmer,
+                2.5 + 3.6 * i
             ]
         } else {
             entity.scale = [
-                (0.30 + 0.27 * i) * shimmer,
-                (0.105 + 0.075 * i) * shimmer,
-                4.2 + 6.8 * i
+                (0.34 + 0.28 * i) * shimmer,
+                (0.13 + 0.09 * i) * shimmer,
+                2.8 + 4.0 * i
             ]
         }
 
         setVaporOpacity(
             entity: entity,
-            opacity: (isTip ? 0.040 : 0.060) + (isTip ? 0.13 : 0.21) * i
+            opacity: (isTip ? 0.055 : 0.075) + (isTip ? 0.15 : 0.24) * i
         )
     }
 
@@ -595,7 +595,7 @@ enum Stage2FlightEffects {
         )
         let moisture = clamp((iceRH - 0.43) / 0.52, 0, 1)
         let mach = state.mach
-        let machPeak = exp(-pow((mach - 0.995) / 0.042, 2))
+        let machPeak = exp(-pow((mach - 0.995) / 0.060, 2))
         let qbar = clamp((state.dynamicPressurePSF - 85) / 500.0, 0, 1)
         let intensity = clamp(
             machPeak
@@ -605,8 +605,8 @@ enum Stage2FlightEffects {
             1
         )
 
-        let visible = mach > 0.925
-            && mach < 1.080
+        let visible = mach > 0.90
+            && mach < 1.115
             && intensity > 0.016
 
         let time = Float(simulationTime)

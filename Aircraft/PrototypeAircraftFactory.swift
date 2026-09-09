@@ -199,14 +199,14 @@ enum PrototypeAircraftFactory {
         // canopy and nozzle glossy, but push every painted zone toward a diffuse,
         // low-specular dielectric response so sunlight reads as a soft highlight.
         return [
-            material(UIColor(red: 0.275, green: 0.296, blue: 0.306, alpha: 1), roughness: 0.78, metallic: 0.000, specular: 0.16, clearcoat: 0.006, clearcoatRoughness: 0.82),
-            material(UIColor(red: 0.430, green: 0.448, blue: 0.452, alpha: 1), roughness: 0.80, metallic: 0.000, specular: 0.15, clearcoat: 0.004, clearcoatRoughness: 0.84),
-            material(UIColor(red: 0.125, green: 0.132, blue: 0.136, alpha: 1), roughness: 0.86, metallic: 0.000, specular: 0.12, clearcoat: 0.000, clearcoatRoughness: 0.92),
-            material(UIColor(red: 0.018, green: 0.045, blue: 0.064, alpha: 1), roughness: 0.070, metallic: 0.04, specular: 1.00, clearcoat: 1.00, clearcoatRoughness: 0.025),
-            material(UIColor(red: 0.095, green: 0.083, blue: 0.070, alpha: 1), roughness: 0.30, metallic: 0.96, specular: 0.72, clearcoat: 0.015, clearcoatRoughness: 0.38),
-            material(UIColor(red: 0.288, green: 0.308, blue: 0.315, alpha: 1), roughness: 0.79, metallic: 0.000, specular: 0.15, clearcoat: 0.004, clearcoatRoughness: 0.84),
-            material(UIColor(red: 0.220, green: 0.240, blue: 0.248, alpha: 1), roughness: 0.77, metallic: 0.000, specular: 0.16, clearcoat: 0.005, clearcoatRoughness: 0.82),
-            material(UIColor(red: 0.242, green: 0.261, blue: 0.268, alpha: 1), roughness: 0.76, metallic: 0.000, specular: 0.17, clearcoat: 0.006, clearcoatRoughness: 0.80)
+            material(UIColor(red: 0.300, green: 0.325, blue: 0.340, alpha: 1), roughness: 0.70, metallic: 0.000, specular: 0.20, clearcoat: 0.015, clearcoatRoughness: 0.72),
+            material(UIColor(red: 0.470, green: 0.490, blue: 0.500, alpha: 1), roughness: 0.73, metallic: 0.000, specular: 0.18, clearcoat: 0.010, clearcoatRoughness: 0.76),
+            material(UIColor(red: 0.145, green: 0.153, blue: 0.158, alpha: 1), roughness: 0.82, metallic: 0.000, specular: 0.14, clearcoat: 0.000, clearcoatRoughness: 0.90),
+            material(UIColor(red: 0.020, green: 0.050, blue: 0.072, alpha: 1), roughness: 0.055, metallic: 0.08, specular: 1.00, clearcoat: 1.00, clearcoatRoughness: 0.020),
+            material(UIColor(red: 0.105, green: 0.095, blue: 0.082, alpha: 1), roughness: 0.21, metallic: 0.98, specular: 0.78, clearcoat: 0.03, clearcoatRoughness: 0.30),
+            material(UIColor(red: 0.315, green: 0.340, blue: 0.355, alpha: 1), roughness: 0.72, metallic: 0.000, specular: 0.18, clearcoat: 0.010, clearcoatRoughness: 0.76),
+            material(UIColor(red: 0.245, green: 0.270, blue: 0.285, alpha: 1), roughness: 0.71, metallic: 0.000, specular: 0.19, clearcoat: 0.012, clearcoatRoughness: 0.74),
+            material(UIColor(red: 0.270, green: 0.295, blue: 0.310, alpha: 1), roughness: 0.69, metallic: 0.000, specular: 0.20, clearcoat: 0.014, clearcoatRoughness: 0.72)
         ]
     }
 
@@ -247,10 +247,10 @@ enum PrototypeAircraftFactory {
         let halo = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.22,
-                green: 0.32,
-                blue: 0.92,
-                alpha: 0.13
+                red: 0.82,
+                green: 0.10,
+                blue: 0.025,
+                alpha: 0.15
             ))]
         )
         halo.name = afterburnerHaloName
@@ -262,10 +262,10 @@ enum PrototypeAircraftFactory {
         let outer = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.34,
-                green: 0.58,
-                blue: 1.0,
-                alpha: 0.32
+                red: 1.0,
+                green: 0.24,
+                blue: 0.035,
+                alpha: 0.34
             ))]
         )
         outer.name = afterburnerOuterName
@@ -277,9 +277,9 @@ enum PrototypeAircraftFactory {
         let inner = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.62,
-                green: 0.80,
-                blue: 1.0,
+                red: 1.0,
+                green: 0.52,
+                blue: 0.075,
                 alpha: 0.56
             ))]
         )
@@ -292,10 +292,10 @@ enum PrototypeAircraftFactory {
         let core = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.94,
-                green: 0.975,
-                blue: 1.0,
-                alpha: 0.90
+                red: 1.0,
+                green: 0.88,
+                blue: 0.48,
+                alpha: 0.86
             ))]
         )
         core.name = afterburnerCoreName
@@ -314,8 +314,8 @@ enum PrototypeAircraftFactory {
                 mesh: .generateCylinder(height: 0.030, radius: shockR[index]),
                 materials: [UnlitMaterial(color: UIColor(
                     red: 1.0,
-                    green: 0.72,
-                    blue: 0.28,
+                    green: 0.66,
+                    blue: 0.20,
                     alpha: CGFloat(max(0.055, 0.15 - Float(index) * 0.020))
                 ))]
             )

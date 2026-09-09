@@ -12,9 +12,6 @@ private final class Stage2SceneRuntime: ObservableObject {
     var cameraInitialized = false
     var lastAirspeed: Float?
     var chasePullbackMeters: Float = 0
-    var cameraPosition = SIMD3<Float>.zero
-    var cameraVelocity = SIMD3<Float>.zero
-    var cameraOrientation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))
     let effects = Stage2FlightEffects.Runtime()
     let jetAudio = Stage0108JetAudio()
 }
@@ -51,13 +48,13 @@ struct PrototypeSceneView: View {
                     // Stage 016 cinematic lighting: reduce the flat default IBL so
                     // directional sunlight and material roughness can actually shape terrain.
                     world.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.32
+                        environmentLightingWeight: 0.48
                     ))
                     content.add(world)
 
                     let aircraft = PrototypeAircraftFactory.make()
                     aircraft.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.43
+                        environmentLightingWeight: 0.56
                     ))
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
@@ -81,33 +78,22 @@ struct PrototypeSceneView: View {
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.935, blue: 0.825, alpha: 1),
-                            intensity: 13_200
+                            color: UIColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1),
+                            intensity: 10_400
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
-                    sun.look(at: .zero, from: [-11_400, 7_900, -4_900], relativeTo: nil)
+                    sun.look(at: .zero, from: [-9_600, 5_600, -3_200], relativeTo: nil)
                     content.add(sun)
 
                     let fill = Entity()
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.39, green: 0.55, blue: 0.82, alpha: 1),
-                        intensity: 145
+                        color: UIColor(red: 0.42, green: 0.58, blue: 0.86, alpha: 1),
+                        intensity: 210
                     ))
-                    fill.look(at: .zero, from: [7_600, 6_800, 8_900], relativeTo: nil)
+                    fill.look(at: .zero, from: [6_800, 6_200, 7_600], relativeTo: nil)
                     content.add(fill)
-
-                    // A restrained cool rim gives the matte jet a clean silhouette
-                    // against bright cloud banks without flattening the fuselage.
-                    let rim = Entity()
-                    rim.name = "FA.rim"
-                    rim.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.62, green: 0.76, blue: 1.0, alpha: 1),
-                        intensity: 275
-                    ))
-                    rim.look(at: .zero, from: [9_400, 3_900, -10_200], relativeTo: nil)
-                    content.add(rim)
                 } update: { content in
                     guard let aircraft = content.entities.first(where: { $0.name == PrototypeAircraftFactory.aircraftName }) else {
                         return
@@ -156,9 +142,6 @@ struct PrototypeSceneView: View {
             }
             .background(stage2Sky)
 
-            cinematicImageOverlay
-                .allowsHitTesting(false)
-
             // The same free-look surface is now available in cockpit. External
             // cameras orbit the airplane; cockpit mode rotates the pilot's head
             // while keeping the eyepoint fixed in the seat.
@@ -174,103 +157,21 @@ struct PrototypeSceneView: View {
         }
     }
 
-    private var cinematicImageOverlay: some View {
-        GeometryReader { geometry in
-            let radius = max(geometry.size.width, geometry.size.height)
-            ZStack {
-                // Barely-there edge falloff keeps the eye on the aircraft without
-                // turning the view into a fake camera-filter effect.
-                RadialGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.00),
-                        .init(color: .clear, location: 0.67),
-                        .init(color: .black.opacity(0.085), location: 1.00)
-                    ],
-                    center: .center,
-                    startRadius: radius * 0.12,
-                    endRadius: radius * 0.78
-                )
-
-                // Very soft forward-scatter/glare around the authored sun direction.
-                // It is intentionally subtle: the aircraft and atmosphere create the
-                // drama, not screen-space gimmicks.
-                RadialGradient(
-                    stops: [
-                        .init(color: .white.opacity(0.075), location: 0.00),
-                        .init(color: Color(red: 1.0, green: 0.78, blue: 0.52).opacity(0.030), location: 0.32),
-                        .init(color: .clear, location: 1.00)
-                    ],
-                    center: UnitPoint(x: 0.16, y: 0.27),
-                    startRadius: 1,
-                    endRadius: radius * 0.42
-                )
-            }
-        }
-        .ignoresSafeArea()
-    }
-
     private var stage2Sky: some View {
-        let altitudeBlend = Double(clamp(simulation.state.altitudeFeetMSL / 42_000, 0, 1))
-        let zenith = Color(
-            red: 0.008 + 0.012 * altitudeBlend,
-            green: 0.050 + 0.030 * altitudeBlend,
-            blue: 0.165 + 0.075 * altitudeBlend
+        // Stage 016 cinematic sky. The zenith-to-horizon progression follows the
+        // aerial-perspective structure described by Bruneton & Neyret, while the
+        // warmer low horizon is intentionally pushed for a readable game palette.
+        LinearGradient(
+            stops: [
+                .init(color: Color(red: 0.008, green: 0.070, blue: 0.205), location: 0.00),
+                .init(color: Color(red: 0.025, green: 0.205, blue: 0.455), location: 0.38),
+                .init(color: Color(red: 0.225, green: 0.455, blue: 0.655), location: 0.68),
+                .init(color: Color(red: 0.565, green: 0.625, blue: 0.640), location: 0.86),
+                .init(color: Color(red: 0.760, green: 0.665, blue: 0.535), location: 1.00)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
         )
-        let upperSky = Color(
-            red: 0.020 + 0.010 * altitudeBlend,
-            green: 0.185 + 0.015 * altitudeBlend,
-            blue: 0.430 + 0.035 * altitudeBlend
-        )
-        let lowerSky = Color(
-            red: 0.245 + 0.050 * altitudeBlend,
-            green: 0.455 + 0.020 * altitudeBlend,
-            blue: 0.635 + 0.025 * altitudeBlend
-        )
-        let horizon = Color(
-            red: 0.735 - 0.115 * altitudeBlend,
-            green: 0.665 - 0.080 * altitudeBlend,
-            blue: 0.555 - 0.010 * altitudeBlend
-        )
-
-        return ZStack {
-            // Hillaire/Bruneton-inspired structure: dark Rayleigh-rich zenith,
-            // saturated mid-sky, then a desaturated aerosol-heavy horizon.
-            LinearGradient(
-                stops: [
-                    .init(color: zenith, location: 0.00),
-                    .init(color: upperSky, location: 0.34),
-                    .init(color: lowerSky, location: 0.70),
-                    .init(color: horizon, location: 0.93),
-                    .init(color: Color(red: 0.70, green: 0.62, blue: 0.50), location: 1.00)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            // Broad solar aureole: this is atmospheric forward scattering, not bloom.
-            RadialGradient(
-                stops: [
-                    .init(color: Color(red: 1.0, green: 0.965, blue: 0.88).opacity(0.60), location: 0.00),
-                    .init(color: Color(red: 1.0, green: 0.72, blue: 0.43).opacity(0.18), location: 0.20),
-                    .init(color: .clear, location: 1.00)
-                ],
-                center: UnitPoint(x: 0.16, y: 0.27),
-                startRadius: 2,
-                endRadius: 300
-            )
-
-            // Aerial-perspective wash near the horizon makes distant terrain and
-            // cloud banks read in kilometres rather than as a painted backdrop.
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.54),
-                    .init(color: Color(red: 0.60, green: 0.68, blue: 0.72).opacity(0.08), location: 0.76),
-                    .init(color: Color(red: 0.78, green: 0.70, blue: 0.59).opacity(0.13), location: 1.00)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
     }
 
     private var cameraSelector: some View {
@@ -449,15 +350,13 @@ struct PrototypeSceneView: View {
         }
         runtime.lastCameraTime = now
 
-        // Acceleration changes framing, but only by metres and a couple degrees.
-        // This is a physical camera rig response, not arcade speed-FOV pumping.
         let airspeed = state.airspeedMetersPerSecond
         if let previousAirspeed = runtime.lastAirspeed {
             let acceleration = max(0, (airspeed - previousAirspeed) / max(dt, 1.0 / 240.0))
-            let accelerationPullback = min(acceleration * 0.060, 1.10)
-            let highSpeedResidual = clamp((airspeed - 260) / 280, 0, 1) * 0.42
+            let accelerationPullback = min(acceleration * 0.075, 1.35)
+            let highSpeedResidual = clamp((airspeed - 250) / 250, 0, 1) * 0.48
             let targetPullback = accelerationPullback + highSpeedResidual
-            let response: Float = targetPullback > runtime.chasePullbackMeters ? 8.5 : 3.8
+            let response: Float = targetPullback > runtime.chasePullbackMeters ? 11.0 : 4.8
             let blend = 1 - exp(-response * dt)
             runtime.chasePullbackMeters += (targetPullback - runtime.chasePullbackMeters) * blend
         } else {
@@ -467,26 +366,29 @@ struct PrototypeSceneView: View {
 
         var localCameraOffset: SIMD3<Float>
         let localLookPoint: SIMD3<Float>
-        let baseFieldOfView: Float
+        let fieldOfView: Float
         let pullbackScale: Float
 
         switch cameraMode {
         case .chase:
-            localCameraOffset = [0, 4.25, -17.80]
-            localLookPoint = [0, 0.72, 4.30]
-            baseFieldOfView = 56.5
+            localCameraOffset = [0, 4.10, -17.15]
+            localLookPoint = [0, 0.72, 4.05]
+            fieldOfView = 58
             pullbackScale = 1.0
 
         case .close:
-            localCameraOffset = [0, 3.10, -11.95]
-            localLookPoint = [0, 0.66, 4.50]
-            baseFieldOfView = 60.0
-            pullbackScale = 0.52
+            localCameraOffset = [0, 3.00, -11.75]
+            localLookPoint = [0, 0.62, 4.30]
+            fieldOfView = 62
+            pullbackScale = 0.55
 
         case .cockpit:
+            // Pilot eyepoint sits near the top of the seat/headrest, not up against
+            // the instrument panel. Free-look rotates the head around this fixed
+            // seated position so the cockpit has believable depth and parallax.
             localCameraOffset = [0, 1.08, 3.05]
             localLookPoint = [0, 1.08, 90]
-            baseFieldOfView = 66.0
+            fieldOfView = 66
             pullbackScale = 0
         }
 
@@ -498,12 +400,9 @@ struct PrototypeSceneView: View {
             localCameraOffset = simd_act(yawOrbit * pitchOrbit, localCameraOffset)
         }
 
-        let speedFov = cameraMode == .cockpit ? 0 : clamp((airspeed - 190) / 310, 0, 1) * 1.45
-        let maneuverFov = cameraMode == .cockpit ? 0 : clamp((abs(state.loadFactorG) - 1.0) / 8.0, 0, 1) * 0.65
-        let fieldOfView = baseFieldOfView + speedFov + maneuverFov
         camera.components.set(PerspectiveCameraComponent(
             near: cameraMode == .cockpit ? 0.02 : 0.08,
-            far: 72_000,
+            far: 62_000,
             fieldOfViewInDegrees: fieldOfView
         ))
 
@@ -518,21 +417,12 @@ struct PrototypeSceneView: View {
             let headForwardLocal = simd_act(headRotation, SIMD3<Float>(0, 0, 1))
             let headUpLocal = simd_act(headRotation, SIMD3<Float>(0, 1, 0))
 
-            desiredLookTarget = desiredPosition + simd_act(attitude, headForwardLocal) * 90
+            desiredLookTarget = desiredPosition
+                + simd_act(attitude, headForwardLocal) * 90
             cameraUp = simd_act(attitude, headUpLocal)
-        } else if cameraMode == .cockpit {
-            desiredLookTarget = aircraftPosition + simd_act(attitude, localLookPoint)
-            cameraUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
         } else {
             desiredLookTarget = aircraftPosition + simd_act(attitude, localLookPoint)
-
-            // The rig follows most of the aircraft bank, but not all of it. This
-            // tiny amount of inertial horizon stability lets hard rolls read as
-            // violent aircraft motion without faking shake or removing orientation.
-            let aircraftUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
-            let worldUp = SIMD3<Float>(0, 1, 0)
-            let bankFollow: Float = cameraMode == .close ? 0.84 : 0.72
-            cameraUp = simd_normalize(worldUp * (1 - bankFollow) + aircraftUp * bankFollow)
+            cameraUp = simd_act(attitude, SIMD3<Float>(0, 1, 0))
         }
 
         let desiredOrientation = lookRotation(
@@ -540,35 +430,12 @@ struct PrototypeSceneView: View {
             up: cameraUp
         )
 
-        let modeChanged = runtime.cameraModeKey != cameraMode.rawValue
-        if forceSnap || modeChanged || !runtime.cameraInitialized || cameraMode == .cockpit {
-            runtime.cameraPosition = desiredPosition
-            runtime.cameraVelocity = .zero
-            runtime.cameraOrientation = desiredOrientation
-        } else {
-            // Critically damped translational spring. Position gets believable mass
-            // while orientation stays tight enough for serious flight-sim control.
-            let frequency: Float = cameraMode == .close ? 8.8 : 6.4
-            let displacement = runtime.cameraPosition - desiredPosition
-            let springAcceleration =
-                -2 * frequency * runtime.cameraVelocity
-                - (frequency * frequency) * displacement
-            runtime.cameraVelocity += springAcceleration * dt
-            runtime.cameraPosition += runtime.cameraVelocity * dt
-
-            let orientationResponse: Float = cameraMode == .close ? 10.5 : 8.0
-            let orientationBlend = 1 - exp(-orientationResponse * dt)
-            runtime.cameraOrientation = simd_slerp(
-                runtime.cameraOrientation,
-                desiredOrientation,
-                orientationBlend
-            )
-        }
-
-        camera.position = runtime.cameraPosition
-        camera.orientation = runtime.cameraOrientation
+        camera.position = desiredPosition
+        camera.orientation = desiredOrientation
         runtime.cameraInitialized = true
         runtime.cameraModeKey = cameraMode.rawValue
+
+        _ = forceSnap
     }
 
     private func lookRotation(forward: SIMD3<Float>, up: SIMD3<Float>) -> simd_quatf {
@@ -664,24 +531,24 @@ struct PrototypeSceneView: View {
             let slow = sin(time * 7.2 + 0.6)
             let turbulence = 1.0 + 0.018 * fast + 0.013 * mid + 0.008 * slow
             let width = (0.90 + 0.10 * intensity) * turbulence * (0.94 + 0.06 * pressureExpansion)
-            let length = (0.95 + 0.82 * intensity) * pressureExpansion * speedCompression
+            let length = (0.82 + 0.58 * intensity) * pressureExpansion * speedCompression
 
             if let halo = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerHaloName) {
-                halo.scale = [1.26 * width, 2.55 * length, 1.26 * width]
+                halo.scale = [1.15 * width, 2.15 * length, 1.15 * width]
                 halo.position = [0, 0, 0.5 * halo.scale.y]
             }
             if let outer = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerOuterName) {
-                outer.scale = [0.98 * width, 2.28 * length, 1.05 * width]
+                outer.scale = [0.94 * width, 1.90 * length, 1.02 * width]
                 outer.position = [0, 0, 0.5 * outer.scale.y]
             }
             if let inner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerInnerName) {
                 let pulse = 1.0 + 0.016 * sin(time * 61.0 + 0.9)
-                inner.scale = [0.60 * width * pulse, 1.78 * length, 0.68 * width * pulse]
+                inner.scale = [0.58 * width * pulse, 1.52 * length, 0.66 * width * pulse]
                 inner.position = [0, 0, 0.5 * inner.scale.y]
             }
             if let core = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerCoreName) {
                 let pulse = 1.0 + 0.026 * sin(time * 73.0 + 0.35)
-                core.scale = [0.23 * width * pulse, 1.24 * length, 0.29 * width * pulse]
+                core.scale = [0.24 * width * pulse, 1.12 * length, 0.30 * width * pulse]
                 core.position = [0, 0, 0.5 * core.scale.y]
             }
 
