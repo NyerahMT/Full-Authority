@@ -1,20 +1,32 @@
-name: Stage021YawRegression
+name: F-16 Yaw Regression
 
 on:
   push:
     branches:
-      - stage021-vfx-audio-atmosphere
+      - main
     paths:
+      - 'scripts/stage-f16-calibration.sh'
+      - 'ThirdParty/jsbsim'
+      - '.gitmodules'
+      - '.github/workflows/stage021-yaw-regression.yml'
+  pull_request:
+    paths:
+      - 'scripts/stage-f16-calibration.sh'
+      - 'ThirdParty/jsbsim'
+      - '.gitmodules'
       - '.github/workflows/stage021-yaw-regression.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   yaw-response:
+    name: Verify in-flight rudder authority
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: stage021-vfx-audio-atmosphere
           submodules: recursive
 
       - name: Install JSBSim Python package
@@ -98,18 +110,16 @@ jobs:
           print(f'dynamic pressure: {qbar:.1f} psf')
           print(f'pedal command: {float(fdm["fcs/rudder-cmd-norm"]):.4f}')
           print(f'fa pedal gain output: {float(fdm["fcs/fa-pedal-rudder"]):.4f}')
-          print(f'fa SAS output: {float(fdm["fcs/fa-yaw-sas"]):.4f}')
           print(f'yaw scheduler output: {float(fdm["fcs/yaw-scheduler"]):.4f}')
           print(f'rudder pos norm: {float(fdm["fcs/rudder-pos-norm"]):.4f}')
           print(f'rudder pos rad: {float(fdm["fcs/rudder-pos-rad"]):.4f}')
-          print(f'yaw load PID: {float(fdm["fcs/yaw-load-pid"]):.4f}')
           print(f'max actual rudder: {math.degrees(max_rudder):.2f} deg')
           print(f'max beta change: {max_beta_delta:.2f} deg')
           print(f'max aero yaw rate: {math.degrees(max_yaw_rate):.2f} deg/s')
           print(f'heading change: {heading_delta:.2f} deg')
 
           if max_rudder < math.radians(7.0):
-              raise SystemExit('FAIL: held 70% pedal still lacks useful scheduled rudder authority')
+              raise SystemExit('FAIL: held 70% pedal lacks useful scheduled rudder authority')
           if max_beta_delta < 0.8 and max_yaw_rate < math.radians(1.5) and heading_delta < 1.0:
-              raise SystemExit('FAIL: rudder moves but aircraft still lacks useful in-flight lateral response')
+              raise SystemExit('FAIL: rudder moves but aircraft lacks useful in-flight lateral response')
           PY
