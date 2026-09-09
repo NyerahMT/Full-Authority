@@ -27,32 +27,36 @@ jobs:
 
           sim = Path('Simulation/FlightSimulation.swift')
           text = sim.read_text(encoding='utf-8')
-          old = """        // Full Authority's touch control is screen-centric: dragging right means
-          // right pedal / nose-right. Stage 020 feeds this pilot command into the
-          // F-16 scheduler once; stability feedback remains a separate SAS signal.
-          let pilotYawCommand = -Double(controls.rudder)
-          let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
-"""
-          new = """        // Airborne rudder and nosewheel steering use opposite sign conventions
-          // in the current JSBSim F-16 model. Preserve the already-correct ground
-          // steering direction while making touch-right command aerodynamic nose-right.
-          let pilotRudderCommand = Double(controls.rudder)
-          let rudder = clamp(trimRudderCommand + pilotRudderCommand, min: -1, max: 1)
-"""
+          old = (
+              "        // Full Authority's touch control is screen-centric: dragging right means\n"
+              "        // right pedal / nose-right. Stage 020 feeds this pilot command into the\n"
+              "        // F-16 scheduler once; stability feedback remains a separate SAS signal.\n"
+              "        let pilotYawCommand = -Double(controls.rudder)\n"
+              "        let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)\n"
+          )
+          new = (
+              "        // Airborne rudder and nosewheel steering use opposite sign conventions\n"
+              "        // in the current JSBSim F-16 model. Preserve the already-correct ground\n"
+              "        // steering direction while making touch-right command aerodynamic nose-right.\n"
+              "        let pilotRudderCommand = Double(controls.rudder)\n"
+              "        let rudder = clamp(trimRudderCommand + pilotRudderCommand, min: -1, max: 1)\n"
+          )
           if old in text:
               text = text.replace(old, new, 1)
           elif new not in text:
               raise SystemExit('airborne rudder block not found')
 
-          old_steer = """        let steering = state.weightOnWheels && state.gearPosition > 0.8
-            ? clamp(pilotYawCommand, min: -1, max: 1)
-            : 0
-"""
-          new_steer = """        let steeringCommand = -Double(controls.rudder)
-          let steering = state.weightOnWheels && state.gearPosition > 0.8
-            ? clamp(steeringCommand, min: -1, max: 1)
-            : 0
-"""
+          old_steer = (
+              "        let steering = state.weightOnWheels && state.gearPosition > 0.8\n"
+              "            ? clamp(pilotYawCommand, min: -1, max: 1)\n"
+              "            : 0\n"
+          )
+          new_steer = (
+              "        let steeringCommand = -Double(controls.rudder)\n"
+              "        let steering = state.weightOnWheels && state.gearPosition > 0.8\n"
+              "            ? clamp(steeringCommand, min: -1, max: 1)\n"
+              "            : 0\n"
+          )
           if old_steer in text:
               text = text.replace(old_steer, new_steer, 1)
           elif new_steer not in text:
@@ -61,20 +65,22 @@ jobs:
 
           aircraft = Path('Aircraft/PrototypeAircraftFactory.swift')
           text = aircraft.read_text(encoding='utf-8')
-          old_blue = """            materials: [UnlitMaterial(color: UIColor(
-                red: 0.34,
-                green: 0.47,
-                blue: 1.00,
-                alpha: 0.075
-            ))]
-"""
-          new_warm = """            materials: [UnlitMaterial(color: UIColor(
-                red: 1.00,
-                green: 0.18,
-                blue: 0.015,
-                alpha: 0.055
-            ))]
-"""
+          old_blue = (
+              "            materials: [UnlitMaterial(color: UIColor(\n"
+              "                red: 0.34,\n"
+              "                green: 0.47,\n"
+              "                blue: 1.00,\n"
+              "                alpha: 0.075\n"
+              "            ))]\n"
+          )
+          new_warm = (
+              "            materials: [UnlitMaterial(color: UIColor(\n"
+              "                red: 1.00,\n"
+              "                green: 0.18,\n"
+              "                blue: 0.015,\n"
+              "                alpha: 0.055\n"
+              "            ))]\n"
+          )
           if old_blue in text:
               text = text.replace(old_blue, new_warm, 1)
           elif new_warm not in text:
