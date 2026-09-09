@@ -1,0 +1,319 @@
+name: Stage020ApplyOverhaul
+
+on:
+  push:
+    branches:
+      - stage020-full-game-overhaul
+    paths:
+      - '.github/workflows/stage020-apply-overhaul.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage020-full-game-overhaul
+          fetch-depth: 0
+
+      - name: Import audited CC0 HDR sky
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p Assets/JSBSim/visuals/world
+          curl --fail --location --retry 3 \
+            'https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/1k/farm_field_puresky_1k.exr' \
+            -o Assets/JSBSim/visuals/world/stage020_farm_field_puresky_1k.exr
+          test -s Assets/JSBSim/visuals/world/stage020_farm_field_puresky_1k.exr
+
+      - name: Wire Stage 020 systems
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def load(path):
+              return Path(path).read_text()
+
+          def save(path, text):
+              Path(path).write_text(text)
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 anchor, found {count}')
+              return text.replace(old, new, 1)
+
+          # --- Xcode project: compile the four Stage 020 source files. ---
+          project_path = 'FullAuthority.xcodeproj/project.pbxproj'
+          p = load(project_path)
+          build_lines = '''\t\tFA0200000000000000000001 /* Stage020WorldUpgrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000011 /* Stage020WorldUpgrade.swift */; };\n\t\tFA0200000000000000000002 /* Stage020SkyEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000012 /* Stage020SkyEnvironment.swift */; };\n\t\tFA0200000000000000000003 /* Stage020AircraftDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000013 /* Stage020AircraftDetails.swift */; };\n\t\tFA0200000000000000000004 /* Stage020CockpitDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000014 /* Stage020CockpitDetails.swift */; };\n'''
+          if 'FA0200000000000000000001' not in p:
+              p = replace_once(p, '/* End PBXBuildFile section */', build_lines + '/* End PBXBuildFile section */', 'PBXBuildFile')
+
+          ref_lines = '''\t\tFA0200000000000000000011 /* Stage020WorldUpgrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020WorldUpgrade.swift; sourceTree = "<group>"; };\n\t\tFA0200000000000000000012 /* Stage020SkyEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020SkyEnvironment.swift; sourceTree = "<group>"; };\n\t\tFA0200000000000000000013 /* Stage020AircraftDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020AircraftDetails.swift; sourceTree = "<group>"; };\n\t\tFA0200000000000000000014 /* Stage020CockpitDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020CockpitDetails.swift; sourceTree = "<group>"; };\n'''
+          if 'FA0200000000000000000011 /* Stage020WorldUpgrade.swift */ = {isa = PBXFileReference' not in p:
+              p = replace_once(p, '/* End PBXFileReference section */', ref_lines + '/* End PBXFileReference section */', 'PBXFileReference')
+
+          app_anchor = '\t\t\t\tFA000000000000000000001D /* Stage2FlightEffects.swift */,\n'
+          if 'FA0200000000000000000011 /* Stage020WorldUpgrade.swift */,' not in p:
+              p = replace_once(
+                  p,
+                  app_anchor,
+                  app_anchor + '\t\t\t\tFA0200000000000000000011 /* Stage020WorldUpgrade.swift */,\n\t\t\t\tFA0200000000000000000012 /* Stage020SkyEnvironment.swift */,\n',
+                  'App group'
+              )
+
+          aircraft_anchor = '\t\t\t\tFA000000000000000000001E /* PrototypeCockpitFactory.swift */,\n'
+          if 'FA0200000000000000000013 /* Stage020AircraftDetails.swift */,' not in p:
+              p = replace_once(
+                  p,
+                  aircraft_anchor,
+                  aircraft_anchor + '\t\t\t\tFA0200000000000000000013 /* Stage020AircraftDetails.swift */,\n\t\t\t\tFA0200000000000000000014 /* Stage020CockpitDetails.swift */,\n',
+                  'Aircraft group'
+              )
+
+          sources_anchor = '\t\t\t\tFA000000000000000000000B /* Stage2FlightEffects.swift in Sources */,\n'
+          if 'FA0200000000000000000001 /* Stage020WorldUpgrade.swift in Sources */,' not in p:
+              p = replace_once(
+                  p,
+                  sources_anchor,
+                  sources_anchor + '\t\t\t\tFA0200000000000000000001 /* Stage020WorldUpgrade.swift in Sources */,\n\t\t\t\tFA0200000000000000000002 /* Stage020SkyEnvironment.swift in Sources */,\n\t\t\t\tFA0200000000000000000003 /* Stage020AircraftDetails.swift in Sources */,\n\t\t\t\tFA0200000000000000000004 /* Stage020CockpitDetails.swift in Sources */,\n',
+                  'Sources phase'
+              )
+          save(project_path, p)
+
+          # --- Base world: true normal-map response, cooler land palette, Stage 020 layer. ---
+          world_path = 'App/Stage2WorldFactory.swift'
+          w = load(world_path)
+          w = replace_once(
+              w,
+              '        addStage019Environment(to: root)\n\n        return root',
+              '        addStage019Environment(to: root)\n        root.addChild(Stage020WorldUpgrade.make())\n\n        return root',
+              'Stage020 world hookup'
+          )
+          w = w.replace('for index in 0..<14 {', 'for index in 0..<7 {', 1)
+          w = w.replace('for index in 0..<10 {', 'for index in 0..<3 {', 1)
+          w = w.replace('let angle = Float(index) / 10 * 2 * Float.pi + 0.21', 'let angle = Float(index) / 3 * 2 * Float.pi + 0.21', 1)
+
+          terrain_start = w.index('    private static func terrainMaterial(')
+          terrain_end = w.index('    private static func pbrSurfaceMaterial(', terrain_start)
+          terrain = w[terrain_start:terrain_end]
+          old_tints = '''        let tints: [UIColor] = [\n            UIColor(red: 0.72, green: 0.78, blue: 0.58, alpha: 1),\n            UIColor(red: 0.82, green: 0.78, blue: 0.54, alpha: 1),\n            UIColor(red: 0.64, green: 0.73, blue: 0.51, alpha: 1),\n            UIColor(red: 0.82, green: 0.69, blue: 0.47, alpha: 1),\n            UIColor(red: 0.68, green: 0.68, blue: 0.47, alpha: 1),\n            UIColor(red: 0.76, green: 0.79, blue: 0.57, alpha: 1)\n        ]'''
+          new_tints = '''        let tints: [UIColor] = [\n            UIColor(red: 0.68, green: 0.74, blue: 0.62, alpha: 1),\n            UIColor(red: 0.73, green: 0.76, blue: 0.65, alpha: 1),\n            UIColor(red: 0.62, green: 0.70, blue: 0.58, alpha: 1),\n            UIColor(red: 0.70, green: 0.72, blue: 0.61, alpha: 1),\n            UIColor(red: 0.64, green: 0.69, blue: 0.57, alpha: 1),\n            UIColor(red: 0.71, green: 0.75, blue: 0.63, alpha: 1)\n        ]'''
+          terrain = replace_once(terrain, old_tints, new_tints, 'terrain palette')
+          rough_anchor = '''        } else {\n            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)\n        }\n        material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)'''
+          rough_new = '''        } else {\n            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)\n        }\n        if let normal = textures.normal {\n            material.normal = PhysicallyBasedMaterial.Normal(texture: repeatedTexture(normal))\n        }\n        material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)'''
+          terrain = replace_once(terrain, rough_anchor, rough_new, 'terrain normal material')
+          w = w[:terrain_start] + terrain + w[terrain_end:]
+
+          mesh_start = w.index('    private static func makeTerrainTile(')
+          mesh_end = w.index('    // MARK: -', mesh_start)
+          mesh = w[mesh_start:mesh_end]
+          mesh = replace_once(mesh, '        var normals: [SIMD3<Float>] = []\n        var texcoords:', '        var normals: [SIMD3<Float>] = []\n        var tangents: [SIMD3<Float>] = []\n        var texcoords:', 'terrain tangent array')
+          mesh = replace_once(mesh, '        normals.reserveCapacity(vertexCount)\n        texcoords.reserveCapacity(vertexCount)', '        normals.reserveCapacity(vertexCount)\n        tangents.reserveCapacity(vertexCount)\n        texcoords.reserveCapacity(vertexCount)', 'terrain tangent reserve')
+          mesh = replace_once(
+              mesh,
+              '                positions.append([localX, height, localZ])\n                normals.append(Stage2TerrainProfile.normal(east: globalX, north: globalZ))',
+              '''                positions.append([localX, height, localZ])\n                let surfaceNormal = Stage2TerrainProfile.normal(east: globalX, north: globalZ)\n                normals.append(surfaceNormal)\n                let xAxis = SIMD3<Float>(1, 0, 0)\n                let projected = xAxis - surfaceNormal * simd_dot(xAxis, surfaceNormal)\n                tangents.append(simd_length_squared(projected) > 0.000001 ? simd_normalize(projected) : SIMD3<Float>(0, 0, 1))''',
+              'terrain tangent generation'
+          )
+          mesh = replace_once(mesh, '        descriptor.normals = MeshBuffers.Normals(normals)\n        descriptor.textureCoordinates', '        descriptor.normals = MeshBuffers.Normals(normals)\n        descriptor.tangents = MeshBuffers.Tangents(tangents)\n        descriptor.textureCoordinates', 'terrain descriptor tangents')
+          w = w[:mesh_start] + mesh + w[mesh_end:]
+          save(world_path, w)
+
+          # --- Scene: HDR skybox + coherent daylight. Camera behavior is untouched. ---
+          scene_path = 'App/PrototypeSceneView.swift'
+          s = load(scene_path)
+          s = replace_once(
+              s,
+              '                    content.environment = .default\n\n                    let world = Stage2WorldFactory.make()',
+              '''                    content.environment = .default\n                    if let environment = await Stage020SkyEnvironment.load() {\n                        content.environment = .skybox(environment)\n                    }\n\n                    let world = Stage2WorldFactory.make()''',
+              'HDR sky hookup'
+          )
+          s = s.replace('environmentLightingWeight: 0.48', 'environmentLightingWeight: 0.70', 1)
+          s = s.replace('environmentLightingWeight: 0.56', 'environmentLightingWeight: 0.66', 1)
+          s = replace_once(
+              s,
+              'color: UIColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1),\n                            intensity: 10_400',
+              'color: UIColor(red: 1.0, green: 0.965, blue: 0.90, alpha: 1),\n                            intensity: 7_800',
+              'sun daylight'
+          )
+          s = replace_once(
+              s,
+              'color: UIColor(red: 0.42, green: 0.58, blue: 0.86, alpha: 1),\n                        intensity: 210',
+              'color: UIColor(red: 0.58, green: 0.66, blue: 0.76, alpha: 1),\n                        intensity: 70',
+              'fill daylight'
+          )
+          s = replace_once(
+              s,
+              '''                .init(color: Color(red: 0.008, green: 0.070, blue: 0.205), location: 0.00),\n                .init(color: Color(red: 0.025, green: 0.205, blue: 0.455), location: 0.38),\n                .init(color: Color(red: 0.225, green: 0.455, blue: 0.655), location: 0.68),\n                .init(color: Color(red: 0.565, green: 0.625, blue: 0.640), location: 0.86),\n                .init(color: Color(red: 0.760, green: 0.665, blue: 0.535), location: 1.00)''',
+              '''                .init(color: Color(red: 0.018, green: 0.105, blue: 0.260), location: 0.00),\n                .init(color: Color(red: 0.060, green: 0.245, blue: 0.470), location: 0.42),\n                .init(color: Color(red: 0.285, green: 0.505, blue: 0.665), location: 0.72),\n                .init(color: Color(red: 0.640, green: 0.705, blue: 0.730), location: 0.90),\n                .init(color: Color(red: 0.750, green: 0.775, blue: 0.770), location: 1.00)''',
+              'fallback sky palette'
+          )
+
+          # Animate cockpit pedals from actual pilot command and use a restrained strobe.
+          rudder_anchor = '''        if let rudder = aircraft.findEntity(named: PrototypeAircraftFactory.rudderName) {\n            rudder.orientation = simd_quatf(\n                angle: -state.rudderRadians,\n                axis: PrototypeAircraftFactory.rudderVisualAxis\n            )\n        }\n'''
+          rudder_new = rudder_anchor + '''        let pedalCommand = clamp(simulation.controls.rudder, -1, 1)\n        aircraft.findEntity(named: Stage020CockpitDetails.leftPedalName)?.orientation = simd_quatf(\n            angle: pedalCommand * 0.16, axis: [1, 0, 0]\n        )\n        aircraft.findEntity(named: Stage020CockpitDetails.rightPedalName)?.orientation = simd_quatf(\n            angle: -pedalCommand * 0.16, axis: [1, 0, 0]\n        )\n        if let beacon = aircraft.findEntity(named: Stage020AircraftDetails.antiCollisionName) {\n            beacon.isEnabled = simulation.simulationTime.truncatingRemainder(dividingBy: 1.20) < 0.11\n        }\n'''
+          s = replace_once(s, rudder_anchor, rudder_new, 'pedal presentation')
+          save(scene_path, s)
+
+          # --- Aircraft and cockpit hookups. ---
+          aircraft_path = 'Aircraft/PrototypeAircraftFactory.swift'
+          a = load(aircraft_path)
+          a = replace_once(
+              a,
+              '            try addAfterburner(to: visualRoot)\n            addLandingGear(to: aircraft)',
+              '            try addAfterburner(to: visualRoot)\n            visualRoot.addChild(Stage020AircraftDetails.make())\n            addLandingGear(to: aircraft)',
+              'aircraft details hookup'
+          )
+          save(aircraft_path, a)
+
+          cockpit_path = 'Aircraft/PrototypeCockpitFactory.swift'
+          c = load(cockpit_path)
+          c = replace_once(
+              c,
+              '        return root\n    }\n\n    private static func addMFD(',
+              '        root.addChild(Stage020CockpitDetails.make())\n        return root\n    }\n\n    private static func addMFD(',
+              'cockpit details hookup'
+          )
+          save(cockpit_path, c)
+
+          # RealityKit's stable plane generator uses width/depth; rotate the panes vertically.
+          detail_path = 'Aircraft/Stage020CockpitDetails.swift'
+          d = load(detail_path)
+          d = d.replace('.generatePlane(width: 0.68, height: 1.25)', '.generatePlane(width: 0.68, depth: 1.25)')
+          d = d.replace('pane.orientation = simd_quatf(angle: side * 0.23, axis: [0, 1, 0])\n                * simd_quatf(angle: -0.08, axis: [1, 0, 0])', 'pane.orientation = simd_quatf(angle: side * 0.23, axis: [0, 1, 0])\n                * simd_quatf(angle: .pi / 2 - 0.08, axis: [1, 0, 0])')
+          save(detail_path, d)
+
+          # --- Touch UI: make the rudder a real, reachable flight control. ---
+          ui_path = 'App/ContentView.swift'
+          u = load(ui_path)
+          u = u.replace('.opacity(cameraMode == .cockpit ? 1.0 : 0.78)', '.opacity(cameraMode == .cockpit ? 1.0 : 0.66)', 1)
+          u = replace_once(
+              u,
+              '                .safeAreaPadding(.horizontal, 26)\n                .padding(.bottom, 10)',
+              '                .safeAreaPadding(.horizontal, 26)\n                .safeAreaPadding(.bottom, 12)\n                .padding(.bottom, 2)',
+              'bottom safe area'
+          )
+          u = u.replace('Text("RUDDER / NWS")', 'Text("RUDDER  /  NWS")', 1)
+          u = u.replace('.font(.system(size: 7, weight: .black, design: .monospaced))\n                .foregroundStyle(.white.opacity(0.44))', '.font(.system(size: 8, weight: .black, design: .monospaced))\n                .foregroundStyle(.white.opacity(0.52))', 1)
+          u = u.replace('.frame(height: 18)', '.frame(height: 22)', 1)
+          u = u.replace('.frame(width: 26, height: 26)', '.frame(width: 34, height: 34)', 1)
+          u = u.replace('onChange(abs(clamped) < 0.04 ? 0 : clamped)', 'onChange(abs(clamped) < 0.025 ? 0 : clamped)', 1)
+          u = u.replace('.frame(width: 180, height: 29)', '.frame(width: 224, height: 52)', 1)
+          u = u.replace('Text("STAGE 2")', 'Text("F-16A BLOCK 32")', 1)
+          u = u.replace('Text("F-16A / RUNWAY SORTIE")', 'Text("DAY VFR / TRAINING RANGE")', 1)
+          u = u.replace('Text("Runway start, direct JSBSim F-16 dynamics, native terrain contact and aircraft-relative cameras.")', 'Text("Cold start is skipped. You have the airplane, a live range, direct JSBSim dynamics, and enough world to actually fly it.")', 1)
+          u = u.replace('Text("F-16A · JSBSim direct FDM · STAGE 2")', 'Text("F-16A BLOCK 32 · JSBSim direct FDM")', 1)
+          save(ui_path, u)
+
+          # --- Simulation comments: one pilot command at the model boundary. ---
+          sim_path = 'Simulation/FlightSimulation.swift'
+          f = load(sim_path)
+          f = replace_once(
+              f,
+              '''        // Full Authority's touch control is screen-centric: dragging right means\n        // right pedal / nose-right. The current F-16 resource patch converts this\n        // sign again at the model boundary; NWS uses this sign directly.\n        let pilotYawCommand = -Double(controls.rudder)''',
+              '''        // Full Authority's touch control is screen-centric: dragging right means\n        // right pedal / nose-right. Stage 020 feeds this pilot command into the\n        // F-16 scheduler once; stability feedback remains a separate SAS signal.\n        let pilotYawCommand = -Double(controls.rudder)''',
+              'yaw input comment'
+          )
+          save(sim_path, f)
+
+          # --- F-16 yaw law: separate pilot input from the SAS feedback error. ---
+          stage_path = 'scripts/stage-f16-calibration.sh'
+          sh = load(stage_path)
+          start = sh.index('# Keep the upstream yaw controller intact')
+          end = sh.index('# Render art is now bundled', start)
+          replacement = r'''# Stage 020 yaw-control correction.
+          #
+          # The upstream XML feeds rudder-cmd-norm into the yaw feedback error and
+          # then adds the same pilot command again in yaw-scheduler. Our older patch
+          # compounded that with another 28% feed-forward. Stage 020 removes that
+          # extra feed-forward and separates the pilot pedal from the SAS feedback:
+          # yaw-rate/lateral-acceleration feedback damps the aircraft, while the
+          # pilot command enters the final scheduler exactly once. A modest 12%
+          # yaw-rate normalization increase addresses the observed weak damping
+          # without replacing JSBSim's published F-16 aerodynamic model.
+          python3 - "$RESOURCE_ROOT/aircraft/f16/f16.xml" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          old_error = '''   <!--
+             - Calculate the difference between the current yaw-rate
+             - and the one requiested for.
+             -->
+           <summer name="fcs/yaw-trim-error">
+            <input>fcs/rudder-cmd-norm</input>
+            <input>fcs/yaw-rate-norm</input>
+            <input>fcs/yaw-load-norm</input>
+           </summer>'''
+          new_error = '''   <!-- Full Authority Stage 020: SAS feedback only. Pilot pedal
+             command is summed once in yaw-scheduler below. -->
+           <summer name="fcs/yaw-trim-error">
+            <input>fcs/yaw-rate-norm</input>
+            <input>fcs/yaw-load-norm</input>
+           </summer>'''
+          if text.count(old_error) != 1:
+              raise SystemExit(f"expected one upstream yaw feedback block, found {text.count(old_error)}")
+          text = text.replace(old_error, new_error, 1)
+
+          old_rate = '''      80.0  0.0
+              100.0    15.0
+              150.0    100.0'''
+          new_rate = '''      80.0  0.0
+              100.0    15.0
+              150.0    112.0'''
+          if text.count(old_rate) != 1:
+              raise SystemExit(f"expected one yaw-rate schedule, found {text.count(old_rate)}")
+          text = text.replace(old_rate, new_rate, 1)
+
+          scheduler = '''   <summer name="fcs/yaw-scheduler">
+             <input>fcs/rudder-cmd-norm</input>
+             <input>fcs/yaw-trim-cmd-norm</input>
+             <input>fcs/yaw-load-pid</input>'''
+          if text.count(scheduler) != 1:
+              raise SystemExit(f"expected one direct pilot yaw scheduler, found {text.count(scheduler)}")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          grep -q 'Full Authority Stage 020: SAS feedback only' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+          grep -q '150.0    112.0' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+          test "$(grep -c '<input>fcs/rudder-cmd-norm</input>' "$RESOURCE_ROOT/aircraft/f16/f16.xml")" -eq 1
+          grep -q '<pid name="fcs/yaw-load-pid">' "$RESOURCE_ROOT/aircraft/f16/f16.xml"
+
+          '''
+          sh = sh[:start] + replacement + sh[end:]
+          sh = sh.replace('Staged JSBSim F-16 calibration data, yaw damping, pedal feed-forward and terrain texture', 'Staged JSBSim F-16 calibration data, Stage 020 yaw SAS correction and terrain texture')
+          save(stage_path, sh)
+
+          # Keep provenance beside the actual imported asset.
+          source_note = Path('Assets/JSBSim/visuals/world/SOURCE-stage020-sky.txt')
+          source_note.write_text(
+              'Farm Field (Pure Sky) by Poly Haven contributors.\n'
+              'Source: https://polyhaven.com/a/farm_field_puresky\n'
+              'License: CC0 1.0.\n'
+              'Imported at 1K EXR for RealityKit skybox/default environment lighting.\n'
+          )
+          PY
+
+      - name: Commit Stage 020 overhaul
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/stage020-apply-overhaul.yml
+          git config user.name 'Full Authority Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Stage 020: full-game visual and yaw-control overhaul'
+          git push origin HEAD:stage020-full-game-overhaul
