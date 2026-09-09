@@ -33,3 +33,26 @@ Source: https://github.com/vazgriz/FlightSim_F16
 - Apple RealityKit PBR and environment-lighting documentation: https://developer.apple.com/documentation/realitykit/physicallybasedmaterial
 
 Stage 016 uses these references for material hierarchy, sky palette/aerial-perspective cues, and lighting structure. It does not vendor Bruneton's renderer; a Metal atmosphere implementation can be evaluated later if the stylized pass needs true distance-dependent scattering.
+
+## Stage 017 cloudscape
+
+Cloud sprites are from WickedInsignia's **Clouds with Transparency** pack on OpenGameArt, released under **CC0**. The 2048px source PNGs are downsampled to 1024px for the mobile build.
+
+- https://opengameart.org/content/clouds-with-transparency-fxcloudalpha03png
+- https://opengameart.org/content/clouds-with-transparency-fxcloudalpha05png
+- https://opengameart.org/content/clouds-with-transparency-fxcloudalpha08png
+
+Cloud rendering references used for the scene strategy:
+
+- Dihara Wijetunga, `volumetric-clouds` (MIT), ray-marched volumetric cloud sample: https://github.com/diharaw/volumetric-clouds
+- `lightest/clouds` (MIT), WebGL2 sky/cloud implementation referencing Hillaire, Schneider, Bouthors and Bauer: https://github.com/lightest/clouds
+- Apple RealityKit material transparency documentation: https://developer.apple.com/documentation/realitykit/physicallybasedmaterial/blending-swift.property
+
+The Stage 017 renderer intentionally uses layered alpha cards rather than a full volume ray marcher. This keeps the mobile GPU cost low while establishing believable cloud scale and depth; the open volumetric implementations remain the reference for a later high-quality weather renderer.
+
+## Stage 017 aircraft paint response
+
+The exterior remains based on the MIT-licensed FlightSim_F16 geometry. Painted body zones are treated as non-metallic polyurethane coating with higher roughness and much lower clearcoat/specular response; canopy and exhaust materials remain intentionally glossy/metallic. The general coating family is consistent with MIL-PRF-85285, the U.S. military performance specification for polyurethane aircraft/support-equipment coatings.
+
+Reference: https://quicksearch.dla.mil/qsDocDetails.aspx?ident_number=95909
+

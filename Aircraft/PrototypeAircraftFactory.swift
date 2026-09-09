@@ -195,18 +195,18 @@ enum PrototypeAircraftFactory {
             return result
         }
 
-        // Hill Gray stays recognizable, but surfaces now separate by gloss as well
-        // as color. The canopy is deliberately jewel-like so the jet remains the
-        // hero object in chase view; the exhaust is hot, dark metallic rather than gray.
+        // Stage 017: the fuselage is painted polyurethane, not bare metal. Keep the
+        // canopy and nozzle glossy, but push every painted zone toward a diffuse,
+        // low-specular dielectric response so sunlight reads as a soft highlight.
         return [
-            material(UIColor(red: 0.300, green: 0.325, blue: 0.340, alpha: 1), roughness: 0.43, metallic: 0.035, specular: 0.55, clearcoat: 0.14, clearcoatRoughness: 0.30),
-            material(UIColor(red: 0.470, green: 0.490, blue: 0.500, alpha: 1), roughness: 0.50, metallic: 0.020, specular: 0.48, clearcoat: 0.10, clearcoatRoughness: 0.36),
-            material(UIColor(red: 0.145, green: 0.153, blue: 0.158, alpha: 1), roughness: 0.72, metallic: 0.000, specular: 0.30, clearcoat: 0.02, clearcoatRoughness: 0.70),
-            material(UIColor(red: 0.020, green: 0.050, blue: 0.072, alpha: 1), roughness: 0.045, metallic: 0.16, specular: 1.00, clearcoat: 1.00, clearcoatRoughness: 0.018),
-            material(UIColor(red: 0.105, green: 0.095, blue: 0.082, alpha: 1), roughness: 0.18, metallic: 0.98, specular: 0.78, clearcoat: 0.05, clearcoatRoughness: 0.22),
-            material(UIColor(red: 0.315, green: 0.340, blue: 0.355, alpha: 1), roughness: 0.48, metallic: 0.025, specular: 0.50, clearcoat: 0.10, clearcoatRoughness: 0.34),
-            material(UIColor(red: 0.245, green: 0.270, blue: 0.285, alpha: 1), roughness: 0.46, metallic: 0.030, specular: 0.54, clearcoat: 0.12, clearcoatRoughness: 0.32),
-            material(UIColor(red: 0.270, green: 0.295, blue: 0.310, alpha: 1), roughness: 0.44, metallic: 0.030, specular: 0.55, clearcoat: 0.13, clearcoatRoughness: 0.30)
+            material(UIColor(red: 0.300, green: 0.325, blue: 0.340, alpha: 1), roughness: 0.70, metallic: 0.000, specular: 0.20, clearcoat: 0.015, clearcoatRoughness: 0.72),
+            material(UIColor(red: 0.470, green: 0.490, blue: 0.500, alpha: 1), roughness: 0.73, metallic: 0.000, specular: 0.18, clearcoat: 0.010, clearcoatRoughness: 0.76),
+            material(UIColor(red: 0.145, green: 0.153, blue: 0.158, alpha: 1), roughness: 0.82, metallic: 0.000, specular: 0.14, clearcoat: 0.000, clearcoatRoughness: 0.90),
+            material(UIColor(red: 0.020, green: 0.050, blue: 0.072, alpha: 1), roughness: 0.055, metallic: 0.08, specular: 1.00, clearcoat: 1.00, clearcoatRoughness: 0.020),
+            material(UIColor(red: 0.105, green: 0.095, blue: 0.082, alpha: 1), roughness: 0.21, metallic: 0.98, specular: 0.78, clearcoat: 0.03, clearcoatRoughness: 0.30),
+            material(UIColor(red: 0.315, green: 0.340, blue: 0.355, alpha: 1), roughness: 0.72, metallic: 0.000, specular: 0.18, clearcoat: 0.010, clearcoatRoughness: 0.76),
+            material(UIColor(red: 0.245, green: 0.270, blue: 0.285, alpha: 1), roughness: 0.71, metallic: 0.000, specular: 0.19, clearcoat: 0.012, clearcoatRoughness: 0.74),
+            material(UIColor(red: 0.270, green: 0.295, blue: 0.310, alpha: 1), roughness: 0.69, metallic: 0.000, specular: 0.20, clearcoat: 0.014, clearcoatRoughness: 0.72)
         ]
     }
 

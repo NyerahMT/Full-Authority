@@ -54,7 +54,7 @@ struct PrototypeSceneView: View {
 
                     let aircraft = PrototypeAircraftFactory.make()
                     aircraft.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.70
+                        environmentLightingWeight: 0.56
                     ))
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
