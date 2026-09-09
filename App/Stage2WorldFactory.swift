@@ -146,7 +146,7 @@ enum Stage2WorldFactory {
         // The FDM and renderer continue to share Stage2TerrainProfile. This is a
         // denser render of the exact JSBSim contact surface, not a decorative hill layer.
         let tileSize: Float = 6_000
-        let resolution = 81
+        let resolution = 121
         let terrainTextures = worldTextureSet(named: "terrain_grass")
 
         for tileX in -4..<4 {
@@ -210,14 +210,10 @@ enum Stage2WorldFactory {
         textures: WorldTextureSet,
         selector: Int
     ) -> PhysicallyBasedMaterial {
-        let tints: [UIColor] = [
-            UIColor(red: 0.46, green: 0.54, blue: 0.34, alpha: 1),
-            UIColor(red: 0.50, green: 0.56, blue: 0.37, alpha: 1),
-            UIColor(red: 0.42, green: 0.50, blue: 0.31, alpha: 1),
-            UIColor(red: 0.48, green: 0.52, blue: 0.34, alpha: 1),
-            UIColor(red: 0.43, green: 0.49, blue: 0.30, alpha: 1),
-            UIColor(red: 0.49, green: 0.55, blue: 0.35, alpha: 1)
-        ]
+        let tints: [UIColor] = Array(
+            repeating: UIColor(red: 0.465, green: 0.525, blue: 0.325, alpha: 1),
+            count: 6
+        )
 
         var material = PhysicallyBasedMaterial()
         if let base = textures.baseColor {
@@ -303,13 +299,11 @@ enum Stage2WorldFactory {
         var tangents: [SIMD3<Float>] = []
         var texcoords: [SIMD2<Float>] = []
         var indices: [UInt32] = []
-        var rockIndices: [UInt32] = []
         positions.reserveCapacity(vertexCount)
         normals.reserveCapacity(vertexCount)
         tangents.reserveCapacity(vertexCount)
         texcoords.reserveCapacity(vertexCount)
         indices.reserveCapacity((resolution - 1) * (resolution - 1) * 6)
-        rockIndices.reserveCapacity(indices.capacity / 5)
 
         let half = size * 0.5
         let step = size / Float(resolution - 1)
@@ -348,16 +342,6 @@ enum Stage2WorldFactory {
                 let i3 = UInt32((zIndex + 1) * resolution + xIndex + 1)
                 let cell = [i0, i2, i1, i1, i2, i3]
                 indices.append(contentsOf: cell)
-
-                let centerIndex = zIndex * resolution + xIndex
-                let n = normals[centerIndex]
-                let h = positions[centerIndex].y
-                let worldX = centerX + positions[centerIndex].x
-                let worldZ = centerZ + positions[centerIndex].z
-                let breakup = sin(worldX / 610.0 + worldZ / 930.0) * cos(worldZ / 470.0)
-                if n.y < 0.955 || h > 115 + breakup * 32 {
-                    rockIndices.append(contentsOf: cell)
-                }
             }
         }
 

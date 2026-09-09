@@ -115,10 +115,7 @@ private:
 };
 }
 
-extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
-    // Stage 023 single source of truth. RealityKit calls this exact function
-    // through the Swift bridging header, and JSBSim's ground callback calls it
-    // directly. There is no second approximated terrain formula anymore.
+double FATerrainAnalyticHeightMeters(double eastMeters, double northMeters) {
     double base =
         78.0 * std::sin(northMeters / 2750.0) * std::cos(eastMeters / 3500.0) +
         52.0 * std::sin((eastMeters + northMeters) / 1820.0) +
@@ -146,8 +143,27 @@ extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
     const double dx = std::max(std::abs(eastMeters) - 1000.0, 0.0);
     const double dz = std::max(std::abs(northMeters - 2000.0) - 3600.0, 0.0);
     const double distanceOutsideAirfield = std::hypot(dx, dz);
-    const double terrainBlend = SmoothStep(distanceOutsideAirfield / 1250.0);
-    return base * terrainBlend;
+    return base * SmoothStep(distanceOutsideAirfield / 1250.0);
+}
+
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
+    // Same regular elevation grid and diagonal split used by Stage2WorldFactory.
+    // This makes visual triangle height and JSBSim contact height identical.
+    constexpr double grid = 50.0;
+    const double x0 = std::floor(eastMeters / grid) * grid;
+    const double z0 = std::floor(northMeters / grid) * grid;
+    const double tx = (eastMeters - x0) / grid;
+    const double tz = (northMeters - z0) / grid;
+
+    const double h00 = FATerrainAnalyticHeightMeters(x0, northMeters - tz * grid);
+    const double h10 = FATerrainAnalyticHeightMeters(x0 + grid, northMeters - tz * grid);
+    const double h01 = FATerrainAnalyticHeightMeters(x0, northMeters - tz * grid + grid);
+    const double h11 = FATerrainAnalyticHeightMeters(x0 + grid, northMeters - tz * grid + grid);
+
+    if (tx + tz <= 1.0) {
+        return h00 + tx * (h10 - h00) + tz * (h01 - h00);
+    }
+    return h11 + (1.0 - tz) * (h10 - h11) + (1.0 - tx) * (h01 - h11);
 }
 
 @interface FAJSBSimBridge ()

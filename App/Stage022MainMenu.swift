@@ -538,7 +538,7 @@ private enum Stage022MenuScene {
         // enough to support a real shock/boom event without turning this into an
         // arcade high-Mach flyby. It crosses the camera at essentially 2:00.
         let z = -1_275 + 365 * t
-        let y: Float = 34 + 1.2 * sin(t * 0.72)
+        let y: Float = 21 + 0.7 * sin(t * 0.72)
         jet.position = [22, y, z]
         jet.orientation = simd_quatf(angle: 0, axis: [0, 1, 0])
 
@@ -628,7 +628,7 @@ private final class Stage022MenuAudio {
 
         flyby.scheduleBuffer(flybyBuffer, at: nil, options: .interrupts)
         sonicBoom.scheduleBuffer(sonicBoomBuffer, at: nil, options: .interrupts)
-        flyby.volume = 0.82
+        flyby.volume = 1.0
         sonicBoom.volume = 1.0
         flyby.play()
         sonicBoom.play()
@@ -734,7 +734,8 @@ private final class Stage022MenuAudio {
                     0.27 * sin(2 * .pi * doppler * 0.52 * t + 0.5)
                 let channelPan: Float = ch == 0 ? (1 - pan) * 0.5 : (1 + pan) * 0.5
                 let gain = sqrt(max(0.08, channelPan))
-                channels[ch][frame] = gain * approach * (0.15 * engineBody + 0.13 * turbulent)
+                let sample = 2.25 * gain * approach * (0.15 * engineBody + 0.13 * turbulent)
+                channels[ch][frame] = min(max(sample, -0.92), 0.92)
             }
         }
         return buffer
@@ -758,7 +759,7 @@ private final class Stage022MenuAudio {
                 ? (0.55 * sin(2 * .pi * 43 * dt) + 0.24 * sin(2 * .pi * 71 * dt + 0.4)) * exp(-4.6 * dt)
                 : 0
             let stereo: Float = channel == 0 ? 0.98 : 1.0
-            let pressureMix: Float = 0.93 * shock + 0.42 * thump
+            let pressureMix: Float = 1.65 * shock + 0.72 * thump
             let output: Float = stereo * pressureMix
             return Swift.min(Swift.max(output, -0.98), 0.98)
         }
