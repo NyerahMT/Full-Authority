@@ -96,6 +96,13 @@ jobs:
           heading_delta = abs((heading1 - heading0 + 180.0) % 360.0 - 180.0)
 
           print(f'dynamic pressure: {qbar:.1f} psf')
+          print(f'pedal command: {float(fdm["fcs/rudder-cmd-norm"]):.4f}')
+          print(f'fa pedal gain output: {float(fdm["fcs/fa-pedal-rudder"]):.4f}')
+          print(f'fa SAS output: {float(fdm["fcs/fa-yaw-sas"]):.4f}')
+          print(f'yaw scheduler output: {float(fdm["fcs/yaw-scheduler"]):.4f}')
+          print(f'rudder pos norm: {float(fdm["fcs/rudder-pos-norm"]):.4f}')
+          print(f'rudder pos rad: {float(fdm["fcs/rudder-pos-rad"]):.4f}')
+          print(f'yaw load PID: {float(fdm["fcs/yaw-load-pid"]):.4f}')
           print(f'max actual rudder: {math.degrees(max_rudder):.2f} deg')
           print(f'max beta change: {max_beta_delta:.2f} deg')
           print(f'max aero yaw rate: {math.degrees(max_yaw_rate):.2f} deg/s')
