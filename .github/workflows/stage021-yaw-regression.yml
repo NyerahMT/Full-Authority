@@ -27,10 +27,7 @@ jobs:
           mkdir -p /tmp/FullAuthority.app
           bash scripts/stage-f16-calibration.sh /tmp/FullAuthority.app
 
-      # This is intentionally a dynamic FDM test rather than an XML grep. It has
-      # already caught a version that moved the external rudder but produced only
-      # ~1 degree of actual FLCS rudder under a 70% pedal command.
-      - name: Verify pedal creates in-flight yaw response
+      - name: Verify pedal creates useful in-flight yaw response
         shell: bash
         run: |
           python3 - <<'PY'
@@ -77,6 +74,7 @@ jobs:
 
           beta0 = float(fdm['aero/beta-deg'])
           heading0 = float(fdm['attitude/psi-deg'])
+          qbar = float(fdm['aero/qbar-psf'])
           max_rudder = 0.0
           max_beta_delta = 0.0
           max_yaw_rate = 0.0
@@ -97,13 +95,14 @@ jobs:
           heading1 = float(fdm['attitude/psi-deg'])
           heading_delta = abs((heading1 - heading0 + 180.0) % 360.0 - 180.0)
 
+          print(f'dynamic pressure: {qbar:.1f} psf')
           print(f'max actual rudder: {math.degrees(max_rudder):.2f} deg')
           print(f'max beta change: {max_beta_delta:.2f} deg')
           print(f'max aero yaw rate: {math.degrees(max_yaw_rate):.2f} deg/s')
           print(f'heading change: {heading_delta:.2f} deg')
 
-          if max_rudder < math.radians(4.0):
-              raise SystemExit('FAIL: held 70% pedal does not generate useful actual rudder deflection')
-          if max_beta_delta < 0.35 and max_yaw_rate < math.radians(1.0) and heading_delta < 0.5:
-              raise SystemExit('FAIL: rudder surface moves but aircraft has no meaningful in-flight lateral response')
+          if max_rudder < math.radians(7.0):
+              raise SystemExit('FAIL: held 70% pedal still lacks useful scheduled rudder authority')
+          if max_beta_delta < 0.8 and max_yaw_rate < math.radians(1.5) and heading_delta < 1.0:
+              raise SystemExit('FAIL: rudder moves but aircraft still lacks useful in-flight lateral response')
           PY
