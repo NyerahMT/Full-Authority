@@ -357,7 +357,7 @@ jobs:
           name: stage022-common
           path: .
 
-      - name: Generate this shard's LOD2 + LOD4 scenery
+      - name: Generate this shard's LOD2 scenery
         run: |
           set -euo pipefail
           STYLE="$GITHUB_WORKSPACE/Build/stage022/toolchain/style"
@@ -371,7 +371,7 @@ jobs:
           test -s "$O2W"
           test -s "$INPUT"
           test -s "$SHARD_FILE"
-          mkdir -p "$OUT/lod2" "$OUT/lod4"
+          mkdir -p "$OUT/lod2"
 
           cat "$STYLE/standard.properties" "$GITHUB_WORKSPACE/World/Stage022/osm2world-overrides.properties" \
             > "$STYLE/full-authority.properties"
@@ -386,13 +386,12 @@ jobs:
           done
 
           report_progress() {
-            local lod2 lod4
+            local lod2
             lod2="$(find "$OUT/lod2" -type f -name '*.glb' 2>/dev/null | wc -l || true)"
-            lod4="$(find "$OUT/lod4" -type f -name '*.glb' 2>/dev/null | wc -l || true)"
-            echo "[$(date -u +'%H:%M:%S UTC')] shard ${SHARD_ID}: LOD2=${lod2}/${EXPECTED}, LOD4=${lod4}/${EXPECTED}"
+            echo "[$(date -u +'%H:%M:%S UTC')] shard ${SHARD_ID}: LOD2=${lod2}/${EXPECTED}"
           }
 
-          echo "Shard ${SHARD_ID}: generating ${EXPECTED} tiles at two LODs"
+          echo "Shard ${SHARD_ID}: generating ${EXPECTED} LOD2 tiles"
           report_progress
           cd "$STYLE"
 
@@ -401,7 +400,7 @@ jobs:
             java -Xmx6g -jar "$O2W" tileset \
               --input "$INPUT" \
               --baseDir "$OUT" \
-              --lod 2 4 \
+              --lod 2 \
               --noJson \
               --config "$STYLE/full-authority.properties" \
               "${ARGS[@]}" 2>&1 | tee "$LOG"
@@ -432,9 +431,8 @@ jobs:
           fi
 
           LOD2_COUNT="$(find "$OUT/lod2" -type f -name '*.glb' | wc -l)"
-          LOD4_COUNT="$(find "$OUT/lod4" -type f -name '*.glb' | wc -l)"
-          if [ "$LOD2_COUNT" -ne "$EXPECTED" ] || [ "$LOD4_COUNT" -ne "$EXPECTED" ]; then
-            echo "Incomplete shard: expected ${EXPECTED} files per LOD, got LOD2=${LOD2_COUNT}, LOD4=${LOD4_COUNT}" >&2
+          if [ "$LOD2_COUNT" -ne "$EXPECTED" ]; then
+            echo "Incomplete shard: expected ${EXPECTED} LOD2 files, got ${LOD2_COUNT}" >&2
             exit 1
           fi
 
@@ -572,8 +570,8 @@ jobs:
           stats['chunkCount'] = len(chunks)
           stats['packedMiB'] = round(stats['packedBytes'] / (1024 * 1024), 2)
 
-          if stats['source_glb_files'] != 2390:
-              raise SystemExit(f"Expected 2390 source GLBs, got {stats['source_glb_files']}")
+          if stats['source_glb_files'] != 1195:
+              raise SystemExit(f"Expected 1195 source GLBs, got {stats['source_glb_files']}")
           if stats['packedVertices'] <= 0 or stats['packedTriangles'] <= 0:
               raise SystemExit('Stage 022 repack produced empty geometry')
           if stats['packedMiB'] > 280:
@@ -600,7 +598,6 @@ jobs:
 
           test -s Docs/Stage022MaltaFullWorld.json
           test -n "$(find Assets/JSBSim/visuals/world/stage022/lod2 -name '*.bin' -print -quit)"
-          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod4 -name '*.bin' -print -quit)"
 
       - name: Commit generated Stage 022 world
         run: |
