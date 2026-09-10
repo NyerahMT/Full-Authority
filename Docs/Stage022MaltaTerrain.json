@@ -1,0 +1,22 @@
+{
+  "stage": 22,
+  "region": "Maltese archipelago",
+  "anchor": {
+    "name": "Malta International Airport runway 31 threshold",
+    "latitude": 35.8351666667,
+    "longitude": 14.5051666667,
+    "headingDegrees": 312.0,
+    "elevationMetersMSL": 70.4088
+  },
+  "boundsMeters": {
+    "minX": -32000.0,
+    "maxX": 32000.0,
+    "minZ": -16000.0,
+    "maxZ": 48000.0
+  },
+  "terrainResolutionX": 513,
+  "terrainResolutionZ": 513,
+  "terrainSpacingMeters": 125.0,
+  "seaLevelLocalMeters": -70.4088,
+  "source": "Mapzen/AWS Terrarium zoom 11"
+}
