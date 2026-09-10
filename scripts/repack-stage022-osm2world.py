@@ -569,7 +569,7 @@ def write_chunk(
         for material in materials:
             flags = 1 if material.double_sided else 0
             handle.write(struct.pack(
-                "<4BBBB",
+                "<8B",
                 *(int(round(c * 255)) for c in material.rgba),
                 int(round(material.roughness * 255)),
                 int(round(material.metallic * 255)),
