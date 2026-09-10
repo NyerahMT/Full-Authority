@@ -13,6 +13,17 @@ import build_stage024_helsinki_mesh as base
 CACHE = base.ROOT / ".cache" / "stage024-helsinki-v1"
 RETRY_DELAYS = (2, 5, 12, 25, 45)
 
+# The City of Helsinki reality mesh does not occupy a perfect rectangle. These
+# 2 km cells were proven absent from the published 2017 OBJ coverage by repeated
+# archive probes while adjacent cells loaded successfully. They are principally
+# water / outside-city edge cells in our rectangular benchmark window.
+UNAVAILABLE_CODES = {
+    "674500",
+    "676500", "676502",
+    "680490", "680492", "680494", "680496", "680498",
+    "682490", "682492", "682494",
+}
+
 
 def cache_paths(code: str) -> tuple[Path, Path, Path]:
     tile_dir = CACHE / code
@@ -86,8 +97,6 @@ def process_with_retry(easting: int, northing: int):
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
-            # A failed range request can leave a partial output file. Never let a
-            # retry mistake that partial file for a completed city block.
             for suffix in (".fhm", ".jpg"):
                 (base.OUT / f"helsinki_{code}{suffix}").unlink(missing_ok=True)
             result = base.process_source_tile(easting, northing)
@@ -99,7 +108,10 @@ def process_with_retry(easting: int, northing: int):
             if attempt >= attempts:
                 break
             delay = RETRY_DELAYS[attempt - 1]
-            base.log(f"{code}: attempt {attempt}/{attempts} failed: {type(exc).__name__}: {exc}; retrying in {delay}s")
+            base.log(
+                f"{code}: attempt {attempt}/{attempts} failed: "
+                f"{type(exc).__name__}: {exc}; retrying in {delay}s"
+            )
             time.sleep(delay)
 
     raise RuntimeError(f"{code}: exhausted {attempts} attempts: {last_error}") from last_error
@@ -133,6 +145,7 @@ def write_outputs(results) -> None:
         "referenceElevationMeters": reference,
         "runwayLengthMeters": math.hypot(base.RUNWAY18_E - base.RUNWAY36_E, base.RUNWAY18_N - base.RUNWAY36_N),
         "runwayHeadingTrueDegrees": math.degrees(base.RUNWAY_HEADING),
+        "coverageUnavailableCodes": sorted(UNAVAILABLE_CODES),
         "tiles": clean_results,
     }
     (base.OUT / "helsinki_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -144,7 +157,8 @@ def write_outputs(results) -> None:
         "The source OBJ reality mesh was recentered, rotated, merged into 2 km chunks,\n"
         "texture-atlased and selectively downsampled for mobile rendering. No generated\n"
         "buildings, roads, vegetation, vehicles, shoreline or terrain geometry replaces\n"
-        "the City of Helsinki photogrammetry in the visual benchmark layer.\n",
+        "the City of Helsinki photogrammetry in the visual benchmark layer. Cells outside\n"
+        "the published Helsinki mesh coverage are recorded in the manifest and omitted.\n",
         encoding="utf-8",
     )
 
@@ -152,25 +166,32 @@ def write_outputs(results) -> None:
     total_tex = sum((base.OUT / r["texture"]).stat().st_size for r in clean_results)
     total = sum(p.stat().st_size for p in base.OUT.iterdir() if p.is_file())
     base.log(
-        f"complete: {len(clean_results)} blocks, ref {reference:.2f} m, "
-        f"mesh {total_mesh/1048576:.1f} MiB, textures {total_tex/1048576:.1f} MiB, "
-        f"package {total/1048576:.1f} MiB"
+        f"complete: {len(clean_results)} real blocks, {len(UNAVAILABLE_CODES)} uncovered cells, "
+        f"ref {reference:.2f} m, mesh {total_mesh/1048576:.1f} MiB, "
+        f"textures {total_tex/1048576:.1f} MiB, package {total/1048576:.1f} MiB"
     )
 
 
 def main() -> None:
-    # Final output is reproducible from checkpoints; clear it without touching CACHE.
     if base.OUT.exists():
         shutil.rmtree(base.OUT)
     base.OUT.mkdir(parents=True, exist_ok=True)
     CACHE.mkdir(parents=True, exist_ok=True)
 
-    jobs = [
+    all_jobs = [
         (easting, northing)
         for northing in range(base.SOURCE_MIN_N, base.SOURCE_MAX_N, base.SOURCE_STEP)
         for easting in range(base.SOURCE_MIN_E, base.SOURCE_MAX_E, base.SOURCE_STEP)
     ]
-    base.log(f"resumable build: {len(jobs)} official 2 km blocks")
+    jobs = [
+        (easting, northing)
+        for easting, northing in all_jobs
+        if base.source_code(easting, northing) not in UNAVAILABLE_CODES
+    ]
+    base.log(
+        f"resumable build: {len(jobs)} published 2 km blocks; "
+        f"skipping {len(UNAVAILABLE_CODES)} uncovered cells"
+    )
 
     results = []
     failures = []
@@ -184,9 +205,10 @@ def main() -> None:
                 base.log(f"FAILED BLOCK: {exc}")
 
     if failures:
-        # Waited for every worker above on purpose: maximize completed checkpoints
-        # before failing the workflow and saving the Actions cache.
-        raise RuntimeError(f"{len(failures)} Helsinki block(s) failed after retries: " + " | ".join(failures))
+        raise RuntimeError(
+            f"{len(failures)} published Helsinki block(s) failed after retries: "
+            + " | ".join(failures)
+        )
 
     if len(results) != len(jobs):
         raise RuntimeError(f"expected {len(jobs)} completed blocks, got {len(results)}")
