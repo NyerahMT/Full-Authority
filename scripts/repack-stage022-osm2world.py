@@ -146,7 +146,7 @@ class TerrainGrid:
         z0 = max(0, min(self.resolution_z - 1, int(math.floor(gz))))
         x1 = min(x0 + 1, self.resolution_x - 1)
         z1 = min(z0 + 1, self.resolution_z - 1)
-        tx, tz = gx - x0, gz - z0, gz - z0
+        tx, tz = gx - x0, gz - z0
 
         def sample(x: int, z: int) -> float:
             return self.values_dm[z * self.resolution_x + x] * 0.1
