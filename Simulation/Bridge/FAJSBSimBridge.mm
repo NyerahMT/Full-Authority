@@ -24,6 +24,8 @@
 #include <memory>
 #include <string>
 
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters);
+
 namespace {
 NSString * const FAJSBSimErrorDomain = @"com.nyerahworks.FullAuthority.JSBSim";
 
@@ -37,10 +39,6 @@ void SetBridgeError(NSError **error, NSString *message) {
                                  code:1
                              userInfo:@{NSLocalizedDescriptionKey: message}];
 }
-
-class FATerrainGrid;
-extern FATerrainGrid gTerrainGrid;
-extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters);
 
 class FATerrainGroundCallback final : public JSBSim::FGGroundCallback {
 public:
