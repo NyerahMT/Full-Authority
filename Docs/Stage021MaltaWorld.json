@@ -1,0 +1,23 @@
+{
+  "stage": 21,
+  "region": "Malta",
+  "anchor": {
+    "name": "Malta International Airport runway 31 threshold",
+    "latitude": 35.8351666667,
+    "longitude": 14.5051666667,
+    "headingDegrees": 312.0,
+    "elevationMetersMSL": 70.4088
+  },
+  "worldHalfExtentMeters": 24000.0,
+  "terrainResolution": 385,
+  "terrainSpacingMeters": 125.0,
+  "seaLevelLocalMeters": -70.4088,
+  "buildingCount": 28606,
+  "roadPolylineCount": 94262,
+  "sources": {
+    "openStreetMap": "https://download.geofabrik.de/europe/malta-latest.osm.pbf",
+    "osmLicense": "ODbL 1.0",
+    "elevation": "Mapzen/AWS Terrarium zoom 10"
+  },
+  "binaryBytes": 3063280
+}
