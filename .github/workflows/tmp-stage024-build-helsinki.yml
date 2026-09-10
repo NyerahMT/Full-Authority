@@ -15,15 +15,44 @@ jobs:
           ref: stage024-real-reno-map
           submodules: false
           fetch-depth: 1
+
       - name: Install Helsinki import pipeline
         run: |
           set -euo pipefail
           python3 -m pip install --quiet --upgrade pip
           python3 -m pip install --quiet numpy pillow remotezip
+
+      - name: Restore completed Helsinki blocks
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/stage024-helsinki-v1
+          key: stage024-helsinki-v1-${{ github.run_id }}
+          restore-keys: |
+            stage024-helsinki-v1-
+
       - name: Build 1:1 Helsinki reality-mesh package
+        id: build
+        continue-on-error: true
         run: |
           set -euo pipefail
-          python3 Scripts/build_stage024_helsinki_mesh.py
+          python3 Scripts/build_stage024_helsinki_resumable.py
+
+      - name: Save Helsinki block checkpoints
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/stage024-helsinki-v1
+          key: stage024-helsinki-v1-${{ github.run_id }}
+
+      - name: Fail if importer exhausted retries
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ '${{ steps.build.outcome }}' != 'success' ]]; then
+            echo 'Helsinki importer failed after per-block retries; completed blocks were checkpointed for the next run.' >&2
+            exit 1
+          fi
+
       - name: Validate benchmark package
         run: |
           set -euo pipefail
@@ -52,11 +81,13 @@ jobs:
           print('package MiB',round(total/1048576,1),'largest MiB',round(max_file/1048576,1))
           print('bounds',manifest['minX'],manifest['minZ'],manifest['maxX'],manifest['maxZ'])
           PY
+
       - name: Remove discarded Reno GIS benchmark
         run: |
           set -euo pipefail
           rm -rf Assets/JSBSim/visuals/world/reno
           rm -f Scripts/build_stage024_reno_map.py Docs/Stage024-Real-Reno-Map.md
+
       - name: Commit generated benchmark map
         run: |
           set -euo pipefail
