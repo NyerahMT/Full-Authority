@@ -2,6 +2,11 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// Stage 021 terrain is owned by the Objective-C++ bridge so JSBSim contact and
+/// RealityKit rendering sample the exact same baked Malta DEM.
+FOUNDATION_EXPORT double FATerrainHeightMeters(double eastMeters, double northMeters);
+FOUNDATION_EXPORT double FATerrainSeaLevelMeters(void);
+
 /// Thin Objective-C++ boundary around JSBSim. Swift should never need to know
 /// about JSBSim's C++ types or coordinate conventions directly.
 @interface FAJSBSimBridge : NSObject

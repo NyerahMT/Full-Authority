@@ -44,7 +44,7 @@ struct PrototypeSceneView: View {
                     content.camera = .virtual
                     content.environment = .default
 
-                    let world = Stage020ProceduralWorld.make(base: Stage2WorldFactory.make())
+                    let world = Stage021MaltaWorld.make(base: Stage2WorldFactory.make(includeLegacyRegionalRoads: false))
                     // Stage 016 cinematic lighting: reduce the flat default IBL so
                     // directional sunlight and material roughness can actually shape terrain.
                     world.components.set(EnvironmentLightingConfigurationComponent(

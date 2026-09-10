@@ -17,9 +17,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <string>
+
+#include "Stage021MaltaTerrain.inc"
 
 namespace {
 NSString * const FAJSBSimErrorDomain = @"com.nyerahworks.FullAuthority.JSBSim";
@@ -40,32 +43,61 @@ double SmoothStep(double value) {
     return t * t * (3.0 - 2.0 * t);
 }
 
-// This function is intentionally mirrored in Stage2TerrainProfile on the Swift
-// side. JSBSim owns contact with the mathematical surface; RealityKit renders
-// the same surface so the airplane can no longer fly through decorative hills.
+// Stage 021 replaces the synthetic terrain equation with a compact, baked Malta
+// heightfield. The array is generated from Terrarium elevation data at 125 m sample
+// spacing. Airfield flattening is applied here, once, so both JSBSim and RealityKit
+// receive the same runway/contact surface.
+double SampleStage021TerrainMeters(double eastMeters, double northMeters) {
+    const double gridX = (eastMeters + kFAStage021TerrainHalfMeters) /
+        kFAStage021TerrainSpacingMeters;
+    const double gridZ = (northMeters + kFAStage021TerrainHalfMeters) /
+        kFAStage021TerrainSpacingMeters;
+
+    if (gridX < 0.0 || gridZ < 0.0 ||
+        gridX > static_cast<double>(kFAStage021TerrainResolution - 1) ||
+        gridZ > static_cast<double>(kFAStage021TerrainResolution - 1)) {
+        return kFAStage021SeaLevelMeters - 24.0;
+    }
+
+    const int x0 = std::clamp(
+        static_cast<int>(std::floor(gridX)),
+        0,
+        kFAStage021TerrainResolution - 1
+    );
+    const int z0 = std::clamp(
+        static_cast<int>(std::floor(gridZ)),
+        0,
+        kFAStage021TerrainResolution - 1
+    );
+    const int x1 = std::min(x0 + 1, kFAStage021TerrainResolution - 1);
+    const int z1 = std::min(z0 + 1, kFAStage021TerrainResolution - 1);
+    const double tx = gridX - static_cast<double>(x0);
+    const double tz = gridZ - static_cast<double>(z0);
+
+    const auto sample = [](int x, int z) {
+        const int index = z * kFAStage021TerrainResolution + x;
+        return static_cast<double>(kFAStage021TerrainDecimeters[index]) * 0.1;
+    };
+
+    const double h00 = sample(x0, z0);
+    const double h10 = sample(x1, z0);
+    const double h01 = sample(x0, z1);
+    const double h11 = sample(x1, z1);
+    const double h0 = h00 + (h10 - h00) * tx;
+    const double h1 = h01 + (h11 - h01) * tx;
+    return h0 + (h1 - h0) * tz;
+}
+
 double TerrainHeightMeters(double eastMeters, double northMeters) {
-    double base =
-        55.0 * std::sin(northMeters / 2800.0) * std::cos(eastMeters / 3600.0) +
-        38.0 * std::sin((eastMeters + northMeters) / 1900.0) +
-        28.0 * std::cos((eastMeters - 0.45 * northMeters) / 2400.0);
+    const double rawHeight = SampleStage021TerrainMeters(eastMeters, northMeters);
 
-    const double ridge1East = (eastMeters + 6500.0) / 2500.0;
-    const double ridge1North = (northMeters - 9000.0) / 3500.0;
-    base += 145.0 * std::exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North));
-
-    const double ridge2East = (eastMeters - 7200.0) / 2800.0;
-    const double ridge2North = (northMeters - 6500.0) / 3000.0;
-    base += 105.0 * std::exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North));
-
-    // Keep the entire airfield/runway basin genuinely flat, then blend into
-    // rolling terrain. That gives the gear model a sane runway while still
-    // allowing real terrain contact once the player leaves the field.
-    const double dx = std::max(std::abs(eastMeters) - 1000.0, 0.0);
-    const double dz = std::max(std::abs(northMeters - 2000.0) - 3600.0, 0.0);
+    // Full Authority's authored airbase sits over Luqa RWY 31. Keep the runway,
+    // parallel taxiway and apron genuinely flat, then blend into Malta's real relief.
+    const double dx = std::max(std::abs(eastMeters) - 900.0, 0.0);
+    const double dz = std::max(std::abs(northMeters - 1800.0) - 2500.0, 0.0);
     const double distanceOutsideAirfield = std::hypot(dx, dz);
-    const double terrainBlend = SmoothStep(distanceOutsideAirfield / 1800.0);
-
-    return base * terrainBlend;
+    const double terrainBlend = SmoothStep(distanceOutsideAirfield / 650.0);
+    return rawHeight * terrainBlend;
 }
 
 class FATerrainGroundCallback final : public JSBSim::FGGroundCallback {
@@ -138,6 +170,14 @@ private:
     double a;
     double b;
 };
+}
+
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
+    return TerrainHeightMeters(eastMeters, northMeters);
+}
+
+extern "C" double FATerrainSeaLevelMeters(void) {
+    return kFAStage021SeaLevelMeters;
 }
 
 @interface FAJSBSimBridge ()

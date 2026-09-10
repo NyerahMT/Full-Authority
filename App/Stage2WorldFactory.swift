@@ -18,14 +18,16 @@ enum Stage2WorldFactory {
         let normal: TextureResource?
     }
 
-    static func make() -> Entity {
+    static func make(includeLegacyRegionalRoads: Bool = true) -> Entity {
         let root = Entity()
         root.name = "FA.world.stage2"
 
         addTerrain(to: root)
         addCloudscape(to: root)
         addAirbase(to: root)
-        addRoads(to: root)
+        if includeLegacyRegionalRoads {
+            addRoads(to: root)
+        }
         addStage019Environment(to: root)
 
         return root

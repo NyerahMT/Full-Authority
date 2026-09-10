@@ -302,6 +302,7 @@ enum Stage021MaltaWorld {
             marking.roughness = .init(floatLiteral: 0.90)
             marking.metallic = .init(floatLiteral: 0)
             marking.specular = .init(floatLiteral: 0.10)
+            marking.faceCulling = .none
             let entity = ModelEntity(mesh: mesh, materials: [marking])
             entity.name = "FA.world.stage021.arterial-markings"
             root.addChild(entity)
@@ -366,6 +367,7 @@ enum Stage021MaltaWorld {
             material.roughness = .init(floatLiteral: index <= 2 ? 0.93 : 0.97)
             material.metallic = .init(floatLiteral: 0)
             material.specular = .init(floatLiteral: 0.17)
+            material.faceCulling = .none
             return material
         }
     }
