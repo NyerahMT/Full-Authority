@@ -1,0 +1,69 @@
+name: Stage024 build Helsinki benchmark
+on:
+  push:
+    branches: [stage024-real-reno-map]
+    paths: ['.github/workflows/tmp-stage024-build-helsinki.yml']
+permissions:
+  contents: write
+jobs:
+  build-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage024-real-reno-map
+          submodules: false
+          fetch-depth: 1
+      - name: Install Helsinki import pipeline
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --upgrade pip
+          python3 -m pip install --quiet numpy pillow remotezip
+      - name: Build 1:1 Helsinki reality-mesh package
+        run: |
+          set -euo pipefail
+          python3 Scripts/build_stage024_helsinki_mesh.py
+      - name: Validate benchmark package
+        run: |
+          set -euo pipefail
+          ROOT='Assets/JSBSim/visuals/world/helsinki'
+          test -s "$ROOT/helsinki_manifest.json"
+          test -s "$ROOT/helsinki_ground.bin"
+          test -s "$ROOT/ATTRIBUTION.txt"
+          test "$(find "$ROOT" -maxdepth 1 -name '*.fhm' | wc -l)" -eq 49
+          test "$(find "$ROOT" -maxdepth 1 -name 'helsinki_*.jpg' | wc -l)" -eq 49
+          python3 - <<'PY'
+          import json, pathlib, struct
+          root=pathlib.Path('Assets/JSBSim/visuals/world/helsinki')
+          manifest=json.loads((root/'helsinki_manifest.json').read_text())
+          assert len(manifest['tiles']) == 49, len(manifest['tiles'])
+          assert sum(t['lod']==16 for t in manifest['tiles']) == 4
+          assert sum(t['triangles'] for t in manifest['tiles']) > 300_000
+          raw=(root/'helsinki_ground.bin').read_bytes()
+          magic,version,w,h,cell,minx,minz,ref=struct.unpack('<4sIIIffff', raw[:32])
+          assert magic == b'FAM2' and version == 1 and w > 200 and h > 200
+          assert 40 <= cell <= 60
+          max_file=max(p.stat().st_size for p in root.iterdir() if p.is_file())
+          assert max_file < 95*1024*1024, max_file
+          total=sum(p.stat().st_size for p in root.iterdir() if p.is_file())
+          print('tiles',len(manifest['tiles']),'tris',sum(t['triangles'] for t in manifest['tiles']))
+          print('ground',w,h,cell,'ref',ref)
+          print('package MiB',round(total/1048576,1),'largest MiB',round(max_file/1048576,1))
+          print('bounds',manifest['minX'],manifest['minZ'],manifest['maxX'],manifest['maxZ'])
+          PY
+      - name: Remove discarded Reno GIS benchmark
+        run: |
+          set -euo pipefail
+          rm -rf Assets/JSBSim/visuals/world/reno
+          rm -f Scripts/build_stage024_reno_map.py Docs/Stage024-Real-Reno-Map.md
+      - name: Commit generated benchmark map
+        run: |
+          set -euo pipefail
+          git config user.name 'NyerahMT'
+          git config user.email '68287092+NyerahMT@users.noreply.github.com'
+          git add -A Assets/JSBSim/visuals/world/helsinki Assets/JSBSim/visuals/world/reno Scripts/build_stage024_reno_map.py Docs/Stage024-Real-Reno-Map.md
+          git diff --cached --stat
+          git diff --cached --check
+          git commit -m 'Stage 024: import 1:1 Helsinki reality-mesh benchmark'
+          git push origin HEAD:stage024-real-reno-map
