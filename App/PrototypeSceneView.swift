@@ -44,7 +44,7 @@ struct PrototypeSceneView: View {
                     content.camera = .virtual
                     content.environment = .default
 
-                    let world = Stage021MaltaWorld.make(base: Stage2WorldFactory.make(includeLegacyRegionalRoads: false))
+                    let world = Stage022MaltaWorld.make(base: Stage2WorldFactory.make(includeLegacyRegionalRoads: false))
                     // Stage 016 cinematic lighting: reduce the flat default IBL so
                     // directional sunlight and material roughness can actually shape terrain.
                     world.components.set(EnvironmentLightingConfigurationComponent(
@@ -103,6 +103,10 @@ struct PrototypeSceneView: View {
                     aircraft.orientation = simulation.state.orientation
                     aircraft.isEnabled = true
                     updateAircraftPresentation(aircraft)
+
+                    if let world = content.entities.first(where: { $0.name == "FA.world.stage2" }) {
+                        Stage022MaltaWorld.update(base: world, center: simulation.state.positionMeters)
+                    }
 
                     let cockpitMode = cameraMode == .cockpit
                     aircraft.findEntity(named: PrototypeAircraftFactory.visualRootName)?.isEnabled = !cockpitMode

@@ -149,8 +149,9 @@ enum Stage2WorldFactory {
         let resolution = 81
         let terrainTextures = worldTextureSet(named: "terrain_grass")
 
-        for tileX in -4..<4 {
-            for tileZ in -4..<4 {
+        // Stage 022 covers the full 64 x 64 km Malta/Gozo rectangle.
+        for tileX in -6..<6 {
+            for tileZ in -3..<9 {
                 let centerX = (Float(tileX) + 0.5) * tileSize
                 let centerZ = (Float(tileZ) + 0.5) * tileSize
                 guard let meshes = makeTerrainTile(

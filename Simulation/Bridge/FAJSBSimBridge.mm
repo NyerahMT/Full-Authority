@@ -22,7 +22,7 @@
 #include <memory>
 #include <string>
 
-#include "Stage021MaltaTerrain.inc"
+#include "Stage022MaltaTerrain.inc"
 
 namespace {
 NSString * const FAJSBSimErrorDomain = @"com.nyerahworks.FullAuthority.JSBSim";
@@ -43,40 +43,39 @@ double SmoothStep(double value) {
     return t * t * (3.0 - 2.0 * t);
 }
 
-// Stage 021 replaces the synthetic terrain equation with a compact, baked Malta
-// heightfield. The array is generated from Terrarium elevation data at 125 m sample
-// spacing. Airfield flattening is applied here, once, so both JSBSim and RealityKit
-// receive the same runway/contact surface.
-double SampleStage021TerrainMeters(double eastMeters, double northMeters) {
-    const double gridX = (eastMeters + kFAStage021TerrainHalfMeters) /
-        kFAStage021TerrainSpacingMeters;
-    const double gridZ = (northMeters + kFAStage021TerrainHalfMeters) /
-        kFAStage021TerrainSpacingMeters;
+// Stage 022 expands the baked Terrarium heightfield to the complete Malta/Gozo/Comino
+// rectangle at the same 125 m spacing. Airfield flattening is still applied once here
+// so JSBSim, the rendered terrain and OSM2World scenery share one contact surface.
+double SampleStage022TerrainMeters(double eastMeters, double northMeters) {
+    const double gridX = (eastMeters - kFAStage022TerrainMinXMeters) /
+        kFAStage022TerrainSpacingMeters;
+    const double gridZ = (northMeters - kFAStage022TerrainMinZMeters) /
+        kFAStage022TerrainSpacingMeters;
 
     if (gridX < 0.0 || gridZ < 0.0 ||
-        gridX > static_cast<double>(kFAStage021TerrainResolution - 1) ||
-        gridZ > static_cast<double>(kFAStage021TerrainResolution - 1)) {
-        return kFAStage021SeaLevelMeters - 24.0;
+        gridX > static_cast<double>(kFAStage022TerrainResolutionX - 1) ||
+        gridZ > static_cast<double>(kFAStage022TerrainResolutionZ - 1)) {
+        return kFAStage022SeaLevelMeters - 24.0;
     }
 
     const int x0 = std::clamp(
         static_cast<int>(std::floor(gridX)),
         0,
-        kFAStage021TerrainResolution - 1
+        kFAStage022TerrainResolutionX - 1
     );
     const int z0 = std::clamp(
         static_cast<int>(std::floor(gridZ)),
         0,
-        kFAStage021TerrainResolution - 1
+        kFAStage022TerrainResolutionZ - 1
     );
-    const int x1 = std::min(x0 + 1, kFAStage021TerrainResolution - 1);
-    const int z1 = std::min(z0 + 1, kFAStage021TerrainResolution - 1);
+    const int x1 = std::min(x0 + 1, kFAStage022TerrainResolutionX - 1);
+    const int z1 = std::min(z0 + 1, kFAStage022TerrainResolutionZ - 1);
     const double tx = gridX - static_cast<double>(x0);
     const double tz = gridZ - static_cast<double>(z0);
 
     const auto sample = [](int x, int z) {
-        const int index = z * kFAStage021TerrainResolution + x;
-        return static_cast<double>(kFAStage021TerrainDecimeters[index]) * 0.1;
+        const int index = z * kFAStage022TerrainResolutionX + x;
+        return static_cast<double>(kFAStage022TerrainDecimeters[index]) * 0.1;
     };
 
     const double h00 = sample(x0, z0);
@@ -89,7 +88,7 @@ double SampleStage021TerrainMeters(double eastMeters, double northMeters) {
 }
 
 double TerrainHeightMeters(double eastMeters, double northMeters) {
-    const double rawHeight = SampleStage021TerrainMeters(eastMeters, northMeters);
+    const double rawHeight = SampleStage022TerrainMeters(eastMeters, northMeters);
 
     // Full Authority's authored airbase sits over Luqa RWY 31. Keep the runway,
     // parallel taxiway and apron genuinely flat, then blend into Malta's real relief.
@@ -177,7 +176,7 @@ extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
 }
 
 extern "C" double FATerrainSeaLevelMeters(void) {
-    return kFAStage021SeaLevelMeters;
+    return kFAStage022SeaLevelMeters;
 }
 
 @interface FAJSBSimBridge ()
