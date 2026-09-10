@@ -19,6 +19,7 @@
 		FA0000000000000000000009 /* JSBSim in Resources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001B /* JSBSim */; };
 		FA000000000000000000000A /* Stage2WorldFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001C /* Stage2WorldFactory.swift */; };
 		FA000000000000000000000B /* Stage2FlightEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001D /* Stage2FlightEffects.swift */; };
+		FA000000000000000000000D /* Stage020ProceduralWorld.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001F /* Stage020ProceduralWorld.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 		FA000000000000000000001C /* Stage2WorldFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage2WorldFactory.swift; sourceTree = "<group>"; };
 		FA000000000000000000001D /* Stage2FlightEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage2FlightEffects.swift; sourceTree = "<group>"; };
 		FA000000000000000000001E /* PrototypeCockpitFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrototypeCockpitFactory.swift; sourceTree = "<group>"; };
+		FA000000000000000000001F /* Stage020ProceduralWorld.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020ProceduralWorld.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -68,6 +70,7 @@
 				FA0000000000000000000012 /* ContentView.swift */,
 				FA0000000000000000000013 /* PrototypeSceneView.swift */,
 				FA000000000000000000001C /* Stage2WorldFactory.swift */,
+				FA000000000000000000001F /* Stage020ProceduralWorld.swift */,
 				FA000000000000000000001D /* Stage2FlightEffects.swift */,
 			);
 			path = App;
@@ -184,6 +187,7 @@
 				FA0000000000000000000002 /* ContentView.swift in Sources */,
 				FA0000000000000000000003 /* PrototypeSceneView.swift in Sources */,
 				FA000000000000000000000A /* Stage2WorldFactory.swift in Sources */,
+				FA000000000000000000000D /* Stage020ProceduralWorld.swift in Sources */,
 				FA000000000000000000000B /* Stage2FlightEffects.swift in Sources */,
 				FA0000000000000000000004 /* PrototypeAircraftFactory.swift in Sources */,
 				FA000000000000000000000C /* PrototypeCockpitFactory.swift in Sources */,
