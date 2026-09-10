@@ -1,0 +1,60 @@
+name: Stage 021 Malta World Bake
+
+on:
+  push:
+    branches:
+      - stage021-malta-world
+    paths:
+      - 'scripts/bake-stage021-malta.py'
+      - '.github/workflows/stage021-world-bake.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bake:
+    name: Bake Malta world data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v6
+        with:
+          ref: stage021-malta-world
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install GIS baker dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pyrosm shapely pillow requests numpy
+
+      - name: Bake world
+        run: |
+          set -euo pipefail
+          python scripts/bake-stage021-malta.py
+          test -s Assets/JSBSim/visuals/world/stage021_malta_world.bin
+          test -s Simulation/Bridge/Stage021MaltaTerrain.inc
+          test -s Docs/Stage021MaltaWorld.json
+
+      - name: Commit baked data
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            Assets/JSBSim/visuals/world/stage021_malta_world.bin \
+            Simulation/Bridge/Stage021MaltaTerrain.inc \
+            Docs/Stage021MaltaWorld.json
+          if git diff --cached --quiet; then
+            echo 'World bake produced no changes.'
+            exit 0
+          fi
+          git commit -m 'Bake Stage 021 Malta world data'
+          git push origin HEAD:stage021-malta-world
