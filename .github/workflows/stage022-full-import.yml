@@ -24,11 +24,14 @@ env:
   MALTA_PBF_URL: https://download.geofabrik.de/europe/malta-latest.osm.pbf
   GOL_TOOL_VERSION: '1.2.0'
   GOL_TOOL_SHA256: 2589dbb30dd877dbcabf07f358c56c1c339851e018f95426b9d89400706cf93e
+  SHARD_COUNT: '12'
+  TOOLCHAIN_CACHE_VERSION: '3'
 
 jobs:
-  bake:
-    name: Bake full Maltese archipelago
+  prepare:
+    name: Prepare Malta + OSM2World
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Full Authority
@@ -48,16 +51,35 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Python baker dependencies
+      - name: Install terrain baker dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install numpy requests pillow
 
+      - name: Cache finished OSM2World toolchain
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: Build/stage022/toolchain
+          key: ${{ runner.os }}-stage022-o2w-${{ env.OSM2WORLD_COMMIT }}-${{ env.OSM2WORLD_STYLE_COMMIT }}-v${{ env.TOOLCHAIN_CACHE_VERSION }}
+
+      - name: Cache Maven dependencies for first toolchain build
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-osm2world-${{ env.OSM2WORLD_COMMIT }}-v2
+          restore-keys: |
+            ${{ runner.os }}-osm2world-
+          save-always: true
+
       - name: Fetch pinned OSM2World and CC0 style
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mkdir -p Build/stage022
+          rm -rf Build/stage022/OSM2World Build/stage022/style
 
           git init -q Build/stage022/OSM2World
           git -C Build/stage022/OSM2World remote add origin https://github.com/tordanik/OSM2World.git
@@ -71,15 +93,8 @@ jobs:
           git -C Build/stage022/style checkout -q FETCH_HEAD
           test "$(git -C Build/stage022/style rev-parse HEAD)" = "$OSM2WORLD_STYLE_COMMIT"
 
-      - name: Cache OSM2World Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-osm2world-${{ env.OSM2WORLD_COMMIT }}
-          restore-keys: |
-            ${{ runner.os }}-osm2world-
-
-      - name: Trim unused OSM2World build dependencies
+      - name: Trim build-only OSM2World overhead
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -91,51 +106,97 @@ jobs:
           ns = {'m': ns_uri}
           ET.register_namespace('', ns_uri)
 
-          # Only osm2world-opengl actually needs JogAmp. Leaving the repository in
-          # core-jvm and desktop makes Maven probe the slow JogAmp server for every
-          # unrelated Apache/Topobyte/JTS dependency before trying the proper repos.
+          # JogAmp is needed only by the OpenGL module. Do not let unrelated modules
+          # probe its slow repository for every dependency.
           for rel in ('core-jvm/pom.xml', 'desktop/pom.xml'):
               path = root_dir / rel
               tree = ET.parse(path)
               root = tree.getroot()
               repositories = root.find('m:repositories', ns)
               if repositories is not None:
-                  root.remove(repositories)
+                  for repository in list(repositories):
+                      url = repository.find('m:url', ns)
+                      if url is not None and 'jogamp.org' in (url.text or ''):
+                          repositories.remove(repository)
+                  if not list(repositories):
+                      root.remove(repositories)
               tree.write(path, encoding='utf-8', xml_declaration=True)
 
-          # The GLB CLI needs JOGL classes at compile time because desktop also
-          # contains the GUI/image commands, but our headless tileset conversion does
-          # not need native binaries for five operating systems/architectures.
+          # Native JOGL bundles for macOS/Windows/ARM are irrelevant to a headless
+          # Linux GLB generator. Keep the two compile-time JOGL Java dependencies.
           path = root_dir / 'opengl/pom.xml'
           tree = ET.parse(path)
           root = tree.getroot()
           dependencies = root.find('m:dependencies', ns)
-          removed = 0
+          removed_native = 0
           if dependencies is not None:
               for dependency in list(dependencies):
                   if dependency.find('m:classifier', ns) is not None:
                       dependencies.remove(dependency)
-                      removed += 1
+                      removed_native += 1
           tree.write(path, encoding='utf-8', xml_declaration=True)
-          print(f'Removed {removed} unused native JOGL/GlueGen dependencies')
-          if removed < 8:
-              raise SystemExit('Unexpected OSM2World OpenGL POM layout; refusing a partial dependency trim')
+          if removed_native < 8:
+              raise SystemExit(f'Unexpected OpenGL POM layout; removed only {removed_native} native dependencies')
+
+          # This Maven plugin generated third-party attribution for the temporary
+          # OSM2World build and spent ~16 minutes probing JogAmp in the previous run.
+          # OSM2World is only an offline build tool here; Full Authority ships its
+          # own source/data attribution separately, so this generation is dead work.
+          path = root_dir / 'pom.xml'
+          tree = ET.parse(path)
+          root = tree.getroot()
+          plugins = root.find('m:build/m:plugins', ns)
+          removed_attribution = 0
+          if plugins is not None:
+              for plugin in list(plugins):
+                  artifact = plugin.find('m:artifactId', ns)
+                  if artifact is not None and artifact.text == 'attribution-maven-plugin':
+                      plugins.remove(plugin)
+                      removed_attribution += 1
+          tree.write(path, encoding='utf-8', xml_declaration=True)
+          if removed_attribution != 1:
+              raise SystemExit(f'Expected one attribution plugin, removed {removed_attribution}')
+
+          print(f'Removed {removed_native} native JOGL dependencies and the build-time attribution scan')
           PY
 
-          test "$(grep -R 'jogamp.org/deployment/maven' Build/stage022/OSM2World/{core-jvm,desktop,opengl}/pom.xml | wc -l)" -eq 1
           ! grep -q '<classifier>' Build/stage022/OSM2World/opengl/pom.xml
+          ! grep -q 'attribution-maven-plugin' Build/stage022/OSM2World/pom.xml
 
-      - name: Build OSM2World CLI
+      - name: Build reusable OSM2World CLI
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mvn \
             -B -ntp -T 1C \
             -f Build/stage022/OSM2World/pom.xml \
-            -DskipTests \
+            -Dmaven.test.skip=true \
             -Dmaven.javadoc.skip=true \
             -Dmaven.source.skip=true \
             -pl desktop -am package
-          test -s Build/stage022/OSM2World/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar
+
+          SRC=Build/stage022/OSM2World/desktop/target
+          DST=Build/stage022/toolchain/osm2world
+          mkdir -p "$DST"
+          cp "$SRC/osm2world-desktop-0.5.0-SNAPSHOT.jar" "$DST/"
+          cp -a "$SRC/lib" "$DST/lib"
+
+          mkdir -p Build/stage022/toolchain
+          cp -a Build/stage022/style Build/stage022/toolchain/style
+          rm -rf Build/stage022/toolchain/style/.git
+
+          test -s "$DST/osm2world-desktop-0.5.0-SNAPSHOT.jar"
+          test -d "$DST/lib"
+          test -s Build/stage022/toolchain/style/standard.properties
+          java -jar "$DST/osm2world-desktop-0.5.0-SNAPSHOT.jar" --help >/dev/null
+          du -sh Build/stage022/toolchain
+
+      - name: Verify cached toolchain
+        run: |
+          set -euo pipefail
+          test -s Build/stage022/toolchain/osm2world/osm2world-desktop-0.5.0-SNAPSHOT.jar
+          test -d Build/stage022/toolchain/osm2world/lib
+          test -s Build/stage022/toolchain/style/standard.properties
 
       - name: Download Malta OpenStreetMap extract
         run: |
@@ -165,10 +226,6 @@ jobs:
           chmod +x "$GOL"
           GOL="$(realpath "$GOL")"
 
-          # OSM2World's generic PBF reader falls back to reading the complete PBF for
-          # every tile. GeoDesk gives it an indexed spatial query instead. Malta is
-          # tiny, so paying this indexing cost once is far cheaper than ~1,195 full
-          # PBF reads during the two-LOD scenery bake.
           (
             cd "$GITHUB_WORKSPACE/Build/stage022/input"
             "$GOL" build malta malta-latest.osm.pbf
@@ -183,70 +240,257 @@ jobs:
           test -s Simulation/Bridge/Stage022MaltaTerrain.inc
           test -s Docs/Stage022MaltaTerrain.json
 
-      - name: Generate OSM2World LOD2 and LOD4 tiles
+      - name: Split Malta into 12 deterministic tile shards
         run: |
           set -euo pipefail
-          STYLE="$GITHUB_WORKSPACE/Build/stage022/style"
-          O2W="$GITHUB_WORKSPACE/Build/stage022/OSM2World/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar"
+          rm -rf Build/stage022/shards
+          mkdir -p Build/stage022/shards
+
+          python - <<'PY'
+          import math
+          from pathlib import Path
+
+          zoom = 15
+          shard_count = 12
+          bboxes = [
+              (35.770, 14.295, 36.005, 14.600),
+              (35.975, 14.150, 36.110, 14.470),
+          ]
+
+          def tile_at(lat, lon):
+              n = 1 << zoom
+              x = math.floor((lon + 180.0) / 360.0 * n)
+              y = math.floor((1.0 - math.log(
+                  math.tan(math.radians(lat)) + 1.0 / math.cos(math.radians(lat))
+              ) / math.pi) / 2.0 * n)
+              return x, y
+
+          tiles = set()
+          for min_lat, min_lon, max_lat, max_lon in bboxes:
+              # Match OSM2World TilesetCommand's tiny edge shrink.
+              min_lat += 1e-5
+              min_lon += 1e-5
+              max_lat -= 1e-5
+              max_lon -= 1e-5
+              min_x, min_y = tile_at(min_lat, min_lon)
+              max_x, max_y = tile_at(max_lat, max_lon)
+              for x in range(min_x, max_x + 1):
+                  for y in range(max_y, min_y + 1):
+                      tiles.add((zoom, x, y))
+
+          tiles = sorted(tiles)
+          if len(tiles) != 1195:
+              raise SystemExit(f'Unexpected Malta tile count: {len(tiles)} (expected 1195)')
+
+          out = Path('Build/stage022/shards')
+          buckets = [[] for _ in range(shard_count)]
+          for index, tile in enumerate(tiles):
+              buckets[index % shard_count].append(tile)
+
+          for shard, bucket in enumerate(buckets):
+              path = out / f'{shard:02d}.txt'
+              path.write_text(''.join(f'{z},{x},{y}\n' for z, x, y in bucket))
+              print(f'shard {shard:02d}: {len(bucket)} tiles')
+
+          print(f'Total unique zoom-{zoom} tiles: {len(tiles)}')
+          PY
+
+      - name: Upload shared Stage 022 inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage022-common
+          path: |
+            Build/stage022/input/malta.gol
+            Build/stage022/shards
+            Simulation/Bridge/Stage022MaltaTerrain.inc
+            Docs/Stage022MaltaTerrain.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  generate:
+    name: Scenery shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+        with:
+          ref: stage022-malta-full-import
+          fetch-depth: 1
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore reusable OSM2World toolchain
+        uses: actions/cache@v4
+        with:
+          path: Build/stage022/toolchain
+          key: ${{ runner.os }}-stage022-o2w-${{ env.OSM2WORLD_COMMIT }}-${{ env.OSM2WORLD_STYLE_COMMIT }}-v${{ env.TOOLCHAIN_CACHE_VERSION }}
+          fail-on-cache-miss: true
+
+      - name: Download shared Malta inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: stage022-common
+          path: .
+
+      - name: Generate this shard's LOD2 + LOD4 scenery
+        run: |
+          set -euo pipefail
+          STYLE="$GITHUB_WORKSPACE/Build/stage022/toolchain/style"
+          O2W="$GITHUB_WORKSPACE/Build/stage022/toolchain/osm2world/osm2world-desktop-0.5.0-SNAPSHOT.jar"
           INPUT="$GITHUB_WORKSPACE/Build/stage022/input/malta.gol"
           OUT="$GITHUB_WORKSPACE/Build/stage022/o2w"
+          SHARD_ID="$(printf '%02d' '${{ matrix.shard }}')"
+          SHARD_FILE="$GITHUB_WORKSPACE/Build/stage022/shards/${SHARD_ID}.txt"
+          LOG="$GITHUB_WORKSPACE/Build/stage022/shard-${SHARD_ID}.log"
+
+          test -s "$O2W"
+          test -s "$INPUT"
+          test -s "$SHARD_FILE"
+          mkdir -p "$OUT/lod2" "$OUT/lod4"
 
           cat "$STYLE/standard.properties" "$GITHUB_WORKSPACE/World/Stage022/osm2world-overrides.properties" \
             > "$STYLE/full-authority.properties"
 
-          cd "$STYLE"
+          mapfile -t TILES < "$SHARD_FILE"
+          EXPECTED="${#TILES[@]}"
+          if [ "$EXPECTED" -eq 0 ]; then
+            echo 'Shard unexpectedly has no tiles.' >&2
+            exit 1
+          fi
+
+          ARGS=()
+          for tile in "${TILES[@]}"; do
+            ARGS+=(--bboxTiles "$tile")
+          done
 
           report_progress() {
-            local label="$1"
-            local lod2 lod4 total
-            lod2="$(find "$OUT/lod2" -name '*.glb' 2>/dev/null | wc -l)"
-            lod4="$(find "$OUT/lod4" -name '*.glb' 2>/dev/null | wc -l)"
-            total=$((lod2 + lod4))
-            echo "[$(date -u +'%H:%M:%S UTC')] ${label}: LOD2=${lod2}, LOD4=${lod4}, total GLBs=${total}"
+            local lod2 lod4
+            lod2="$(find "$OUT/lod2" -type f -name '*.glb' 2>/dev/null | wc -l || true)"
+            lod4="$(find "$OUT/lod4" -type f -name '*.glb' 2>/dev/null | wc -l || true)"
+            echo "[$(date -u +'%H:%M:%S UTC')] shard ${SHARD_ID}: LOD2=${lod2}/${EXPECTED}, LOD4=${lod4}/${EXPECTED}"
           }
 
-          run_tileset() {
-            local label="$1"
-            shift
-            echo "Starting ${label} scenery generation..."
-            report_progress "$label"
+          echo "Shard ${SHARD_ID}: generating ${EXPECTED} tiles at two LODs"
+          report_progress
+          cd "$STYLE"
 
-            java -Xmx7g -jar "$O2W" tileset \
+          (
+            set -o pipefail
+            java -Xmx6g -jar "$O2W" tileset \
               --input "$INPUT" \
               --baseDir "$OUT" \
               --lod 2 4 \
               --noJson \
               --config "$STYLE/full-authority.properties" \
-              "$@" &
-            local pid=$!
+              "${ARGS[@]}" 2>&1 | tee "$LOG"
+          ) &
+          PID=$!
 
-            # OSM2World uses an interactive carriage-return progress bar which is
-            # effectively invisible in GitHub Actions. Emit durable progress lines so
-            # a healthy long bake can never look hung again.
-            while kill -0 "$pid" 2>/dev/null; do
-              sleep 30
-              if kill -0 "$pid" 2>/dev/null; then
-                report_progress "$label"
-              fi
-            done
-            wait "$pid"
-            report_progress "$label complete"
-          }
+          while kill -0 "$PID" 2>/dev/null; do
+            sleep 30
+            if kill -0 "$PID" 2>/dev/null; then
+              report_progress
+            fi
+          done
 
-          # Mainland Malta. OSM2World itself parallelizes tiles across the JVM common
-          # fork/join pool, so do not spawn competing Java tile workers on one runner.
-          run_tileset "Mainland Malta" \
-            --bbox "35.770,14.295 36.005,14.600"
+          set +e
+          wait "$PID"
+          STATUS=$?
+          set -e
+          report_progress
 
-          # Gozo + Comino. NEVER keeps overlap tiles generated by the first pass.
-          run_tileset "Gozo + Comino" \
-            --bbox "35.975,14.150 36.110,14.470" \
-            --overwrite NEVER
+          if [ "$STATUS" -ne 0 ]; then
+            echo "OSM2World exited with status ${STATUS}" >&2
+            exit "$STATUS"
+          fi
+          if grep -Fq 'Failed to create tile' "$LOG"; then
+            echo 'OSM2World reported one or more per-tile failures.' >&2
+            grep -F 'Failed to create tile' "$LOG" >&2 || true
+            exit 1
+          fi
 
-          test -n "$(find "$OUT/lod2" -name '*.glb' -print -quit)"
-          test -n "$(find "$OUT/lod4" -name '*.glb' -print -quit)"
-          echo "LOD2 GLBs: $(find "$OUT/lod2" -name '*.glb' | wc -l)"
-          echo "LOD4 GLBs: $(find "$OUT/lod4" -name '*.glb' | wc -l)"
+          LOD2_COUNT="$(find "$OUT/lod2" -type f -name '*.glb' | wc -l)"
+          LOD4_COUNT="$(find "$OUT/lod4" -type f -name '*.glb' | wc -l)"
+          if [ "$LOD2_COUNT" -ne "$EXPECTED" ] || [ "$LOD4_COUNT" -ne "$EXPECTED" ]; then
+            echo "Incomplete shard: expected ${EXPECTED} files per LOD, got LOD2=${LOD2_COUNT}, LOD4=${LOD4_COUNT}" >&2
+            exit 1
+          fi
+
+      - name: Upload scenery shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage022-shard-${{ matrix.shard }}
+          path: Build/stage022/o2w
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  finalize:
+    name: Repack + commit Stage 022
+    needs: [prepare, generate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+        with:
+          ref: stage022-malta-full-import
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install repacker dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install pillow
+
+      - name: Restore OSM2World style resources
+        uses: actions/cache@v4
+        with:
+          path: Build/stage022/toolchain
+          key: ${{ runner.os }}-stage022-o2w-${{ env.OSM2WORLD_COMMIT }}-${{ env.OSM2WORLD_STYLE_COMMIT }}-v${{ env.TOOLCHAIN_CACHE_VERSION }}
+          fail-on-cache-miss: true
+
+      - name: Download shared Malta inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: stage022-common
+          path: .
+
+      - name: Collect all 12 scenery shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: stage022-shard-*
+          path: Build/stage022/o2w
+          merge-multiple: true
+
+      - name: Verify complete GLB tile set
+        run: |
+          set -euo pipefail
+          EXPECTED="$(cat Build/stage022/shards/*.txt | sort -u | wc -l)"
+          LOD2_COUNT="$(find Build/stage022/o2w/lod2 -type f -name '*.glb' | wc -l)"
+          LOD4_COUNT="$(find Build/stage022/o2w/lod4 -type f -name '*.glb' | wc -l)"
+          echo "Expected tiles: ${EXPECTED}; LOD2=${LOD2_COUNT}; LOD4=${LOD4_COUNT}"
+          test "$EXPECTED" -eq 1195
+          test "$LOD2_COUNT" -eq "$EXPECTED"
+          test "$LOD4_COUNT" -eq "$EXPECTED"
 
       - name: Repack OSM2World geometry for RealityKit
         run: |
