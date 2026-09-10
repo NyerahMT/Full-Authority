@@ -50,9 +50,7 @@ jobs:
             Simulation/FlightSimulation.swift \
             Simulation/Bridge/FAJSBSimBridge.h \
             Simulation/Bridge/FAJSBSimBridge.mm \
-            FullAuthority.xcodeproj/project.pbxproj \
-            .github/workflows/ios-simulator.yml \
-            .github/workflows/ios-device-ipa.yml
+            FullAuthority.xcodeproj/project.pbxproj
           if git diff --cached --quiet; then
             echo 'Integration already applied.'
             exit 0
