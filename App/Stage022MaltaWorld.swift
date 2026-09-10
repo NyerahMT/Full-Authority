@@ -1,104 +1,49 @@
 import Foundation
+import Metal
 import RealityKit
 import UIKit
 import simd
 
-// MARK: - Stage 022 streamed OSM2World Malta layer
+// MARK: - Fixed Worldsmith theater
 
-/// Streams the compact OSM2World LOD2 chunks around the aircraft instead of
-/// materializing the full country in RealityKit at once. The source payload
-/// stays complete in the app bundle; only nearby 4 km superchunks occupy
-/// renderer/GPU memory.
+/// Compatibility note: the type name remains `Stage022MaltaWorld` so the rest of
+/// the flight presentation does not need a risky project-wide rename. Malta is
+/// no longer loaded here. This renderer streams the one fixed Worldsmith seed-1337
+/// theater selected for Full Authority.
 @MainActor
 enum Stage022MaltaWorld {
-    static let rootName = "FA.world.stage022.malta"
+    static let rootName = "FA.world.worldsmith.1337"
 
     private static let worldRootName = "FA.world.stage2"
-    private static let resourceSubdirectory = "JSBSim/visuals/world/stage022/lod2"
-    private static let superchunkMeters: Float = 4_000
-    private static let positionScaleXZ: Float = 0.25
-    private static let positionScaleY: Float = 0.10
-    private static let loadRadiusChunks = 3
-    private static let unloadRadiusChunks = 4
-    private static let chunkGroupsPerUpdate = 1
+    private static let cloudRootName = "FA.world.cloudscape"
+    private static let tileMeters: Float = 8_000
+    private static let loadRadiusTiles = 8
+    private static let unloadRadiusTiles = 9
+    private static let tilesBuiltPerUpdate = 10
+    private static let theaterMeters: Float = 150_000
+    private static let runwayCenterNorth: Float = 1_800
+    private static let siteU: Float = 0.3712567
+    private static let siteV: Float = 0.4103772
+    private static let mapHeadingRadians: Float = 1.0384709 // 59.5 degrees
 
-    private struct ChunkKey: Hashable {
+    private struct TileKey: Hashable {
         let x: Int
         let z: Int
     }
 
-    private struct SourceChunk {
-        let url: URL
-        let key: ChunkKey
-    }
-
-    private struct MaterialRecord {
-        let rgba: SIMD4<Float>
-        let roughness: Float
-        let metallic: Float
-        let doubleSided: Bool
+    private struct LoadedTile {
+        let entity: ModelEntity
+        let resolution: Int
     }
 
     private final class Runtime {
         let root: Entity
-        let sourcesByKey: [ChunkKey: [SourceChunk]]
-        var loaded: [ChunkKey: [Entity]] = [:]
-        var lastCenter: ChunkKey?
+        let terrainMaterial: PhysicallyBasedMaterial
+        var loaded: [TileKey: LoadedTile] = [:]
 
-        init(root: Entity, sourcesByKey: [ChunkKey: [SourceChunk]]) {
-  self.root = root
-  self.sourcesByKey = sourcesByKey
-        }
-    }
-
-    private struct BinaryCursor {
-        let data: Data
-        var offset = 0
-
-        mutating func readUInt8() -> UInt8? {
-  guard offset + 1 <= data.count else { return nil }
-  defer { offset += 1 }
-  return data[offset]
-        }
-
-        mutating func readInt8() -> Int8? {
-  guard let value = readUInt8() else { return nil }
-  return Int8(bitPattern: value)
-        }
-
-        mutating func readUInt16() -> UInt16? {
-  guard offset + 2 <= data.count else { return nil }
-  let value: UInt16 = data.withUnsafeBytes {
-      $0.loadUnaligned(fromByteOffset: offset, as: UInt16.self)
-  }
-  offset += 2
-  return UInt16(littleEndian: value)
-        }
-
-        mutating func readInt16() -> Int16? {
-  guard let value = readUInt16() else { return nil }
-  return Int16(bitPattern: value)
-        }
-
-        mutating func readUInt32() -> UInt32? {
-  guard offset + 4 <= data.count else { return nil }
-  let value: UInt32 = data.withUnsafeBytes {
-      $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
-  }
-  offset += 4
-  return UInt32(littleEndian: value)
-        }
-
-        mutating func readFloat() -> Float? {
-  guard let bits = readUInt32() else { return nil }
-  return Float(bitPattern: bits)
-        }
-
-        mutating func readMagic() -> [UInt8]? {
-  guard offset + 4 <= data.count else { return nil }
-  let result = Array(data[offset..<(offset + 4)])
-  offset += 4
-  return result
+        init(root: Entity, terrainMaterial: PhysicallyBasedMaterial) {
+            self.root = root
+            self.terrainMaterial = terrainMaterial
         }
     }
 
@@ -107,231 +52,335 @@ enum Stage022MaltaWorld {
     static func make(base: Entity) -> Entity {
         guard base.findEntity(named: rootName) == nil else { return base }
 
-        let sources = discoverSources()
-        guard !sources.isEmpty else {
-  // Keep the proven Stage 021 path as a development fallback if a
-  // local build omits the generated Stage 022 resource folder.
-  return Stage021MaltaWorld.make(base: base)
+        // Stage2WorldFactory is still used for the proven cloud layer, but every
+        // old terrain/road/city/airfield child is removed before this theater is
+        // attached. This prevents the former Malta world from z-fighting through
+        // the new heightfield while leaving aircraft/camera/HUD systems untouched.
+        for child in Array(base.children) where child.name != cloudRootName {
+            child.removeFromParent()
         }
-
-        base.findEntity(named: "FA.world.stage019.professional-environment")?.isEnabled = false
-        base.findEntity(named: "FA.world.stage020.procedural-region")?.isEnabled = false
-        base.findEntity(named: "FA.world.stage021.malta")?.isEnabled = false
 
         let root = Entity()
         root.name = rootName
-        addMediterranean(to: root)
+        addOcean(to: root)
+        addAirbase(to: root)
         base.addChild(root)
 
-        let grouped = Dictionary(grouping: sources, by: \.key)
-        runtime = Runtime(root: root, sourcesByKey: grouped)
+        runtime = Runtime(root: root, terrainMaterial: makeTerrainMaterial())
         update(base: base, center: .zero)
         return base
     }
 
     static func update(base: Entity, center: SIMD3<Float>) {
         guard base.name == worldRootName || base.findEntity(named: rootName) != nil,
-    let runtime,
-    runtime.root.parent != nil else { return }
+              let runtime,
+              runtime.root.parent != nil else { return }
 
-        let centerKey = ChunkKey(
-  x: Int(floor(center.x / superchunkMeters)),
-  z: Int(floor(center.z / superchunkMeters))
+        let centerKey = TileKey(
+            x: Int(floor((center.x + tileMeters * 0.5) / tileMeters)),
+            z: Int(floor((center.z + tileMeters * 0.5) / tileMeters))
         )
 
-        // Hysteresis avoids unloading/reloading a whole edge of scenery when
-        // the aircraft crosses a 4 km chunk boundary.
         for key in Array(runtime.loaded.keys) {
-  if chebyshevDistance(key, centerKey) > unloadRadiusChunks {
-      runtime.loaded.removeValue(forKey: key)?.forEach { $0.removeFromParent() }
-  }
+            if chebyshevDistance(key, centerKey) > unloadRadiusTiles {
+                runtime.loaded.removeValue(forKey: key)?.entity.removeFromParent()
+            }
         }
 
-        let missing = runtime.sourcesByKey.keys
-  .filter {
-      chebyshevDistance($0, centerKey) <= loadRadiusChunks &&
-      runtime.loaded[$0] == nil
-  }
-  .sorted {
-      let da = distanceSquared($0, centerKey)
-      let db = distanceSquared($1, centerKey)
-      if da != db { return da < db }
-      if $0.z != $1.z { return $0.z < $1.z }
-      return $0.x < $1.x
-  }
-
-        for key in missing.prefix(chunkGroupsPerUpdate) {
-  guard let sources = runtime.sourcesByKey[key] else { continue }
-  var entities: [Entity] = []
-  for source in sources.sorted(by: { $0.url.lastPathComponent < $1.url.lastPathComponent }) {
-      if let entity = loadChunk(source.url) {
-          runtime.root.addChild(entity)
-          entities.append(entity)
-      }
-  }
-  // Mark even an empty/invalid group as visited for this runtime so
-  // a malformed asset cannot trigger a 60 Hz retry loop.
-  runtime.loaded[key] = entities
+        var wanted: [(key: TileKey, resolution: Int, distance: Int)] = []
+        wanted.reserveCapacity((loadRadiusTiles * 2 + 1) * (loadRadiusTiles * 2 + 1))
+        for dz in -loadRadiusTiles...loadRadiusTiles {
+            for dx in -loadRadiusTiles...loadRadiusTiles {
+                let key = TileKey(x: centerKey.x + dx, z: centerKey.z + dz)
+                let distance = max(abs(dx), abs(dz))
+                let resolution = resolutionForDistance(distance)
+                if runtime.loaded[key]?.resolution != resolution {
+                    wanted.append((key, resolution, distance))
+                }
+            }
         }
 
-        runtime.lastCenter = centerKey
-    }
+        wanted.sort {
+            if $0.distance != $1.distance { return $0.distance < $1.distance }
+            let da = distanceSquared($0.key, centerKey)
+            let db = distanceSquared($1.key, centerKey)
+            if da != db { return da < db }
+            if $0.key.z != $1.key.z { return $0.key.z < $1.key.z }
+            return $0.key.x < $1.key.x
+        }
 
-    private static func discoverSources() -> [SourceChunk] {
-        guard let urls = Bundle.main.urls(
-  forResourcesWithExtension: "bin",
-  subdirectory: resourceSubdirectory
-        ) else { return [] }
+        for request in wanted.prefix(tilesBuiltPerUpdate) {
+            let centerX = Float(request.key.x) * tileMeters
+            let centerZ = Float(request.key.z) * tileMeters
+            guard let entity = makeTerrainTile(
+                centerX: centerX,
+                centerZ: centerZ,
+                resolution: request.resolution,
+                material: runtime.terrainMaterial
+            ) else { continue }
 
-        return urls.compactMap { url in
-  let stem = url.deletingPathExtension().lastPathComponent
-  let parts = stem.split(separator: "_")
-  guard parts.count == 4,
-        parts[0] == "chunk",
-        let x = Int(parts[1]),
-        let z = Int(parts[2]),
-        parts[3].hasPrefix("s") else { return nil }
-  return SourceChunk(url: url, key: ChunkKey(x: x, z: z))
+            runtime.loaded.removeValue(forKey: request.key)?.entity.removeFromParent()
+            runtime.root.addChild(entity)
+            runtime.loaded[request.key] = LoadedTile(
+                entity: entity,
+                resolution: request.resolution
+            )
         }
     }
 
-    private static func addMediterranean(to root: Entity) {
-        var water = PhysicallyBasedMaterial()
-        water.baseColor = .init(tint: UIColor(red: 0.028, green: 0.175, blue: 0.245, alpha: 1))
-        water.roughness = .init(floatLiteral: 0.20)
-        water.metallic = .init(floatLiteral: 0.0)
-        water.specular = .init(floatLiteral: 0.78)
-
-        let sea = ModelEntity(
-  mesh: .generatePlane(width: 92_000, depth: 92_000),
-  materials: [water]
-        )
-        sea.name = "FA.world.stage022.mediterranean"
-        sea.position = [0, Stage2TerrainProfile.seaLevelMeters + 0.035, 16_000]
-        root.addChild(sea)
+    private static func resolutionForDistance(_ distance: Int) -> Int {
+        switch distance {
+        case 0...2: return 65
+        case 3...4: return 33
+        case 5...6: return 17
+        default: return 9
+        }
     }
 
-    private static func loadChunk(_ url: URL) -> ModelEntity? {
-        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else { return nil }
-        var cursor = BinaryCursor(data: data)
+    private static func makeTerrainTile(
+        centerX: Float,
+        centerZ: Float,
+        resolution: Int,
+        material: PhysicallyBasedMaterial
+    ) -> ModelEntity? {
+        guard resolution >= 3 else { return nil }
 
-        guard cursor.readMagic() == [70, 50, 50, 67], // F22C
-    let version = cursor.readUInt16(), version == 1,
-    let lod = cursor.readUInt8(), lod == 2,
-    cursor.readUInt8() != nil,
-    let centerX = cursor.readFloat(),
-    let centerZ = cursor.readFloat(),
-    let materialCountRaw = cursor.readUInt16(),
-    let partCountRaw = cursor.readUInt16() else { return nil }
+        let count = resolution * resolution
+        let half = tileMeters * 0.5
+        let step = tileMeters / Float(resolution - 1)
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var texcoords: [SIMD2<Float>] = []
+        var indices: [UInt32] = []
+        positions.reserveCapacity(count + resolution * 4)
+        normals.reserveCapacity(count + resolution * 4)
+        texcoords.reserveCapacity(count + resolution * 4)
+        indices.reserveCapacity((resolution - 1) * (resolution - 1) * 6 + resolution * 24)
 
-        let materialCount = Int(materialCountRaw)
-        let partCount = Int(partCountRaw)
-        guard materialCount > 0, materialCount <= 4_096,
-    partCount > 0, partCount <= 16_384 else { return nil }
-
-        var materials: [MaterialRecord] = []
-        materials.reserveCapacity(materialCount)
-        for _ in 0..<materialCount {
-  guard let r = cursor.readUInt8(),
-        let g = cursor.readUInt8(),
-        let b = cursor.readUInt8(),
-        let a = cursor.readUInt8(),
-        let roughness = cursor.readUInt8(),
-        let metallic = cursor.readUInt8(),
-        let flags = cursor.readUInt8(),
-        cursor.readUInt8() != nil else { return nil }
-  materials.append(MaterialRecord(
-      rgba: SIMD4<Float>(Float(r), Float(g), Float(b), Float(a)) / 255,
-      roughness: Float(roughness) / 255,
-      metallic: Float(metallic) / 255,
-      doubleSided: (flags & 1) != 0
-  ))
+        for zIndex in 0..<resolution {
+            for xIndex in 0..<resolution {
+                let localX = -half + Float(xIndex) * step
+                let localZ = -half + Float(zIndex) * step
+                let worldX = centerX + localX
+                let worldZ = centerZ + localZ
+                positions.append([
+                    localX,
+                    Stage2TerrainProfile.heightMeters(east: worldX, north: worldZ),
+                    localZ
+                ])
+                normals.append(Stage2TerrainProfile.normal(east: worldX, north: worldZ))
+                texcoords.append(mapUV(east: worldX, north: worldZ))
+            }
         }
 
-        var descriptors: [MeshDescriptor] = []
-        var entityMaterials: [PhysicallyBasedMaterial] = []
-        descriptors.reserveCapacity(partCount)
-        entityMaterials.reserveCapacity(partCount)
-
-        for partIndex in 0..<partCount {
-  guard let materialIndexRaw = cursor.readUInt16(),
-        cursor.readUInt16() != nil,
-        let vertexCountRaw = cursor.readUInt32(),
-        let indexCountRaw = cursor.readUInt32() else { return nil }
-
-  let materialIndex = Int(materialIndexRaw)
-  let vertexCount = Int(vertexCountRaw)
-  let indexCount = Int(indexCountRaw)
-  guard materialIndex >= 0, materialIndex < materials.count,
-        vertexCount > 0, vertexCount <= 65_535,
-        indexCount >= 3, indexCount % 3 == 0 else { return nil }
-
-  var positions: [SIMD3<Float>] = []
-  var normals: [SIMD3<Float>] = []
-  positions.reserveCapacity(vertexCount)
-  normals.reserveCapacity(vertexCount)
-
-  for _ in 0..<vertexCount {
-      guard let qx = cursor.readInt16(),
-            let qy = cursor.readInt16(),
-            let qz = cursor.readInt16(),
-            let nx = cursor.readInt8(),
-            let ny = cursor.readInt8(),
-            let nz = cursor.readInt8() else { return nil }
-
-      positions.append([
-          Float(qx) * positionScaleXZ,
-          Float(qy) * positionScaleY,
-          Float(qz) * positionScaleXZ
-      ])
-      let normal = SIMD3<Float>(Float(nx), Float(ny), Float(nz)) / 127
-      normals.append(simd_length_squared(normal) > 0.0001 ? simd_normalize(normal) : SIMD3<Float>(0, 1, 0))
-  }
-
-  var indices: [UInt32] = []
-  indices.reserveCapacity(indexCount)
-  for _ in 0..<indexCount {
-      guard let index = cursor.readUInt16(), Int(index) < vertexCount else { return nil }
-      indices.append(UInt32(index))
-  }
-
-  var descriptor = MeshDescriptor(name: "Stage 022 \(url.lastPathComponent) part \(partIndex)")
-  descriptor.positions = MeshBuffers.Positions(positions)
-  descriptor.normals = MeshBuffers.Normals(normals)
-  descriptor.primitives = .triangles(indices)
-  descriptors.append(descriptor)
-  entityMaterials.append(makeMaterial(materials[materialIndex]))
+        for zIndex in 0..<(resolution - 1) {
+            for xIndex in 0..<(resolution - 1) {
+                let i0 = UInt32(zIndex * resolution + xIndex)
+                let i1 = i0 + 1
+                let i2 = UInt32((zIndex + 1) * resolution + xIndex)
+                let i3 = i2 + 1
+                indices.append(contentsOf: [i0, i2, i1, i1, i2, i3])
+            }
         }
 
-        guard !descriptors.isEmpty,
-    let mesh = try? MeshResource.generate(from: descriptors) else { return nil }
+        // Small downward skirts hide the only visible failure mode when a 65x65
+        // tile meets a much cheaper distant LOD. The top edge remains the exact
+        // shared JSBSim surface; only the duplicated boundary vertices move down.
+        var perimeter: [Int] = []
+        perimeter.reserveCapacity((resolution - 1) * 4)
+        for x in 0..<resolution { perimeter.append(x) }
+        for z in 1..<resolution { perimeter.append(z * resolution + (resolution - 1)) }
+        if resolution > 1 {
+            for x in stride(from: resolution - 2, through: 0, by: -1) {
+                perimeter.append((resolution - 1) * resolution + x)
+            }
+            if resolution > 2 {
+                for z in stride(from: resolution - 2, through: 1, by: -1) {
+                    perimeter.append(z * resolution)
+                }
+            }
+        }
 
-        let entity = ModelEntity(mesh: mesh, materials: entityMaterials)
-        entity.name = "FA.world.stage022.chunk.\(url.deletingPathExtension().lastPathComponent)"
+        let skirtDepth: Float = 110
+        let skirtStart = positions.count
+        for original in perimeter {
+            var p = positions[original]
+            p.y -= skirtDepth
+            positions.append(p)
+            normals.append(normals[original])
+            texcoords.append(texcoords[original])
+        }
+        if perimeter.count > 1 {
+            for pIndex in 0..<perimeter.count {
+                let next = (pIndex + 1) % perimeter.count
+                let top0 = UInt32(perimeter[pIndex])
+                let top1 = UInt32(perimeter[next])
+                let low0 = UInt32(skirtStart + pIndex)
+                let low1 = UInt32(skirtStart + next)
+                indices.append(contentsOf: [top0, low0, top1, top1, low0, low1])
+            }
+        }
+
+        var descriptor = MeshDescriptor(name: "Worldsmith terrain LOD \(resolution)")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
+        descriptor.primitives = .triangles(indices)
+        guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = "FA.world.worldsmith.tile.\(Int(centerX)).\(Int(centerZ))"
         entity.position = [centerX, 0, centerZ]
         return entity
     }
 
-    private static func makeMaterial(_ record: MaterialRecord) -> PhysicallyBasedMaterial {
+    private static func mapUV(east: Float, north: Float) -> SIMD2<Float> {
+        let localNorth = north - runwayCenterNorth
+        let c = cos(mapHeadingRadians)
+        let s = sin(mapHeadingRadians)
+        let mapEast = c * east + s * localNorth
+        let mapNorth = -s * east + c * localNorth
+        return [
+            siteU + mapEast / theaterMeters,
+            siteV - mapNorth / theaterMeters
+        ]
+    }
+
+    private static func makeTerrainMaterial() -> PhysicallyBasedMaterial {
         var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: UIColor(
-  red: CGFloat(record.rgba.x),
-  green: CGFloat(record.rgba.y),
-  blue: CGFloat(record.rgba.z),
-  alpha: CGFloat(record.rgba.w)
-        ))
-        material.roughness = .init(floatLiteral: record.roughness)
-        material.metallic = .init(floatLiteral: record.metallic)
-        material.specular = .init(floatLiteral: record.metallic > 0.35 ? 0.62 : 0.20)
-        material.faceCulling = record.doubleSided ? .none : .back
+        if let url = Bundle.main.url(
+            forResource: "worldsmith_1337_albedo_1024",
+            withExtension: "png",
+            subdirectory: "JSBSim/visuals/world"
+        ), let textureResource = try? TextureResource.load(
+            contentsOf: url,
+            withName: "Worldsmith 1337 macro albedo"
+        ) {
+            var texture = MaterialParameters.Texture(textureResource)
+            texture.sampler.modify { sampler in
+                sampler.sAddressMode = .clampToEdge
+                sampler.tAddressMode = .clampToEdge
+                sampler.mipFilter = .linear
+                sampler.minFilter = .linear
+                sampler.magFilter = .linear
+                sampler.maxAnisotropy = 8
+            }
+            material.baseColor = .init(tint: .white, texture: texture)
+        } else {
+            material.baseColor = .init(
+                tint: UIColor(red: 0.30, green: 0.40, blue: 0.22, alpha: 1)
+            )
+        }
+        material.roughness = .init(floatLiteral: 0.93)
+        material.metallic = .init(floatLiteral: 0.0)
+        material.specular = .init(floatLiteral: 0.23)
+        material.faceCulling = .none
         return material
     }
 
-    private static func chebyshevDistance(_ a: ChunkKey, _ b: ChunkKey) -> Int {
+    private static func addOcean(to root: Entity) {
+        var water = PhysicallyBasedMaterial()
+        water.baseColor = .init(
+            tint: UIColor(red: 0.025, green: 0.145, blue: 0.235, alpha: 1)
+        )
+        water.roughness = .init(floatLiteral: 0.16)
+        water.metallic = .init(floatLiteral: 0.0)
+        water.specular = .init(floatLiteral: 0.82)
+
+        let sea = ModelEntity(
+            mesh: .generatePlane(width: 260_000, depth: 260_000),
+            materials: [water]
+        )
+        sea.name = "FA.world.worldsmith.ocean"
+        sea.position = [0, Stage2TerrainProfile.seaLevelMeters + 0.25, 0]
+        root.addChild(sea)
+    }
+
+    private static func addAirbase(to root: Entity) {
+        let airbase = Entity()
+        airbase.name = "FA.world.worldsmith.airbase"
+
+        let asphalt = UIColor(red: 0.055, green: 0.060, blue: 0.065, alpha: 1)
+        let concrete = UIColor(red: 0.34, green: 0.35, blue: 0.34, alpha: 1)
+        let marking = UIColor(white: 0.93, alpha: 1)
+        let taxiYellow = UIColor(red: 0.92, green: 0.70, blue: 0.08, alpha: 1)
+
+        let runway = block(size: [58, 0.10, 4_800], color: asphalt)
+        runway.position = [0, 0.05, runwayCenterNorth]
+        airbase.addChild(runway)
+
+        for z in stride(from: -420, through: 4_020, by: 120) {
+            let dash = block(size: [1.25, 0.025, 38], color: marking)
+            dash.position = [0, 0.115, Float(z)]
+            airbase.addChild(dash)
+        }
+        for x: Float in [-27.5, 27.5] {
+            let edge = block(size: [0.65, 0.022, 4_700], color: marking)
+            edge.position = [x, 0.115, runwayCenterNorth]
+            airbase.addChild(edge)
+        }
+        for endZ: Float in [-560, 4_160] {
+            for stripe in -3...3 {
+                let threshold = block(size: [4.5, 0.026, 30], color: marking)
+                threshold.position = [Float(stripe) * 6.5, 0.12, endZ]
+                airbase.addChild(threshold)
+            }
+        }
+
+        let taxiway = block(size: [24, 0.09, 4_400], color: asphalt)
+        taxiway.position = [115, 0.047, runwayCenterNorth]
+        airbase.addChild(taxiway)
+        let taxiCenter = block(size: [0.55, 0.025, 4_360], color: taxiYellow)
+        taxiCenter.position = [115, 0.108, runwayCenterNorth]
+        airbase.addChild(taxiCenter)
+
+        let apron = block(size: [330, 0.09, 760], color: concrete)
+        apron.position = [260, 0.045, 760]
+        airbase.addChild(apron)
+
+        for index in 0..<5 {
+            let connector = block(size: [92, 0.085, 15], color: asphalt)
+            connector.position = [69, 0.05, Float(-120 + index * 900)]
+            airbase.addChild(connector)
+        }
+
+        for index in 0..<4 {
+            let hangar = block(
+                size: [68, 15, 46],
+                color: UIColor(red: 0.36, green: 0.38, blue: 0.36, alpha: 1)
+            )
+            hangar.position = [Float(205 + index * 78), 7.5, 530]
+            airbase.addChild(hangar)
+        }
+
+        let tower = block(
+            size: [18, 34, 18],
+            color: UIColor(red: 0.30, green: 0.32, blue: 0.32, alpha: 1)
+        )
+        tower.position = [205, 17, 1_050]
+        airbase.addChild(tower)
+        let cab = block(
+            size: [27, 8, 27],
+            color: UIColor(red: 0.16, green: 0.23, blue: 0.27, alpha: 1)
+        )
+        cab.position = [205, 38, 1_050]
+        airbase.addChild(cab)
+
+        root.addChild(airbase)
+    }
+
+    private static func block(size: SIMD3<Float>, color: UIColor) -> ModelEntity {
+        ModelEntity(
+            mesh: .generateBox(size: size),
+            materials: [SimpleMaterial(color: color, roughness: 0.94, isMetallic: false)]
+        )
+    }
+
+    private static func chebyshevDistance(_ a: TileKey, _ b: TileKey) -> Int {
         max(abs(a.x - b.x), abs(a.z - b.z))
     }
 
-    private static func distanceSquared(_ a: ChunkKey, _ b: ChunkKey) -> Int {
+    private static func distanceSquared(_ a: TileKey, _ b: TileKey) -> Int {
         let dx = a.x - b.x
         let dz = a.z - b.z
         return dx * dx + dz * dz

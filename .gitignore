@@ -10,5 +10,10 @@ xcuserdata/
 .build/
 .swiftpm/
 
+# Build-time fixed theater assets (reproducibly baked by CI)
+Assets/JSBSim/visuals/world/worldsmith_1337_height_1025.r16
+Assets/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png
+Assets/JSBSim/visuals/world/worldsmith_1337_manifest.json
+
 # macOS
 .DS_Store
