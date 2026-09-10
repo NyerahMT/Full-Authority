@@ -3,7 +3,7 @@
 Repack OSM2World zoom-15 GLB tiles into Full Authority Stage 022 chunks.
 
 OSM2World remains the authoritative geometry generator. This script:
-- reads LOD2 + LOD4 GLB tiles;
+- reads available LOD2 / LOD4 GLB tiles;
 - converts each tile from its glTF scene origin into Full Authority's runway-aligned
   local coordinates;
 - drapes generated geometry over the exact Stage 022 Malta DEM/contact surface;
@@ -146,7 +146,7 @@ class TerrainGrid:
         z0 = max(0, min(self.resolution_z - 1, int(math.floor(gz))))
         x1 = min(x0 + 1, self.resolution_x - 1)
         z1 = min(z0 + 1, self.resolution_z - 1)
-        tx, tz = gx - x0, gz - z0
+        tx, tz = gx - x0, gz - z0, gz - z0
 
         def sample(x: int, z: int) -> float:
             return self.values_dm[z * self.resolution_x + x] * 0.1
@@ -627,8 +627,12 @@ def main() -> None:
     }
 
     glbs = []
+    lods = []
     for lod in (2, 4):
-        glbs.extend((lod, path) for path in sorted((args.tiles / f"lod{lod}").rglob("*.glb")))
+        lod_glbs = sorted((args.tiles / f"lod{lod}").rglob("*.glb"))
+        if lod_glbs:
+            lods.append(lod)
+            glbs.extend((lod, path) for path in lod_glbs)
     if not glbs:
         raise RuntimeError(f"No OSM2World GLBs found under {args.tiles}")
 
@@ -666,7 +670,7 @@ def main() -> None:
         "positionScaleXZ": POS_SCALE_XZ,
         "positionScaleY": POS_SCALE_Y,
         "terrainSource": "Stage022MaltaTerrain.inc / shared JSBSim contact surface",
-        "lods": [2, 4],
+        "lods": lods,
         "chunks": manifest_chunks,
         "stats": {
             **stats,
