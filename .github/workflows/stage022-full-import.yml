@@ -69,10 +69,70 @@ jobs:
           git -C Build/stage022/style checkout -q FETCH_HEAD
           test "$(git -C Build/stage022/style rev-parse HEAD)" = "$OSM2WORLD_STYLE_COMMIT"
 
+      - name: Cache OSM2World Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-osm2world-${{ env.OSM2WORLD_COMMIT }}
+          restore-keys: |
+            ${{ runner.os }}-osm2world-
+
+      - name: Trim unused OSM2World build dependencies
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          root_dir = Path('Build/stage022/OSM2World')
+          ns_uri = 'http://maven.apache.org/POM/4.0.0'
+          ns = {'m': ns_uri}
+          ET.register_namespace('', ns_uri)
+
+          # Only osm2world-opengl actually needs JogAmp. Leaving the repository in
+          # core-jvm and desktop makes Maven probe the slow JogAmp server for every
+          # unrelated Apache/Topobyte/JTS dependency before trying the proper repos.
+          for rel in ('core-jvm/pom.xml', 'desktop/pom.xml'):
+              path = root_dir / rel
+              tree = ET.parse(path)
+              root = tree.getroot()
+              repositories = root.find('m:repositories', ns)
+              if repositories is not None:
+                  root.remove(repositories)
+              tree.write(path, encoding='utf-8', xml_declaration=True)
+
+          # The GLB CLI needs JOGL classes at compile time because desktop also
+          # contains the GUI/image commands, but our headless tileset conversion does
+          # not need native binaries for five operating systems/architectures.
+          path = root_dir / 'opengl/pom.xml'
+          tree = ET.parse(path)
+          root = tree.getroot()
+          dependencies = root.find('m:dependencies', ns)
+          removed = 0
+          if dependencies is not None:
+              for dependency in list(dependencies):
+                  if dependency.find('m:classifier', ns) is not None:
+                      dependencies.remove(dependency)
+                      removed += 1
+          tree.write(path, encoding='utf-8', xml_declaration=True)
+          print(f'Removed {removed} unused native JOGL/GlueGen dependencies')
+          if removed < 8:
+              raise SystemExit('Unexpected OSM2World OpenGL POM layout; refusing a partial dependency trim')
+          PY
+
+          test "$(grep -R 'jogamp.org/deployment/maven' Build/stage022/OSM2World/{core-jvm,desktop,opengl}/pom.xml | wc -l)" -eq 1
+          ! grep -q '<classifier>' Build/stage022/OSM2World/opengl/pom.xml
+
       - name: Build OSM2World CLI
         run: |
           set -euo pipefail
-          mvn -q -f Build/stage022/OSM2World/pom.xml -DskipTests -pl desktop -am package
+          mvn \
+            -B -ntp -T 1C \
+            -f Build/stage022/OSM2World/pom.xml \
+            -DskipTests \
+            -Dmaven.javadoc.skip=true \
+            -Dmaven.source.skip=true \
+            -pl desktop -am package
           test -s Build/stage022/OSM2World/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar
 
       - name: Download Malta OpenStreetMap extract
