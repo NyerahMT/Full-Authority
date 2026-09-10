@@ -55,7 +55,7 @@ enum Stage020ProceduralWorld {
 
         let config = CityConfig(
             seed: 20_260_920,
-            preferredCenter: [6_150, 3_250],
+            preferredCenter: [7_050, 3_250],
             columns: 13,
             rows: 10,
             spacingX: 330,
@@ -199,7 +199,8 @@ enum Stage020ProceduralWorld {
         for dx in offsets {
             for dz in offsets {
                 let candidate = preferred + SIMD2<Float>(dx, dz)
-                guard candidate.x > 4_300 else { continue }
+                // Keep the urban core beyond the Stage 019 industrial/service edge.
+                guard candidate.x >= 7_000 else { continue }
 
                 var slopePenalty: Float = 0
                 var heights: [Float] = []
