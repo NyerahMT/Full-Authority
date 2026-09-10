@@ -1,0 +1,11 @@
+Full Authority Stage 024 benchmark map
+
+Source: Helsinki 3D reality mesh (2017), City of Helsinki
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+Source: https://3d.hel.ninja/mesh/
+
+The source OBJ reality mesh was recentered, rotated, merged into 2 km chunks,
+texture-atlased and selectively downsampled for mobile rendering. No generated
+buildings, roads, vegetation, vehicles, shoreline or terrain geometry replaces
+the City of Helsinki photogrammetry in the visual benchmark layer. Cells outside
+the published Helsinki mesh coverage are recorded in the manifest and omitted.

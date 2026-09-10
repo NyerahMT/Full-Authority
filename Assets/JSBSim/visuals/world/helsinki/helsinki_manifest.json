@@ -1,0 +1,333 @@
+{
+  "name": "Helsinki 3D reality mesh benchmark",
+  "source": "City of Helsinki Helsinki 3D reality mesh (2017)",
+  "license": "CC BY 4.0",
+  "sourceURL": "https://3d.hel.ninja/mesh/",
+  "coordinateSystem": "EPSG:3879 source; recentered/rotated to EFHF RWY 36",
+  "minX": -12500.0,
+  "minZ": -13250.0,
+  "maxX": 3000.0,
+  "maxZ": 2250.0,
+  "referenceElevationMeters": 14.299856185913086,
+  "runwayLengthMeters": 959.5071297323215,
+  "runwayHeadingTrueDegrees": 6.194459694169555,
+  "coverageUnavailableCodes": [
+    "674500",
+    "676500",
+    "676502",
+    "680490",
+    "680492",
+    "680494",
+    "680496",
+    "680498",
+    "682490",
+    "682492",
+    "682494"
+  ],
+  "tiles": [
+    {
+      "code": "670490",
+      "lod": 15,
+      "mesh": "helsinki_670490.fhm",
+      "texture": "helsinki_670490.jpg",
+      "vertices": 98329,
+      "triangles": 70204
+    },
+    {
+      "code": "670492",
+      "lod": 15,
+      "mesh": "helsinki_670492.fhm",
+      "texture": "helsinki_670492.jpg",
+      "vertices": 323789,
+      "triangles": 268837
+    },
+    {
+      "code": "670494",
+      "lod": 15,
+      "mesh": "helsinki_670494.fhm",
+      "texture": "helsinki_670494.jpg",
+      "vertices": 132222,
+      "triangles": 128614
+    },
+    {
+      "code": "670496",
+      "lod": 15,
+      "mesh": "helsinki_670496.fhm",
+      "texture": "helsinki_670496.jpg",
+      "vertices": 166636,
+      "triangles": 159866
+    },
+    {
+      "code": "670498",
+      "lod": 15,
+      "mesh": "helsinki_670498.fhm",
+      "texture": "helsinki_670498.jpg",
+      "vertices": 74032,
+      "triangles": 79286
+    },
+    {
+      "code": "670500",
+      "lod": 15,
+      "mesh": "helsinki_670500.fhm",
+      "texture": "helsinki_670500.jpg",
+      "vertices": 69241,
+      "triangles": 52627
+    },
+    {
+      "code": "670502",
+      "lod": 15,
+      "mesh": "helsinki_670502.fhm",
+      "texture": "helsinki_670502.jpg",
+      "vertices": 317641,
+      "triangles": 284875
+    },
+    {
+      "code": "672490",
+      "lod": 15,
+      "mesh": "helsinki_672490.fhm",
+      "texture": "helsinki_672490.jpg",
+      "vertices": 242651,
+      "triangles": 216428
+    },
+    {
+      "code": "672492",
+      "lod": 15,
+      "mesh": "helsinki_672492.fhm",
+      "texture": "helsinki_672492.jpg",
+      "vertices": 205182,
+      "triangles": 178605
+    },
+    {
+      "code": "672494",
+      "lod": 15,
+      "mesh": "helsinki_672494.fhm",
+      "texture": "helsinki_672494.jpg",
+      "vertices": 217873,
+      "triangles": 192562
+    },
+    {
+      "code": "672496",
+      "lod": 15,
+      "mesh": "helsinki_672496.fhm",
+      "texture": "helsinki_672496.jpg",
+      "vertices": 252835,
+      "triangles": 218721
+    },
+    {
+      "code": "672498",
+      "lod": 15,
+      "mesh": "helsinki_672498.fhm",
+      "texture": "helsinki_672498.jpg",
+      "vertices": 112001,
+      "triangles": 94178
+    },
+    {
+      "code": "672500",
+      "lod": 15,
+      "mesh": "helsinki_672500.fhm",
+      "texture": "helsinki_672500.jpg",
+      "vertices": 328191,
+      "triangles": 286278
+    },
+    {
+      "code": "672502",
+      "lod": 15,
+      "mesh": "helsinki_672502.fhm",
+      "texture": "helsinki_672502.jpg",
+      "vertices": 528755,
+      "triangles": 426388
+    },
+    {
+      "code": "674490",
+      "lod": 15,
+      "mesh": "helsinki_674490.fhm",
+      "texture": "helsinki_674490.jpg",
+      "vertices": 261800,
+      "triangles": 248578
+    },
+    {
+      "code": "674492",
+      "lod": 15,
+      "mesh": "helsinki_674492.fhm",
+      "texture": "helsinki_674492.jpg",
+      "vertices": 302109,
+      "triangles": 261774
+    },
+    {
+      "code": "674494",
+      "lod": 15,
+      "mesh": "helsinki_674494.fhm",
+      "texture": "helsinki_674494.jpg",
+      "vertices": 357982,
+      "triangles": 293805
+    },
+    {
+      "code": "674496",
+      "lod": 15,
+      "mesh": "helsinki_674496.fhm",
+      "texture": "helsinki_674496.jpg",
+      "vertices": 269661,
+      "triangles": 219287
+    },
+    {
+      "code": "674498",
+      "lod": 15,
+      "mesh": "helsinki_674498.fhm",
+      "texture": "helsinki_674498.jpg",
+      "vertices": 222346,
+      "triangles": 194513
+    },
+    {
+      "code": "674502",
+      "lod": 15,
+      "mesh": "helsinki_674502.fhm",
+      "texture": "helsinki_674502.jpg",
+      "vertices": 445523,
+      "triangles": 363685
+    },
+    {
+      "code": "676490",
+      "lod": 15,
+      "mesh": "helsinki_676490.fhm",
+      "texture": "helsinki_676490.jpg",
+      "vertices": 336775,
+      "triangles": 347371
+    },
+    {
+      "code": "676492",
+      "lod": 15,
+      "mesh": "helsinki_676492.fhm",
+      "texture": "helsinki_676492.jpg",
+      "vertices": 404248,
+      "triangles": 334332
+    },
+    {
+      "code": "676494",
+      "lod": 15,
+      "mesh": "helsinki_676494.fhm",
+      "texture": "helsinki_676494.jpg",
+      "vertices": 389189,
+      "triangles": 296181
+    },
+    {
+      "code": "676496",
+      "lod": 15,
+      "mesh": "helsinki_676496.fhm",
+      "texture": "helsinki_676496.jpg",
+      "vertices": 308340,
+      "triangles": 238387
+    },
+    {
+      "code": "676498",
+      "lod": 15,
+      "mesh": "helsinki_676498.fhm",
+      "texture": "helsinki_676498.jpg",
+      "vertices": 442241,
+      "triangles": 542108
+    },
+    {
+      "code": "678490",
+      "lod": 15,
+      "mesh": "helsinki_678490.fhm",
+      "texture": "helsinki_678490.jpg",
+      "vertices": 369616,
+      "triangles": 278481
+    },
+    {
+      "code": "678492",
+      "lod": 15,
+      "mesh": "helsinki_678492.fhm",
+      "texture": "helsinki_678492.jpg",
+      "vertices": 404323,
+      "triangles": 303850
+    },
+    {
+      "code": "678494",
+      "lod": 15,
+      "mesh": "helsinki_678494.fhm",
+      "texture": "helsinki_678494.jpg",
+      "vertices": 481119,
+      "triangles": 357055
+    },
+    {
+      "code": "678496",
+      "lod": 15,
+      "mesh": "helsinki_678496.fhm",
+      "texture": "helsinki_678496.jpg",
+      "vertices": 394787,
+      "triangles": 294504
+    },
+    {
+      "code": "678498",
+      "lod": 15,
+      "mesh": "helsinki_678498.fhm",
+      "texture": "helsinki_678498.jpg",
+      "vertices": 363679,
+      "triangles": 290622
+    },
+    {
+      "code": "678500",
+      "lod": 15,
+      "mesh": "helsinki_678500.fhm",
+      "texture": "helsinki_678500.jpg",
+      "vertices": 233975,
+      "triangles": 188835
+    },
+    {
+      "code": "678502",
+      "lod": 15,
+      "mesh": "helsinki_678502.fhm",
+      "texture": "helsinki_678502.jpg",
+      "vertices": 490732,
+      "triangles": 357912
+    },
+    {
+      "code": "680500",
+      "lod": 16,
+      "mesh": "helsinki_680500.fhm",
+      "texture": "helsinki_680500.jpg",
+      "vertices": 641073,
+      "triangles": 543584
+    },
+    {
+      "code": "680502",
+      "lod": 16,
+      "mesh": "helsinki_680502.fhm",
+      "texture": "helsinki_680502.jpg",
+      "vertices": 646765,
+      "triangles": 531251
+    },
+    {
+      "code": "682496",
+      "lod": 15,
+      "mesh": "helsinki_682496.fhm",
+      "texture": "helsinki_682496.jpg",
+      "vertices": 275211,
+      "triangles": 211118
+    },
+    {
+      "code": "682498",
+      "lod": 15,
+      "mesh": "helsinki_682498.fhm",
+      "texture": "helsinki_682498.jpg",
+      "vertices": 282906,
+      "triangles": 226499
+    },
+    {
+      "code": "682500",
+      "lod": 16,
+      "mesh": "helsinki_682500.fhm",
+      "texture": "helsinki_682500.jpg",
+      "vertices": 621169,
+      "triangles": 519684
+    },
+    {
+      "code": "682502",
+      "lod": 16,
+      "mesh": "helsinki_682502.fhm",
+      "texture": "helsinki_682502.jpg",
+      "vertices": 538656,
+      "triangles": 456438
+    }
+  ]
+}
