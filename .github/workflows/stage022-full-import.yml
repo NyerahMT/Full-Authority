@@ -25,6 +25,8 @@ env:
   GOL_TOOL_VERSION: '1.2.0'
   GOL_TOOL_SHA256: 2589dbb30dd877dbcabf07f358c56c1c339851e018f95426b9d89400706cf93e
   SHARD_COUNT: '12'
+  # Keep v3: run #6 successfully seeded this exact toolchain. Future cold builds
+  # use the fixed POM trimming below, but normal reruns should skip Maven entirely.
   TOOLCHAIN_CACHE_VERSION: '3'
 
 jobs:
@@ -72,7 +74,6 @@ jobs:
           key: ${{ runner.os }}-osm2world-${{ env.OSM2WORLD_COMMIT }}-v2
           restore-keys: |
             ${{ runner.os }}-osm2world-
-          save-always: true
 
       - name: Fetch pinned OSM2World and CC0 style
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -123,7 +124,7 @@ jobs:
               tree.write(path, encoding='utf-8', xml_declaration=True)
 
           # Native JOGL bundles for macOS/Windows/ARM are irrelevant to a headless
-          # Linux GLB generator. Keep the two compile-time JOGL Java dependencies.
+          # Linux GLB generator. Keep only the compile-time JOGL/GlueGen Java deps.
           path = root_dir / 'opengl/pom.xml'
           tree = ET.parse(path)
           root = tree.getroot()
@@ -138,30 +139,34 @@ jobs:
           if removed_native < 8:
               raise SystemExit(f'Unexpected OpenGL POM layout; removed only {removed_native} native dependencies')
 
-          # This Maven plugin generated third-party attribution for the temporary
-          # OSM2World build and spent ~16 minutes probing JogAmp in the previous run.
-          # OSM2World is only an offline build tool here; Full Authority ships its
-          # own source/data attribution separately, so this generation is dead work.
-          path = root_dir / 'pom.xml'
-          tree = ET.parse(path)
-          root = tree.getroot()
-          plugins = root.find('m:build/m:plugins', ns)
+          # OSM2World defines the attribution plugin twice: once in the root POM and
+          # once again in opengl/pom.xml. Run #6 showed the OpenGL copy alone spending
+          # almost the entire cold build probing JogAmp. Remove every copy from the
+          # temporary offline-tool build. Full Authority maintains shipping attribution
+          # separately; this generated Maven report is not shipped.
           removed_attribution = 0
-          if plugins is not None:
-              for plugin in list(plugins):
-                  artifact = plugin.find('m:artifactId', ns)
-                  if artifact is not None and artifact.text == 'attribution-maven-plugin':
-                      plugins.remove(plugin)
-                      removed_attribution += 1
-          tree.write(path, encoding='utf-8', xml_declaration=True)
-          if removed_attribution != 1:
-              raise SystemExit(f'Expected one attribution plugin, removed {removed_attribution}')
+          for path in root_dir.rglob('pom.xml'):
+              tree = ET.parse(path)
+              root = tree.getroot()
+              plugins = root.find('m:build/m:plugins', ns)
+              changed = False
+              if plugins is not None:
+                  for plugin in list(plugins):
+                      artifact = plugin.find('m:artifactId', ns)
+                      if artifact is not None and artifact.text == 'attribution-maven-plugin':
+                          plugins.remove(plugin)
+                          removed_attribution += 1
+                          changed = True
+              if changed:
+                  tree.write(path, encoding='utf-8', xml_declaration=True)
 
-          print(f'Removed {removed_native} native JOGL dependencies and the build-time attribution scan')
+          if removed_attribution != 2:
+              raise SystemExit(f'Expected two attribution plugins, removed {removed_attribution}')
+          print(f'Removed {removed_native} native JOGL dependencies and {removed_attribution} attribution scans')
           PY
 
-          ! grep -q '<classifier>' Build/stage022/OSM2World/opengl/pom.xml
-          ! grep -q 'attribution-maven-plugin' Build/stage022/OSM2World/pom.xml
+          ! grep -R -q '<classifier>' Build/stage022/OSM2World/opengl/pom.xml
+          ! grep -R -q 'attribution-maven-plugin' Build/stage022/OSM2World --include='pom.xml'
 
       - name: Build reusable OSM2World CLI
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -267,7 +272,6 @@ jobs:
 
           tiles = set()
           for min_lat, min_lon, max_lat, max_lon in bboxes:
-              # Match OSM2World TilesetCommand's tiny edge shrink.
               min_lat += 1e-5
               min_lon += 1e-5
               max_lat -= 1e-5
@@ -309,7 +313,7 @@ jobs:
           retention-days: 1
 
   generate:
-    name: Scenery shard ${{ matrix.shard }}
+    name: Scenery + repack shard ${{ matrix.shard }}
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -331,6 +335,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install shard repacker dependency
+        run: python -m pip install pillow
 
       - name: Restore reusable OSM2World toolchain
         uses: actions/cache@v4
@@ -366,10 +378,7 @@ jobs:
 
           mapfile -t TILES < "$SHARD_FILE"
           EXPECTED="${#TILES[@]}"
-          if [ "$EXPECTED" -eq 0 ]; then
-            echo 'Shard unexpectedly has no tiles.' >&2
-            exit 1
-          fi
+          test "$EXPECTED" -gt 0
 
           ARGS=()
           for tile in "${TILES[@]}"; do
@@ -429,20 +438,73 @@ jobs:
             exit 1
           fi
 
-      - name: Upload scenery shard
+      - name: Repack this shard for RealityKit
+        run: |
+          set -euo pipefail
+          SHARD_ID="$(printf '%02d' '${{ matrix.shard }}')"
+
+          # Each runner only holds ~1/12 of Malta in Python memory. This avoids the
+          # run-#6 failure where one process accumulated the entire country before
+          # writing a single packed superchunk.
+          PYTHONUNBUFFERED=1 python scripts/repack-stage022-osm2world.py --tiles Build/stage022/o2w
+          test -s Docs/Stage022MaltaFullWorld.json
+
+          mkdir -p Build/stage022/partials
+          python - "$SHARD_ID" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          shard = sys.argv[1]
+          manifest_path = Path('Docs/Stage022MaltaFullWorld.json')
+          manifest = json.loads(manifest_path.read_text())
+          world_root = Path('Assets/JSBSim/visuals/world')
+
+          # Different input shards can contribute geometry to the same 4 km
+          # superchunk. Give every partial chunk a shard suffix so artifact merging
+          # is lossless; the runtime manifest may contain multiple pieces at one x/z.
+          seen = set()
+          for chunk in manifest['chunks']:
+              old_rel = Path(chunk['file'])
+              old_path = world_root / old_rel
+              if not old_path.is_file():
+                  raise SystemExit(f'Missing packed chunk: {old_path}')
+              new_path = old_path.with_name(f'{old_path.stem}_s{shard}{old_path.suffix}')
+              if new_path in seen or new_path.exists():
+                  raise SystemExit(f'Packed chunk collision: {new_path}')
+              old_path.rename(new_path)
+              seen.add(new_path)
+              chunk['file'] = new_path.relative_to(world_root).as_posix()
+              chunk['bytes'] = new_path.stat().st_size
+
+          partial = Path(f'Build/stage022/partials/manifest-{shard}.json')
+          partial.write_text(json.dumps(manifest, indent=2) + '\n')
+          manifest_path.unlink()
+          print(f"Shard {shard}: {manifest['stats']['source_glb_files']} GLBs -> {len(manifest['chunks'])} packed pieces, {manifest['stats']['packedMiB']} MiB")
+          PY
+
+          test -s "Build/stage022/partials/manifest-${SHARD_ID}.json"
+          test -n "$(find Assets/JSBSim/visuals/world/stage022 -name "*_s${SHARD_ID}.bin" -print -quit)"
+
+          # The multi-gigabyte GLBs are no longer needed once this shard is packed.
+          rm -rf Build/stage022/o2w
+
+      - name: Upload packed scenery shard
         uses: actions/upload-artifact@v4
         with:
-          name: stage022-shard-${{ matrix.shard }}
-          path: Build/stage022/o2w
+          name: stage022-packed-${{ matrix.shard }}
+          path: |
+            Assets/JSBSim/visuals/world/stage022
+            Build/stage022/partials
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
 
   finalize:
-    name: Repack + commit Stage 022
+    name: Merge + commit Stage 022
     needs: [prepare, generate]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout Full Authority
@@ -456,64 +518,89 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install repacker dependencies
-        run: |
-          set -euo pipefail
-          python -m pip install pillow
-
-      - name: Restore OSM2World style resources
-        uses: actions/cache@v4
-        with:
-          path: Build/stage022/toolchain
-          key: ${{ runner.os }}-stage022-o2w-${{ env.OSM2WORLD_COMMIT }}-${{ env.OSM2WORLD_STYLE_COMMIT }}-v${{ env.TOOLCHAIN_CACHE_VERSION }}
-          fail-on-cache-miss: true
-
-      - name: Download shared Malta inputs
+      - name: Download shared terrain metadata
         uses: actions/download-artifact@v4
         with:
           name: stage022-common
           path: .
 
-      - name: Collect all 12 scenery shards
+      - name: Collect all 12 packed scenery shards
         uses: actions/download-artifact@v4
         with:
-          pattern: stage022-shard-*
-          path: Build/stage022/o2w
+          pattern: stage022-packed-*
+          path: .
           merge-multiple: true
 
-      - name: Verify complete GLB tile set
+      - name: Merge partial Stage 022 manifests
         run: |
           set -euo pipefail
-          EXPECTED="$(cat Build/stage022/shards/*.txt | sort -u | wc -l)"
-          LOD2_COUNT="$(find Build/stage022/o2w/lod2 -type f -name '*.glb' | wc -l)"
-          LOD4_COUNT="$(find Build/stage022/o2w/lod4 -type f -name '*.glb' | wc -l)"
-          echo "Expected tiles: ${EXPECTED}; LOD2=${LOD2_COUNT}; LOD4=${LOD4_COUNT}"
-          test "$EXPECTED" -eq 1195
-          test "$LOD2_COUNT" -eq "$EXPECTED"
-          test "$LOD4_COUNT" -eq "$EXPECTED"
-
-      - name: Repack OSM2World geometry for RealityKit
-        run: |
-          set -euo pipefail
-          python scripts/repack-stage022-osm2world.py --tiles Build/stage022/o2w
-          test -s Docs/Stage022MaltaFullWorld.json
-          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod2 -name '*.bin' -print -quit)"
-          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod4 -name '*.bin' -print -quit)"
-
           python - <<'PY'
           import json
+          from copy import deepcopy
           from pathlib import Path
-          manifest = json.loads(Path('Docs/Stage022MaltaFullWorld.json').read_text())
-          stats = manifest['stats']
-          print(json.dumps(stats, indent=2))
+
+          partials = sorted(Path('Build/stage022/partials').glob('manifest-*.json'))
+          if len(partials) != 12:
+              raise SystemExit(f'Expected 12 partial manifests, found {len(partials)}')
+
+          docs = [json.loads(path.read_text()) for path in partials]
+          base = deepcopy(docs[0])
+
+          # Everything except chunks/stats must describe the same world.
+          for index, doc in enumerate(docs[1:], 1):
+              for key in ('stage', 'region', 'generator', 'anchor', 'boundsMeters',
+                          'superchunkMeters', 'positionScaleXZ', 'positionScaleY',
+                          'terrainSource', 'lods', 'licenses'):
+                  if doc[key] != base[key]:
+                      raise SystemExit(f'Partial manifest {index} disagrees on {key}')
+
+          chunks = []
+          files = set()
+          for doc in docs:
+              for chunk in doc['chunks']:
+                  if chunk['file'] in files:
+                      raise SystemExit(f"Duplicate packed file: {chunk['file']}")
+                  files.add(chunk['file'])
+                  chunks.append(chunk)
+          chunks.sort(key=lambda c: (c['lod'], c['x'], c['z'], c['file']))
+
+          sum_keys = (
+              'source_glb_files', 'source_primitives', 'source_vertices',
+              'source_triangles', 'packedBytes', 'packedVertices', 'packedTriangles',
+          )
+          stats = {key: sum(int(doc['stats'][key]) for doc in docs) for key in sum_keys}
+          stats['chunkCount'] = len(chunks)
+          stats['packedMiB'] = round(stats['packedBytes'] / (1024 * 1024), 2)
+
+          if stats['source_glb_files'] != 2390:
+              raise SystemExit(f"Expected 2390 source GLBs, got {stats['source_glb_files']}")
           if stats['packedVertices'] <= 0 or stats['packedTriangles'] <= 0:
               raise SystemExit('Stage 022 repack produced empty geometry')
           if stats['packedMiB'] > 280:
               raise SystemExit(f"Stage 022 package is unexpectedly large: {stats['packedMiB']} MiB")
-          for path in Path('Assets/JSBSim/visuals/world/stage022').rglob('*.bin'):
+
+          world_root = Path('Assets/JSBSim/visuals/world')
+          actual_files = list((world_root / 'stage022').rglob('*.bin'))
+          if len(actual_files) != len(chunks):
+              raise SystemExit(f'Packed file count {len(actual_files)} != manifest chunks {len(chunks)}')
+          actual_bytes = sum(path.stat().st_size for path in actual_files)
+          if actual_bytes != stats['packedBytes']:
+              raise SystemExit(f"Packed bytes {actual_bytes} != manifest {stats['packedBytes']}")
+          for path in actual_files:
               if path.stat().st_size >= 95 * 1024 * 1024:
                   raise SystemExit(f'Chunk exceeds safe GitHub file size: {path}')
+
+          base['chunks'] = chunks
+          base['stats'] = stats
+          out = Path('Docs/Stage022MaltaFullWorld.json')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(base, indent=2) + '\n')
+          print(json.dumps(stats, indent=2))
           PY
+
+          test -s Docs/Stage022MaltaFullWorld.json
+          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod2 -name '*.bin' -print -quit)"
+          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod4 -name '*.bin' -print -quit)"
 
       - name: Commit generated Stage 022 world
         run: |
