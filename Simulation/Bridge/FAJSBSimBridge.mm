@@ -38,14 +38,10 @@ void SetBridgeError(NSError **error, NSString *message) {
                              userInfo:@{NSLocalizedDescriptionKey: message}];
 }
 
-double SmoothStep(double value) {
-    const double t = std::clamp(value, 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
+class FATerrainGrid;
+extern FATerrainGrid gTerrainGrid;
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters);
 
-// This function is intentionally mirrored in Stage2TerrainProfile on the Swift
-// side. JSBSim owns contact with the mathematical surface; RealityKit renders
-// the same surface so the airplane can no longer fly through decorative hills.
 class FATerrainGroundCallback final : public JSBSim::FGGroundCallback {
 public:
     FATerrainGroundCallback(double semiMajor, double semiMinor)
@@ -122,7 +118,7 @@ struct FATerrainGrid {
     bool loaded = false;
     uint32_t width = 0;
     uint32_t height = 0;
-    float cell = 40.0f;
+    float cell = 50.0f;
     float minX = 0.0f;
     float minZ = 0.0f;
     float referenceElevation = 0.0f;
@@ -196,7 +192,10 @@ extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
     if (self) {
         _rootPath = [rootPath copy];
         _deltaTime = 1.0 / 120.0;
-        const std::string terrainPath = std::string(_rootPath.UTF8String ?: "") + "/visuals/world/reno/reno_dem.bin";
+        // Stage 024 benchmark ground is derived from the same City of Helsinki
+        // reality mesh rendered by RealityKit. It is terrain-only and intentionally
+        // ignores scanned rooftops/vehicles so JSBSim does not collide with scenery.
+        const std::string terrainPath = std::string(_rootPath.UTF8String ?: "") + "/visuals/world/helsinki/helsinki_ground.bin";
         gTerrainGrid.Load(terrainPath);
         [self rebuildExecutive];
     }
@@ -204,9 +203,6 @@ extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
 }
 
 - (void)rebuildExecutive {
-    // A complete aircraft reset gets a complete JSBSim executive. That keeps
-    // the inertial model, IC object, propulsion, FCS, property tree and custom
-    // terrain callback on one coherent lifetime.
     _exec = std::make_unique<JSBSim::FGFDMExec>();
     _exec->SetRootDir(SGPath(std::string(_rootPath.UTF8String ?: "")));
     _exec->SetAircraftPath(SGPath("aircraft"));
