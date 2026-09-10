@@ -1,0 +1,162 @@
+name: Stage 022 Malta Full Import
+
+on:
+  push:
+    branches:
+      - stage022-malta-full-import
+    paths:
+      - 'scripts/bake-stage022-terrain.py'
+      - 'scripts/repack-stage022-osm2world.py'
+      - 'World/Stage022/**'
+      - '.github/workflows/stage022-full-import.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage022-malta-full-import
+  cancel-in-progress: true
+
+env:
+  OSM2WORLD_COMMIT: 8ec26a9ea426444a4f7882cf0cfcab432c876ae5
+  OSM2WORLD_STYLE_COMMIT: 81ade9bf9793181774891548ac29448f366efd3c
+  MALTA_PBF_URL: https://download.geofabrik.de/europe/malta-latest.osm.pbf
+
+jobs:
+  bake:
+    name: Bake full Maltese archipelago
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Full Authority
+        uses: actions/checkout@v6
+        with:
+          ref: stage022-malta-full-import
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python baker dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy requests pillow
+
+      - name: Fetch pinned OSM2World and CC0 style
+        run: |
+          set -euo pipefail
+          mkdir -p Build/stage022
+
+          git init -q Build/stage022/OSM2World
+          git -C Build/stage022/OSM2World remote add origin https://github.com/tordanik/OSM2World.git
+          git -C Build/stage022/OSM2World fetch --depth 1 origin "$OSM2WORLD_COMMIT"
+          git -C Build/stage022/OSM2World checkout -q FETCH_HEAD
+          test "$(git -C Build/stage022/OSM2World rev-parse HEAD)" = "$OSM2WORLD_COMMIT"
+
+          git init -q Build/stage022/style
+          git -C Build/stage022/style remote add origin https://github.com/tordanik/OSM2World-default-style.git
+          git -C Build/stage022/style fetch --depth 1 origin "$OSM2WORLD_STYLE_COMMIT"
+          git -C Build/stage022/style checkout -q FETCH_HEAD
+          test "$(git -C Build/stage022/style rev-parse HEAD)" = "$OSM2WORLD_STYLE_COMMIT"
+
+      - name: Build OSM2World CLI
+        run: |
+          set -euo pipefail
+          mvn -q -f Build/stage022/OSM2World/pom.xml -DskipTests -pl desktop -am package
+          test -s Build/stage022/OSM2World/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar
+
+      - name: Download Malta OpenStreetMap extract
+        run: |
+          set -euo pipefail
+          mkdir -p Build/stage022/input
+          curl --fail --location --retry 4 --retry-delay 3 \
+            "$MALTA_PBF_URL" \
+            -o Build/stage022/input/malta-latest.osm.pbf
+          test -s Build/stage022/input/malta-latest.osm.pbf
+
+      - name: Bake expanded shared terrain
+        run: |
+          set -euo pipefail
+          python scripts/bake-stage022-terrain.py
+          test -s Simulation/Bridge/Stage022MaltaTerrain.inc
+          test -s Docs/Stage022MaltaTerrain.json
+
+      - name: Generate OSM2World LOD2 and LOD4 tiles
+        run: |
+          set -euo pipefail
+          STYLE="$GITHUB_WORKSPACE/Build/stage022/style"
+          O2W="$GITHUB_WORKSPACE/Build/stage022/OSM2World/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar"
+          PBF="$GITHUB_WORKSPACE/Build/stage022/input/malta-latest.osm.pbf"
+          OUT="$GITHUB_WORKSPACE/Build/stage022/o2w"
+
+          cat "$STYLE/standard.properties" "$GITHUB_WORKSPACE/World/Stage022/osm2world-overrides.properties" \
+            > "$STYLE/full-authority.properties"
+
+          cd "$STYLE"
+          java -Xmx7g -jar "$O2W" tileset \
+            --input "$PBF" \
+            --bbox "35.775,14.300 35.975,14.595" \
+            --bbox "35.955,14.155 36.105,14.465" \
+            --baseDir "$OUT" \
+            --lod 2 4 \
+            --noJson \
+            --config "$STYLE/full-authority.properties"
+
+          test -n "$(find "$OUT/lod2" -name '*.glb' -print -quit)"
+          test -n "$(find "$OUT/lod4" -name '*.glb' -print -quit)"
+          echo "LOD2 GLBs: $(find "$OUT/lod2" -name '*.glb' | wc -l)"
+          echo "LOD4 GLBs: $(find "$OUT/lod4" -name '*.glb' | wc -l)"
+
+      - name: Repack OSM2World geometry for RealityKit
+        run: |
+          set -euo pipefail
+          python scripts/repack-stage022-osm2world.py --tiles Build/stage022/o2w
+          test -s Docs/Stage022MaltaFullWorld.json
+          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod2 -name '*.bin' -print -quit)"
+          test -n "$(find Assets/JSBSim/visuals/world/stage022/lod4 -name '*.bin' -print -quit)"
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('Docs/Stage022MaltaFullWorld.json').read_text())
+          stats = manifest['stats']
+          print(json.dumps(stats, indent=2))
+          if stats['packedVertices'] <= 0 or stats['packedTriangles'] <= 0:
+              raise SystemExit('Stage 022 repack produced empty geometry')
+          if stats['packedMiB'] > 280:
+              raise SystemExit(f"Stage 022 package is unexpectedly large: {stats['packedMiB']} MiB")
+          for path in Path('Assets/JSBSim/visuals/world/stage022').rglob('*.bin'):
+              if path.stat().st_size >= 95 * 1024 * 1024:
+                  raise SystemExit(f'Chunk exceeds safe GitHub file size: {path}')
+          PY
+
+      - name: Commit generated Stage 022 world
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            Simulation/Bridge/Stage022MaltaTerrain.inc \
+            Docs/Stage022MaltaTerrain.json \
+            Docs/Stage022MaltaFullWorld.json \
+            Assets/JSBSim/visuals/world/stage022
+
+          if git diff --cached --quiet; then
+            echo 'Generated Stage 022 world is unchanged.'
+            exit 0
+          fi
+
+          git commit -m 'Bake Stage 022 full Malta scenery'
+          git push origin HEAD:stage022-malta-full-import
