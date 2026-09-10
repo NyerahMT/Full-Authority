@@ -18,8 +18,13 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <cstdint>
+#include <fstream>
+#include <vector>
 #include <memory>
 #include <string>
+
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters);
 
 namespace {
 NSString * const FAJSBSimErrorDomain = @"com.nyerahworks.FullAuthority.JSBSim";
@@ -33,39 +38,6 @@ void SetBridgeError(NSError **error, NSString *message) {
     *error = [NSError errorWithDomain:FAJSBSimErrorDomain
                                  code:1
                              userInfo:@{NSLocalizedDescriptionKey: message}];
-}
-
-double SmoothStep(double value) {
-    const double t = std::clamp(value, 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
-
-// This function is intentionally mirrored in Stage2TerrainProfile on the Swift
-// side. JSBSim owns contact with the mathematical surface; RealityKit renders
-// the same surface so the airplane can no longer fly through decorative hills.
-double TerrainHeightMeters(double eastMeters, double northMeters) {
-    double base =
-        55.0 * std::sin(northMeters / 2800.0) * std::cos(eastMeters / 3600.0) +
-        38.0 * std::sin((eastMeters + northMeters) / 1900.0) +
-        28.0 * std::cos((eastMeters - 0.45 * northMeters) / 2400.0);
-
-    const double ridge1East = (eastMeters + 6500.0) / 2500.0;
-    const double ridge1North = (northMeters - 9000.0) / 3500.0;
-    base += 145.0 * std::exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North));
-
-    const double ridge2East = (eastMeters - 7200.0) / 2800.0;
-    const double ridge2North = (northMeters - 6500.0) / 3000.0;
-    base += 105.0 * std::exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North));
-
-    // Keep the entire airfield/runway basin genuinely flat, then blend into
-    // rolling terrain. That gives the gear model a sane runway while still
-    // allowing real terrain contact once the player leaves the field.
-    const double dx = std::max(std::abs(eastMeters) - 1000.0, 0.0);
-    const double dz = std::max(std::abs(northMeters - 2000.0) - 3600.0, 0.0);
-    const double distanceOutsideAirfield = std::hypot(dx, dz);
-    const double terrainBlend = SmoothStep(distanceOutsideAirfield / 1800.0);
-
-    return base * terrainBlend;
 }
 
 class FATerrainGroundCallback final : public JSBSim::FGGroundCallback {
@@ -89,15 +61,15 @@ public:
         const double longitude = local.GetLongitude();
         const double eastMeters = longitude * kEarthRadiusMeters;
         const double northMeters = latitude * kEarthRadiusMeters;
-        const double heightMeters = TerrainHeightMeters(eastMeters, northMeters);
+        const double heightMeters = FATerrainHeightMeters(eastMeters, northMeters);
 
         const double dhde = (
-            TerrainHeightMeters(eastMeters + kTerrainSampleMeters, northMeters) -
-            TerrainHeightMeters(eastMeters - kTerrainSampleMeters, northMeters)
+            FATerrainHeightMeters(eastMeters + kTerrainSampleMeters, northMeters) -
+            FATerrainHeightMeters(eastMeters - kTerrainSampleMeters, northMeters)
         ) / (2.0 * kTerrainSampleMeters);
         const double dhdn = (
-            TerrainHeightMeters(eastMeters, northMeters + kTerrainSampleMeters) -
-            TerrainHeightMeters(eastMeters, northMeters - kTerrainSampleMeters)
+            FATerrainHeightMeters(eastMeters, northMeters + kTerrainSampleMeters) -
+            FATerrainHeightMeters(eastMeters, northMeters - kTerrainSampleMeters)
         ) / (2.0 * kTerrainSampleMeters);
 
         const double cosLat = std::cos(latitude);
@@ -140,6 +112,68 @@ private:
 };
 }
 
+struct FATerrainGrid {
+    bool loaded = false;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    float cell = 50.0f;
+    float minX = 0.0f;
+    float minZ = 0.0f;
+    float referenceElevation = 0.0f;
+    std::vector<float> samples;
+
+    bool Load(const std::string& path) {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) return false;
+        char magic[4] = {};
+        uint32_t version = 0;
+        stream.read(magic, 4);
+        stream.read(reinterpret_cast<char*>(&version), sizeof(version));
+        stream.read(reinterpret_cast<char*>(&width), sizeof(width));
+        stream.read(reinterpret_cast<char*>(&height), sizeof(height));
+        stream.read(reinterpret_cast<char*>(&cell), sizeof(cell));
+        stream.read(reinterpret_cast<char*>(&minX), sizeof(minX));
+        stream.read(reinterpret_cast<char*>(&minZ), sizeof(minZ));
+        stream.read(reinterpret_cast<char*>(&referenceElevation), sizeof(referenceElevation));
+        if (!stream || std::string(magic, 4) != "FAM2" || version != 1 || width < 2 || height < 2 || cell <= 0.0f) {
+            loaded = false;
+            return false;
+        }
+        samples.resize(static_cast<size_t>(width) * static_cast<size_t>(height));
+        stream.read(reinterpret_cast<char*>(samples.data()), static_cast<std::streamsize>(samples.size() * sizeof(float)));
+        loaded = static_cast<bool>(stream);
+        return loaded;
+    }
+
+    double Height(double eastMeters, double northMeters) const {
+        if (!loaded || samples.empty()) return 0.0;
+        const double gx = (eastMeters - minX) / cell;
+        const double gz = (northMeters - minZ) / cell;
+        const int ix = std::clamp(static_cast<int>(std::floor(gx)), 0, static_cast<int>(width) - 2);
+        const int iz = std::clamp(static_cast<int>(std::floor(gz)), 0, static_cast<int>(height) - 2);
+        const double tx = std::clamp(gx - ix, 0.0, 1.0);
+        const double tz = std::clamp(gz - iz, 0.0, 1.0);
+        const size_t i00 = static_cast<size_t>(iz) * width + static_cast<size_t>(ix);
+        const size_t i10 = i00 + 1;
+        const size_t i01 = static_cast<size_t>(iz + 1) * width + static_cast<size_t>(ix);
+        const size_t i11 = i01 + 1;
+        const double h00 = samples[i00];
+        const double h10 = samples[i10];
+        const double h01 = samples[i01];
+        const double h11 = samples[i11];
+        if (tx + tz <= 1.0) {
+            return h00 + tx * (h10 - h00) + tz * (h01 - h00);
+        }
+        return h11 + (1.0 - tz) * (h10 - h11) + (1.0 - tx) * (h01 - h11);
+    }
+};
+
+FATerrainGrid gTerrainGrid;
+
+extern "C" double FATerrainHeightMeters(double eastMeters, double northMeters) {
+    return gTerrainGrid.Height(eastMeters, northMeters);
+}
+
 @interface FAJSBSimBridge ()
 - (void)rebuildExecutive;
 @end
@@ -156,15 +190,17 @@ private:
     if (self) {
         _rootPath = [rootPath copy];
         _deltaTime = 1.0 / 120.0;
+        // Stage 024 benchmark ground is derived from the same City of Helsinki
+        // reality mesh rendered by RealityKit. It is terrain-only and intentionally
+        // ignores scanned rooftops/vehicles so JSBSim does not collide with scenery.
+        const std::string terrainPath = std::string(_rootPath.UTF8String ?: "") + "/visuals/world/helsinki/helsinki_ground.bin";
+        gTerrainGrid.Load(terrainPath);
         [self rebuildExecutive];
     }
     return self;
 }
 
 - (void)rebuildExecutive {
-    // A complete aircraft reset gets a complete JSBSim executive. That keeps
-    // the inertial model, IC object, propulsion, FCS, property tree and custom
-    // terrain callback on one coherent lifetime.
     _exec = std::make_unique<JSBSim::FGFDMExec>();
     _exec->SetRootDir(SGPath(std::string(_rootPath.UTF8String ?: "")));
     _exec->SetAircraftPath(SGPath("aircraft"));

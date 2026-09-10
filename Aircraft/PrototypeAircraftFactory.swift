@@ -156,6 +156,7 @@ enum PrototypeAircraftFactory {
             )
 
             try addAfterburner(to: visualRoot)
+            visualRoot.addChild(Stage020AircraftDetails.make())
             addLandingGear(to: aircraft)
 
             let cockpit = PrototypeCockpitFactory.make()
@@ -247,15 +248,15 @@ enum PrototypeAircraftFactory {
         let halo = ModelEntity(
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
-                red: 0.82,
-                green: 0.10,
-                blue: 0.025,
-                alpha: 0.15
+                red: 1.00,
+                green: 0.18,
+                blue: 0.015,
+                alpha: 0.055
             ))]
         )
         halo.name = afterburnerHaloName
         halo.orientation = aftRotation
-        halo.scale = [1.15, 2.15, 1.15]
+        halo.scale = [1.04, 1.82, 1.04]
         halo.position = [0, 0, 0.5 * halo.scale.y]
         plume.addChild(halo)
 
@@ -263,14 +264,14 @@ enum PrototypeAircraftFactory {
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
                 red: 1.0,
-                green: 0.24,
-                blue: 0.035,
-                alpha: 0.34
+                green: 0.34,
+                blue: 0.055,
+                alpha: 0.20
             ))]
         )
         outer.name = afterburnerOuterName
         outer.orientation = aftRotation
-        outer.scale = [0.94, 1.90, 1.02]
+        outer.scale = [0.84, 1.64, 0.90]
         outer.position = [0, 0, 0.5 * outer.scale.y]
         plume.addChild(outer)
 
@@ -278,14 +279,14 @@ enum PrototypeAircraftFactory {
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
                 red: 1.0,
-                green: 0.52,
-                blue: 0.075,
-                alpha: 0.56
+                green: 0.68,
+                blue: 0.18,
+                alpha: 0.40
             ))]
         )
         inner.name = afterburnerInnerName
         inner.orientation = aftRotation
-        inner.scale = [0.58, 1.52, 0.66]
+        inner.scale = [0.50, 1.34, 0.56]
         inner.position = [0, 0, 0.5 * inner.scale.y]
         plume.addChild(inner)
 
@@ -293,14 +294,14 @@ enum PrototypeAircraftFactory {
             mesh: plumeMesh,
             materials: [UnlitMaterial(color: UIColor(
                 red: 1.0,
-                green: 0.88,
-                blue: 0.48,
-                alpha: 0.86
+                green: 0.96,
+                blue: 0.78,
+                alpha: 0.72
             ))]
         )
         core.name = afterburnerCoreName
         core.orientation = aftRotation
-        core.scale = [0.24, 1.12, 0.30]
+        core.scale = [0.19, 0.96, 0.23]
         core.position = [0, 0, 0.5 * core.scale.y]
         plume.addChild(core)
 

@@ -2,6 +2,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+FOUNDATION_EXPORT double FATerrainHeightMeters(double eastMeters, double northMeters);
+#ifdef __cplusplus
+}
+#endif
+
 /// Thin Objective-C++ boundary around JSBSim. Swift should never need to know
 /// about JSBSim's C++ types or coordinate conventions directly.
 @interface FAJSBSimBridge : NSObject

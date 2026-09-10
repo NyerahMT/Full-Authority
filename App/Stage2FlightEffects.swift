@@ -321,10 +321,10 @@ enum Stage2FlightEffects {
             layerMinAge: 2.0,
             layerMaxAge: 160,
             radialSides: 6,
-            baseRadius: 0.54,
-            radialGrowthPerSecond: 0.068,
-            driftScale: 0.84,
-            opacity: 0.16
+            baseRadius: 0.38,
+            radialGrowthPerSecond: 0.055,
+            driftScale: 0.86,
+            opacity: 0.105
         )
         updateTrailEntity(
             root: root,
@@ -334,10 +334,10 @@ enum Stage2FlightEffects {
             layerMinAge: 0.55,
             layerMaxAge: 130,
             radialSides: 6,
-            baseRadius: 0.36,
-            radialGrowthPerSecond: 0.052,
-            driftScale: 0.80,
-            opacity: 0.10
+            baseRadius: 0.25,
+            radialGrowthPerSecond: 0.043,
+            driftScale: 0.82,
+            opacity: 0.070
         )
         updateTrailEntity(
             root: root,
@@ -347,10 +347,10 @@ enum Stage2FlightEffects {
             layerMinAge: 0,
             layerMaxAge: 18,
             radialSides: 6,
-            baseRadius: 0.17,
-            radialGrowthPerSecond: 0.020,
-            driftScale: 0.24,
-            opacity: 0.22
+            baseRadius: 0.12,
+            radialGrowthPerSecond: 0.015,
+            driftScale: 0.30,
+            opacity: 0.165
         )
     }
 
@@ -532,7 +532,7 @@ enum Stage2FlightEffects {
 
         setVaporOpacity(
             entity: entity,
-            opacity: (isTip ? 0.055 : 0.075) + (isTip ? 0.15 : 0.24) * i
+            opacity: (isTip ? 0.040 : 0.055) + (isTip ? 0.115 : 0.185) * i
         )
     }
 
@@ -542,13 +542,13 @@ enum Stage2FlightEffects {
         // wing, then tapers out. This gives a clean attached wake with no
         // forward-facing emission vector at all.
         let rings: [(z: Float, rx: Float, ry: Float)] = [
-            ( 0.00, 0.05, 0.05),
-            (-0.12, 0.72, 0.60),
-            (-0.38, 1.00, 0.82),
-            (-0.68, 0.72, 0.60),
-            (-1.00, 0.08, 0.07)
+            ( 0.00, 0.025, 0.025),
+            (-0.10, 0.58, 0.48),
+            (-0.32, 1.00, 0.78),
+            (-0.66, 0.60, 0.48),
+            (-1.00, 0.025, 0.020)
         ]
-        let sides = 8
+        let sides = 12
 
         var positions: [SIMD3<Float>] = []
         var indices: [UInt32] = []
@@ -595,7 +595,7 @@ enum Stage2FlightEffects {
         )
         let moisture = clamp((iceRH - 0.43) / 0.52, 0, 1)
         let mach = state.mach
-        let machPeak = exp(-pow((mach - 0.995) / 0.060, 2))
+        let machPeak = exp(-pow((mach - 0.995) / 0.040, 2))
         let qbar = clamp((state.dynamicPressurePSF - 85) / 500.0, 0, 1)
         let intensity = clamp(
             machPeak
@@ -605,8 +605,8 @@ enum Stage2FlightEffects {
             1
         )
 
-        let visible = mach > 0.90
-            && mach < 1.115
+        let visible = mach > 0.935
+            && mach < 1.070
             && intensity > 0.016
 
         let time = Float(simulationTime)
@@ -633,9 +633,42 @@ enum Stage2FlightEffects {
                 shell.position = [0, 0, 0]
                 setVaporOpacity(
                     entity: shell,
-                    opacity: 0.045 + 0.125 * intensity
+                    opacity: 0.032 + 0.095 * intensity
                 )
             }
+        }
+    }
+
+    static func setAttractModeTransonicVapor(
+        root: Entity,
+        visible: Bool,
+        intensity: Float
+    ) {
+        let i = clamp(intensity, 0, 1)
+
+        if let halo = root.findEntity(named: transonicHaloName) {
+            halo.isEnabled = visible
+            if visible {
+                halo.scale = [1.08 + 0.12 * i, 1.08 + 0.12 * i, 1.0]
+                setVaporOpacity(entity: halo, opacity: 0.040 + 0.055 * i)
+            }
+        }
+
+        if let shell = root.findEntity(named: transonicShellName) {
+            shell.isEnabled = visible
+            if visible {
+                shell.scale = [1.00 + 0.08 * i, 1.00 + 0.08 * i, 1.0]
+                setVaporOpacity(entity: shell, opacity: 0.085 + 0.095 * i)
+            }
+        }
+
+        // Keep the menu pass visually transonic, not high-AoA.
+        for name in [
+            lerxLeftName, lerxRightName,
+            leadingLeftName, leadingRightName,
+            tipLeftName, tipRightName
+        ] {
+            root.findEntity(named: name)?.isEnabled = false
         }
     }
 
@@ -795,8 +828,13 @@ enum Stage2FlightEffects {
         for sample in samples {
             let age = max(0, Float(simulationTime - sample.simulationTime))
             let effectiveLife = max(0.5, min(layerMaxAge, sample.lifeSeconds))
-            let center = sample.position
+            var center = sample.position
                 + sample.driftVelocity * age * driftScale
+            let meander = min(4.5, 0.020 * powf(age, 1.16))
+            let seed = Float(sample.simulationTime.truncatingRemainder(dividingBy: 97.0))
+            center.x += sin(age * 0.19 + seed * 0.31) * meander
+            center.y += sin(age * 0.13 + seed * 0.17) * meander * 0.24
+            center.z += cos(age * 0.16 + seed * 0.23) * meander * 0.72
 
             // Wake spreading is fast for the first minute, then saturates so a
             // very old trail gets broad without turning into an absurd tunnel.
@@ -806,6 +844,7 @@ enum Stage2FlightEffects {
             let birthRamp = clamp(age / 0.42, 0.20, 1.0)
             let deathRamp = clamp((effectiveLife - age) / 5.0, 0.035, 1.0)
             let strengthRadius = 0.78 + 0.42 * sample.strength
+            let textureBreakup = 0.90 + 0.10 * sin(age * 0.23 + seed * 0.41)
 
             centers.append(center)
             radii.append(
@@ -814,6 +853,7 @@ enum Stage2FlightEffects {
                     * strengthRadius
                     * birthRamp
                     * deathRamp
+                    * textureBreakup
             )
         }
 

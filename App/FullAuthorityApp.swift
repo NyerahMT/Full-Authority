@@ -4,7 +4,7 @@ import SwiftUI
 struct FullAuthorityApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Stage022RootView()
         }
     }
 }

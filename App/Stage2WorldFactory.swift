@@ -22,12 +22,21 @@ enum Stage2WorldFactory {
         let root = Entity()
         root.name = "FA.world.stage2"
 
+        if Stage024RealMapData.shared.isLoaded {
+            root.addChild(Stage024RealMapWorld.make())
+            addCloudscape(to: root)
+            return root
+        }
+
+        // Development fallback only. Shipping Stage 024 builds include the Reno
+        // package and never instantiate these older procedural scenery layers.
         addTerrain(to: root)
         addCloudscape(to: root)
         addAirbase(to: root)
         addRoads(to: root)
         addStage019Environment(to: root)
-
+        root.addChild(Stage020WorldUpgrade.make())
+        root.addChild(Stage023TerrainSystem.make())
         return root
     }
 
@@ -47,7 +56,7 @@ enum Stage2WorldFactory {
 
         // Broad overhead/near-field puffs. Two offset cards per cloud give a little
         // parallax and stop the layer from reading like a single painted ceiling.
-        for index in 0..<14 {
+        for index in 0..<7 {
             let angle = Float(index) * 2.3999632 + 0.37
             let radius = Float(4_800 + (index * 1_917) % 10_800)
             let x = cos(angle) * radius
@@ -84,8 +93,8 @@ enum Stage2WorldFactory {
 
         // Distant vertical banks break up the horizon and make the atmosphere read
         // in kilometres, not as a flat blue background.
-        for index in 0..<10 {
-            let angle = Float(index) / 10 * 2 * Float.pi + 0.21
+        for index in 0..<3 {
+            let angle = Float(index) / 3 * 2 * Float.pi + 0.21
             let radius = Float(15_000 + (index * 1_037) % 4_800)
             let x = cos(angle) * radius
             let z = 2_000 + sin(angle) * radius
@@ -144,7 +153,7 @@ enum Stage2WorldFactory {
         // The FDM and renderer continue to share Stage2TerrainProfile. This is a
         // denser render of the exact JSBSim contact surface, not a decorative hill layer.
         let tileSize: Float = 6_000
-        let resolution = 81
+        let resolution = 121
         let terrainTextures = worldTextureSet(named: "terrain_grass")
 
         for tileX in -4..<4 {
@@ -156,8 +165,8 @@ enum Stage2WorldFactory {
                     centerZ: centerZ,
                     size: tileSize,
                     resolution: resolution,
-                    mirrorU: tileX.isMultiple(of: 2),
-                    mirrorV: tileZ.isMultiple(of: 2)
+                    mirrorU: false,
+                    mirrorV: false
                 ) else { continue }
 
                 let selector = abs(tileX * 19 + tileZ * 11)
@@ -167,15 +176,6 @@ enum Stage2WorldFactory {
                 )
                 ground.position = [centerX, 0, centerZ]
                 root.addChild(ground)
-
-                if let rockMesh = meshes.rock {
-                    let rock = ModelEntity(
-                        mesh: rockMesh,
-                        materials: [rockMaterial(selector: selector)]
-                    )
-                    rock.position = [centerX, 0.045, centerZ]
-                    root.addChild(rock)
-                }
             }
         }
     }
@@ -217,14 +217,10 @@ enum Stage2WorldFactory {
         textures: WorldTextureSet,
         selector: Int
     ) -> PhysicallyBasedMaterial {
-        let tints: [UIColor] = [
-            UIColor(red: 0.72, green: 0.78, blue: 0.58, alpha: 1),
-            UIColor(red: 0.82, green: 0.78, blue: 0.54, alpha: 1),
-            UIColor(red: 0.64, green: 0.73, blue: 0.51, alpha: 1),
-            UIColor(red: 0.82, green: 0.69, blue: 0.47, alpha: 1),
-            UIColor(red: 0.68, green: 0.68, blue: 0.47, alpha: 1),
-            UIColor(red: 0.76, green: 0.79, blue: 0.57, alpha: 1)
-        ]
+        let tints: [UIColor] = Array(
+            repeating: UIColor(red: 0.465, green: 0.525, blue: 0.325, alpha: 1),
+            count: 6
+        )
 
         var material = PhysicallyBasedMaterial()
         if let base = textures.baseColor {
@@ -239,14 +235,18 @@ enum Stage2WorldFactory {
         }
         if let rough = textures.roughness {
             material.roughness = PhysicallyBasedMaterial.Roughness(
-                scale: 0.94,
+                scale: 1.0,
                 texture: repeatedTexture(rough)
             )
         } else {
-            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.90)
+            material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 1.0)
         }
+        // Fine normal detail belongs close to the eye. On the 48 km base mesh it
+        // aliases into the glossy/shimmering look seen from altitude, so Stage 023
+        // leaves the far terrain on geometric normals and lets landclass provide
+        // macro variation.
         material.metallic = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
-        material.specular = PhysicallyBasedMaterial.Specular(floatLiteral: 0.32)
+        material.specular = PhysicallyBasedMaterial.Specular(floatLiteral: 0.08)
         return material
     }
 
@@ -303,14 +303,14 @@ enum Stage2WorldFactory {
         let vertexCount = resolution * resolution
         var positions: [SIMD3<Float>] = []
         var normals: [SIMD3<Float>] = []
+        var tangents: [SIMD3<Float>] = []
         var texcoords: [SIMD2<Float>] = []
         var indices: [UInt32] = []
-        var rockIndices: [UInt32] = []
         positions.reserveCapacity(vertexCount)
         normals.reserveCapacity(vertexCount)
+        tangents.reserveCapacity(vertexCount)
         texcoords.reserveCapacity(vertexCount)
         indices.reserveCapacity((resolution - 1) * (resolution - 1) * 6)
-        rockIndices.reserveCapacity(indices.capacity / 5)
 
         let half = size * 0.5
         let step = size / Float(resolution - 1)
@@ -323,12 +323,16 @@ enum Stage2WorldFactory {
                 let globalZ = centerZ + localZ
                 let height = Stage2TerrainProfile.heightMeters(east: globalX, north: globalZ)
                 positions.append([localX, height, localZ])
-                normals.append(Stage2TerrainProfile.normal(east: globalX, north: globalZ))
+                let surfaceNormal = Stage2TerrainProfile.normal(east: globalX, north: globalZ)
+                normals.append(surfaceNormal)
+                let xAxis = SIMD3<Float>(1, 0, 0)
+                let projected = xAxis - surfaceNormal * simd_dot(xAxis, surfaceNormal)
+                tangents.append(simd_length_squared(projected) > 0.000001 ? simd_normalize(projected) : SIMD3<Float>(0, 0, 1))
 
-                // World-space UVs keep ground detail at a readable physical scale
-                // instead of stretching one texture across a 6 km tile. 24 m is
-                // deliberately stylized: visible from low altitude without noisy moire.
-                let textureScaleMeters: Float = 24
+                // A calmer base frequency survives mip filtering from altitude.
+                // Macro landclass variation now carries the large-scale read; this
+                // texture only provides medium-scale surface identity.
+                let textureScaleMeters: Float = 42
                 var u = globalX / textureScaleMeters
                 var v = globalZ / textureScaleMeters
                 if mirrorU { u = -u }
@@ -345,40 +349,18 @@ enum Stage2WorldFactory {
                 let i3 = UInt32((zIndex + 1) * resolution + xIndex + 1)
                 let cell = [i0, i2, i1, i1, i2, i3]
                 indices.append(contentsOf: cell)
-
-                let centerIndex = zIndex * resolution + xIndex
-                let n = normals[centerIndex]
-                let h = positions[centerIndex].y
-                let worldX = centerX + positions[centerIndex].x
-                let worldZ = centerZ + positions[centerIndex].z
-                let breakup = sin(worldX / 610.0 + worldZ / 930.0) * cos(worldZ / 470.0)
-                if n.y < 0.955 || h > 115 + breakup * 32 {
-                    rockIndices.append(contentsOf: cell)
-                }
             }
         }
 
         var descriptor = MeshDescriptor(name: "Stage2 Terrain Ground")
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.tangents = MeshBuffers.Tangents(tangents)
         descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(texcoords)
         descriptor.primitives = .triangles(indices)
         guard let groundMesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
 
-        var rockMesh: MeshResource?
-        if !rockIndices.isEmpty {
-            var rockPositions = positions
-            for index in rockPositions.indices {
-                rockPositions[index].y += 0.035
-            }
-            var rockDescriptor = MeshDescriptor(name: "Stage2 Terrain Rock")
-            rockDescriptor.positions = MeshBuffers.Positions(rockPositions)
-            rockDescriptor.normals = MeshBuffers.Normals(normals)
-            rockDescriptor.primitives = .triangles(rockIndices)
-            rockMesh = try? MeshResource.generate(from: [rockDescriptor])
-        }
-
-        return TerrainMeshes(ground: groundMesh, rock: rockMesh)
+        return TerrainMeshes(ground: groundMesh, rock: nil)
     }
 
 

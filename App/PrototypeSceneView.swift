@@ -43,18 +43,24 @@ struct PrototypeSceneView: View {
                 RealityView { content in
                     content.camera = .virtual
                     content.environment = .default
+                    if let environment = await Stage020SkyEnvironment.load() {
+                        content.environment = .skybox(environment)
+                    }
 
                     let world = Stage2WorldFactory.make()
                     // Stage 016 cinematic lighting: reduce the flat default IBL so
                     // directional sunlight and material roughness can actually shape terrain.
                     world.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.48
+                        environmentLightingWeight: 0.70
                     ))
                     content.add(world)
 
+                    let atmosphere = Stage021Atmosphere.make()
+                    content.add(atmosphere)
+
                     let aircraft = PrototypeAircraftFactory.make()
                     aircraft.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.56
+                        environmentLightingWeight: 0.66
                     ))
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
@@ -78,8 +84,8 @@ struct PrototypeSceneView: View {
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1),
-                            intensity: 10_400
+                            color: UIColor(red: 1.0, green: 0.965, blue: 0.90, alpha: 1),
+                            intensity: 7_800
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
@@ -89,8 +95,8 @@ struct PrototypeSceneView: View {
                     let fill = Entity()
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.42, green: 0.58, blue: 0.86, alpha: 1),
-                        intensity: 210
+                        color: UIColor(red: 0.58, green: 0.66, blue: 0.76, alpha: 1),
+                        intensity: 70
                     ))
                     fill.look(at: .zero, from: [6_800, 6_200, 7_600], relativeTo: nil)
                     content.add(fill)
@@ -103,6 +109,14 @@ struct PrototypeSceneView: View {
                     aircraft.orientation = simulation.state.orientation
                     aircraft.isEnabled = true
                     updateAircraftPresentation(aircraft)
+
+                    if let atmosphere = content.entities.first(where: { $0.name == Stage021Atmosphere.rootName }) {
+                        Stage021Atmosphere.update(atmosphere, aircraftPosition: simulation.state.positionMeters)
+                    }
+
+                    if let world = content.entities.first(where: { $0.name == "FA.world.stage2" }) {
+                        Stage023TerrainSystem.update(worldRoot: world, elapsed: simulation.simulationTime)
+                    }
 
                     let cockpitMode = cameraMode == .cockpit
                     aircraft.findEntity(named: PrototypeAircraftFactory.visualRootName)?.isEnabled = !cockpitMode
@@ -163,11 +177,11 @@ struct PrototypeSceneView: View {
         // warmer low horizon is intentionally pushed for a readable game palette.
         LinearGradient(
             stops: [
-                .init(color: Color(red: 0.008, green: 0.070, blue: 0.205), location: 0.00),
-                .init(color: Color(red: 0.025, green: 0.205, blue: 0.455), location: 0.38),
-                .init(color: Color(red: 0.225, green: 0.455, blue: 0.655), location: 0.68),
-                .init(color: Color(red: 0.565, green: 0.625, blue: 0.640), location: 0.86),
-                .init(color: Color(red: 0.760, green: 0.665, blue: 0.535), location: 1.00)
+                .init(color: Color(red: 0.018, green: 0.105, blue: 0.260), location: 0.00),
+                .init(color: Color(red: 0.060, green: 0.245, blue: 0.470), location: 0.42),
+                .init(color: Color(red: 0.285, green: 0.505, blue: 0.665), location: 0.72),
+                .init(color: Color(red: 0.640, green: 0.705, blue: 0.730), location: 0.90),
+                .init(color: Color(red: 0.750, green: 0.775, blue: 0.770), location: 1.00)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -487,6 +501,16 @@ struct PrototypeSceneView: View {
                 axis: PrototypeAircraftFactory.rudderVisualAxis
             )
         }
+        let pedalCommand = clamp(simulation.controls.rudder, -1, 1)
+        aircraft.findEntity(named: Stage020CockpitDetails.leftPedalName)?.orientation = simd_quatf(
+            angle: pedalCommand * 0.16, axis: [1, 0, 0]
+        )
+        aircraft.findEntity(named: Stage020CockpitDetails.rightPedalName)?.orientation = simd_quatf(
+            angle: -pedalCommand * 0.16, axis: [1, 0, 0]
+        )
+        if let beacon = aircraft.findEntity(named: Stage020AircraftDetails.antiCollisionName) {
+            beacon.isEnabled = simulation.simulationTime.truncatingRemainder(dividingBy: 1.20) < 0.11
+        }
 
         let speedbrakeAngle = clamp(state.speedbrakePosition, 0, 1) * PrototypeAircraftFactory.authoredSpeedbrakeLimitRadians
         for name in [PrototypeAircraftFactory.speedbrakeLeftUpperName, PrototypeAircraftFactory.speedbrakeRightUpperName] {
@@ -534,21 +558,21 @@ struct PrototypeSceneView: View {
             let length = (0.82 + 0.58 * intensity) * pressureExpansion * speedCompression
 
             if let halo = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerHaloName) {
-                halo.scale = [1.15 * width, 2.15 * length, 1.15 * width]
+                halo.scale = [1.04 * width, 1.82 * length, 1.04 * width]
                 halo.position = [0, 0, 0.5 * halo.scale.y]
             }
             if let outer = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerOuterName) {
-                outer.scale = [0.94 * width, 1.90 * length, 1.02 * width]
+                outer.scale = [0.84 * width, 1.64 * length, 0.90 * width]
                 outer.position = [0, 0, 0.5 * outer.scale.y]
             }
             if let inner = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerInnerName) {
                 let pulse = 1.0 + 0.016 * sin(time * 61.0 + 0.9)
-                inner.scale = [0.58 * width * pulse, 1.52 * length, 0.66 * width * pulse]
+                inner.scale = [0.50 * width * pulse, 1.34 * length, 0.56 * width * pulse]
                 inner.position = [0, 0, 0.5 * inner.scale.y]
             }
             if let core = aircraft.findEntity(named: PrototypeAircraftFactory.afterburnerCoreName) {
                 let pulse = 1.0 + 0.026 * sin(time * 73.0 + 0.35)
-                core.scale = [0.24 * width * pulse, 1.12 * length, 0.30 * width * pulse]
+                core.scale = [0.19 * width * pulse, 0.96 * length, 0.23 * width * pulse]
                 core.position = [0, 0, 0.5 * core.scale.y]
             }
 
@@ -722,24 +746,27 @@ private final class Stage0108JetAudio {
         let fuel = clamp(state.engineFuelFlowPoundsPerSecond / 1.8, 0, 1.2)
         let live: Float = isPaused ? 0 : 1
         let dryPower = max(n1, fuel)
+        let aoaBuffet = clamp((abs(state.angleOfAttackDegrees) - 7.5) / 11.0, 0, 1)
+        let betaBuffet = clamp((abs(state.sideslipDegrees) - 2.0) / 8.0, 0, 1)
+        let buffet = max(aoaBuffet, betaBuffet)
 
-        rumbleRate.rate = 0.78 + 0.33 * n1
-        turbineRate.rate = 0.70 + 1.00 * n2
+        rumbleRate.rate = 0.72 + 0.30 * n1
+        turbineRate.rate = 0.76 + 0.36 * n2
 
-        // The persistent high-pitched whir is the synthetic compressor/turbine
-        // layer, not an APU. In the cockpit it was actually louder than outside.
-        // Helmet/canopy attenuation now knocks that layer down hard while leaving
-        // enough low-frequency engine body to know the jet is alive.
+        // Stage 021 is referenced against public-domain F-16 burner/test-cell
+        // recordings: outside is exhaust-body dominant; cockpit is strongly
+        // attenuated and never becomes a constant compressor whistle.
         let cockpitRumble: Float = isCockpit ? 0.52 : 1.0
-        let cockpitTurbine: Float = isCockpit ? 0.30 : 0.82
-        let cockpitExhaust: Float = isCockpit ? 0.18 : 1.0
-        let cockpitWind: Float = isCockpit ? 0.22 : 1.0
+        let cockpitTurbine: Float = isCockpit ? 0.025 : 0.14
+        let cockpitExhaust: Float = isCockpit ? 0.12 : 1.0
+        let cockpitWind: Float = isCockpit ? 0.16 : 1.0
 
-        rumble.volume = live * cockpitRumble * (0.050 + 0.18 * n1)
-        turbine.volume = live * cockpitTurbine * (0.014 + 0.095 * n2 * n2)
-        exhaust.volume = live * cockpitExhaust * (0.025 + 0.20 * dryPower)
-        afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.16 + 0.14 * n2 : 0)
-        wind.volume = live * cockpitWind * (0.004 + 0.030 * min(powf(mach, 1.55), 1.40))
+        rumble.volume = live * cockpitRumble * (0.070 + 0.235 * n1)
+        turbine.volume = live * cockpitTurbine * (0.004 + 0.030 * n2 * n2)
+        exhaust.volume = live * cockpitExhaust * (0.055 + 0.285 * dryPower)
+        afterburner.volume = live * cockpitExhaust * (state.afterburnerActive ? 0.18 + 0.18 * n2 : 0)
+        let baseWind = 0.003 + 0.024 * min(powf(mach, 1.55), 1.40)
+        wind.volume = live * cockpitWind * baseWind * (1.0 + 1.65 * buffet)
 
         if state.afterburnerActive && !lastAfterburnerActive && !isPaused {
             fireIgnitionTransient(isCockpit: isCockpit)
@@ -793,7 +820,7 @@ private final class Stage0108JetAudio {
         let exhaustBands = exhaustEQ.bands
         exhaustBands[0].filterType = .lowShelf
         exhaustBands[0].frequency = 120
-        exhaustBands[0].gain = 4.5
+        exhaustBands[0].gain = 6.5
         exhaustBands[0].bypass = false
         exhaustBands[1].filterType = .parametric
         exhaustBands[1].frequency = 340
@@ -801,14 +828,14 @@ private final class Stage0108JetAudio {
         exhaustBands[1].gain = 1.5
         exhaustBands[1].bypass = false
         exhaustBands[2].filterType = .highShelf
-        exhaustBands[2].frequency = 1_850
-        exhaustBands[2].gain = -11.0
+        exhaustBands[2].frequency = 1_450
+        exhaustBands[2].gain = -22.0
         exhaustBands[2].bypass = false
 
         let burnerBands = burnerEQ.bands
         burnerBands[0].filterType = .lowShelf
         burnerBands[0].frequency = 105
-        burnerBands[0].gain = 6.0
+        burnerBands[0].gain = 7.5
         burnerBands[0].bypass = false
         burnerBands[1].filterType = .parametric
         burnerBands[1].frequency = 260
@@ -816,8 +843,8 @@ private final class Stage0108JetAudio {
         burnerBands[1].gain = 2.5
         burnerBands[1].bypass = false
         burnerBands[2].filterType = .highShelf
-        burnerBands[2].frequency = 2_200
-        burnerBands[2].gain = -12.5
+        burnerBands[2].frequency = 1_650
+        burnerBands[2].gain = -20.0
         burnerBands[2].bypass = false
 
         let windBands = windEQ.bands
@@ -858,14 +885,15 @@ private final class Stage0108JetAudio {
 
     private func makeTurbineBuffer(format: AVAudioFormat, seconds: Double) -> AVAudioPCMBuffer {
         makeStereoBuffer(format: format, seconds: seconds) { t, channel, random in
-            let phase: Float = channel == 0 ? 0 : 0.11
+            // Compressor is a supporting cue, not the whole engine. Lower partials
+            // and very little noise avoid the electric-motor/bench-grinder read.
+            let phase: Float = channel == 0 ? 0 : 0.09
             let blade =
-                0.52 * sin(2 * .pi * 315 * t + phase) +
-                0.27 * sin(2 * .pi * 630 * t + 0.3) +
-                0.13 * sin(2 * .pi * 945 * t + 0.9) +
-                0.06 * sin(2 * .pi * 1_575 * t + 1.4)
-            let shimmer = 0.90 + 0.07 * sin(2 * .pi * 7.0 * t) + 0.03 * sin(2 * .pi * 13.0 * t + phase)
-            return (blade * shimmer + random * 0.006) * 0.34
+                0.34 * sin(2 * .pi * 178 * t + phase) +
+                0.16 * sin(2 * .pi * 356 * t + 0.28) +
+                0.055 * sin(2 * .pi * 534 * t + 0.82)
+            let shimmer = 0.92 + 0.05 * sin(2 * .pi * 5.2 * t) + 0.02 * sin(2 * .pi * 10.7 * t + phase)
+            return (blade * shimmer + random * 0.0015) * 0.22
         }
     }
 
@@ -880,7 +908,6 @@ private final class Stage0108JetAudio {
         var sub: [Float] = [0, 0]
         var low: [Float] = [0, 0]
         var body: [Float] = [0, 0]
-        var presence: [Float] = [0, 0]
         var crackle: [Float] = [0, 0]
 
         for i in 0..<Int(count) {
@@ -889,51 +916,41 @@ private final class Stage0108JetAudio {
                 seeds[ch] = 1_664_525 &* seeds[ch] &+ 1_013_904_223
                 let raw = Float(Int32(bitPattern: seeds[ch])) / Float(Int32.max)
 
-                sub[ch] = 0.9985 * sub[ch] + 0.0015 * raw
-                low[ch] = 0.9880 * low[ch] + 0.0120 * raw
-                body[ch] = 0.9100 * body[ch] + 0.0900 * raw
-                presence[ch] = 0.6200 * presence[ch] + 0.3800 * raw
-
+                // Cascaded low-frequency stochastic bands: this is turbulent
+                // exhaust body, not exposed white noise.
+                sub[ch] = 0.9988 * sub[ch] + 0.0012 * raw
+                low[ch] = 0.9885 * low[ch] + 0.0115 * raw
+                body[ch] = 0.9460 * body[ch] + 0.0540 * raw
                 let lowBand = low[ch] - sub[ch]
                 let bodyBand = body[ch] - low[ch]
-                let edge = raw - presence[ch]
 
-                if afterburner && abs(raw) > 0.9970 {
-                    crackle[ch] += raw * 0.55
+                if afterburner && abs(raw) > 0.9982 {
+                    crackle[ch] += raw * 0.32
                 }
-                crackle[ch] *= afterburner ? 0.984 : 0.94
+                crackle[ch] *= afterburner ? 0.978 : 0.90
 
-                let phase = Float(ch) * 0.16
+                let phase = Float(ch) * 0.15
                 let combustion =
-                    0.10 * sin(2 * .pi * 46 * t + phase) +
-                    0.065 * sin(2 * .pi * 69 * t + 0.55) +
-                    0.035 * sin(2 * .pi * 92 * t + 1.05)
-                let pressurePulse = afterburner
-                    ? 0.045 * sin(2 * .pi * 118 * t + phase)
-                    : 0.020 * sin(2 * .pi * 118 * t + phase)
+                    0.28 * sin(2 * .pi * 43 * t + phase) +
+                    0.17 * sin(2 * .pi * 67 * t + 0.5) +
+                    0.09 * sin(2 * .pi * 91 * t + 1.1)
+                let pressure = afterburner
+                    ? 0.11 * sin(2 * .pi * 121 * t + phase)
+                    : 0.045 * sin(2 * .pi * 116 * t + phase)
                 let breathing = 0.90
-                    + 0.055 * sin(2 * .pi * 1.7 * t + phase)
-                    + 0.035 * sin(2 * .pi * 3.1 * t + 1.2)
+                    + 0.060 * sin(2 * .pi * 1.55 * t + phase)
+                    + 0.028 * sin(2 * .pi * 3.25 * t + 1.0)
 
-                let colored: Float
+                let turbulent: Float
                 if afterburner {
-                    colored =
-                        1.20 * sub[ch] +
-                        1.55 * lowBand +
-                        0.58 * bodyBand +
-                        0.020 * edge +
-                        0.15 * crackle[ch]
+                    turbulent = 1.55 * sub[ch] + 2.05 * lowBand + 0.42 * bodyBand + 0.055 * crackle[ch]
                 } else {
-                    colored =
-                        1.00 * sub[ch] +
-                        1.28 * lowBand +
-                        0.44 * bodyBand +
-                        0.010 * edge
+                    turbulent = 1.35 * sub[ch] + 1.72 * lowBand + 0.30 * bodyBand
                 }
 
-                let sample = (colored * breathing + combustion + pressurePulse)
-                    * (afterburner ? 0.62 : 0.52)
-                buffer.floatChannelData![ch][i] = clamp(sample, -0.92, 0.92)
+                let mixed = turbulent * breathing + combustion + pressure
+                let saturated = tanhf(mixed * (afterburner ? 1.65 : 1.42))
+                buffer.floatChannelData![ch][i] = saturated * (afterburner ? 0.56 : 0.50)
             }
         }
         return buffer

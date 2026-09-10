@@ -4,63 +4,13 @@ import simd
 
 enum Stage2TerrainProfile {
     static func heightMeters(east: Float, north: Float) -> Float {
-        let e = Double(east)
-        let n = Double(north)
-
-        // Layered terrain at several spatial scales. The airfield flattening
-        // below still guarantees the runway/contact surface stays usable, while
-        // the wider world now has ridges, valleys and smaller rolling relief that
-        // actually communicates altitude and speed.
-        var base =
-            78.0 * sin(n / 2750.0) * cos(e / 3500.0) +
-            52.0 * sin((e + n) / 1820.0) +
-            36.0 * cos((e - 0.45 * n) / 2250.0) +
-            19.0 * sin((1.25 * e + 0.72 * n) / 820.0) +
-            12.0 * cos((0.65 * e - 1.10 * n) / 510.0) +
-            6.5 * sin((1.80 * e + 1.35 * n) / 285.0)
-
-        let ridge1East = (e + 6500.0) / 2350.0
-        let ridge1North = (n - 9000.0) / 3300.0
-        base += 245.0 * exp(-0.5 * (ridge1East * ridge1East + ridge1North * ridge1North))
-
-        let ridge2East = (e - 7200.0) / 2500.0
-        let ridge2North = (n - 6500.0) / 2750.0
-        base += 185.0 * exp(-0.5 * (ridge2East * ridge2East + ridge2North * ridge2North))
-
-        let ridge3East = (e + 10500.0) / 3200.0
-        let ridge3North = (n + 2500.0) / 2600.0
-        base += 210.0 * exp(-0.5 * (ridge3East * ridge3East + ridge3North * ridge3North))
-
-        // Cut a broad valley through the eastern side so the world has negative
-        // as well as positive forms instead of looking like rolling noise only.
-        let valleyEast = (e - 4200.0) / 2300.0
-        let valleyNorth = (n - 9800.0) / 5000.0
-        base -= 92.0 * exp(-0.5 * (valleyEast * valleyEast + valleyNorth * valleyNorth))
-
-        let dx = max(abs(e) - 1000.0, 0.0)
-        let dz = max(abs(n - 2000.0) - 3600.0, 0.0)
-        let distanceOutsideAirfield = hypot(dx, dz)
-        let terrainBlend = smoothStep(distanceOutsideAirfield / 1250.0)
-
-        return Float(base * terrainBlend)
+        let map = Stage024RealMapData.shared
+        return map.isLoaded ? map.relativeHeight(east: east, north: north) : 0
     }
 
     static func normal(east: Float, north: Float) -> SIMD3<Float> {
-        let sample: Float = 8
-        let dhde = (
-            heightMeters(east: east + sample, north: north) -
-            heightMeters(east: east - sample, north: north)
-        ) / (2 * sample)
-        let dhdn = (
-            heightMeters(east: east, north: north + sample) -
-            heightMeters(east: east, north: north - sample)
-        ) / (2 * sample)
-        return simd_normalize(SIMD3<Float>(-dhde, 1, -dhdn))
-    }
-
-    private static func smoothStep(_ value: Double) -> Double {
-        let t = min(max(value, 0), 1)
-        return t * t * (3 - 2 * t)
+        let map = Stage024RealMapData.shared
+        return map.isLoaded ? map.normal(east: east, north: north) : SIMD3<Float>(0, 1, 0)
     }
 }
 
@@ -293,11 +243,11 @@ final class FlightSimulation: ObservableObject {
         let aileron = clamp(trimAileronCommand - Double(controls.roll), min: -1, max: 1)
         let elevator = clamp(trimElevatorCommand - Double(controls.pitch), min: -1, max: 0.44)
 
-        // Full Authority's touch control is screen-centric: dragging right means
-        // right pedal / nose-right. The current F-16 resource patch converts this
-        // sign again at the model boundary; NWS uses this sign directly.
-        let pilotYawCommand = -Double(controls.rudder)
-        let rudder = clamp(trimRudderCommand + pilotYawCommand, min: -1, max: 1)
+        // Airborne rudder and nosewheel steering use opposite sign conventions
+        // in the current JSBSim F-16 model. Preserve the already-correct ground
+        // steering direction while making touch-right command aerodynamic nose-right.
+        let pilotRudderCommand = Double(controls.rudder)
+        let rudder = clamp(trimRudderCommand + pilotRudderCommand, min: -1, max: 1)
 
         let throttle = clamp(Double(controls.throttle), min: 0, max: 1)
         let brake = clamp(Double(controls.wheelBrake), min: 0, max: 1)
@@ -313,8 +263,9 @@ final class FlightSimulation: ObservableObject {
         bridge.setProperty("fcs/right-brake-cmd-norm", value: brake)
         bridge.setProperty("fcs/center-brake-cmd-norm", value: brake)
 
+        let steeringCommand = -Double(controls.rudder)
         let steering = state.weightOnWheels && state.gearPosition > 0.8
-            ? clamp(pilotYawCommand, min: -1, max: 1)
+            ? clamp(steeringCommand, min: -1, max: 1)
             : 0
         bridge.setProperty("fcs/steer-cmd-norm", value: steering)
     }
@@ -350,7 +301,10 @@ final class FlightSimulation: ObservableObject {
         state.terrainElevationMeters = finiteFloat("position/terrain-elevation-asl-ft", fallback: 0) * feetToMeters
         state.altitudeFeetMSL = finiteFloat("position/h-sl-ft", fallback: state.altitudeMeters * 3.28084)
         updateLocalPositionFromGeodetic()
+        // JSBSim keeps real Reno MSL altitude while RealityKit renders around
+        // a local airport-height origin to preserve floating-point precision.
         state.positionMeters.y = state.altitudeFeetMSL * feetToMeters
+            - Stage024RealMapData.shared.referenceElevationMeters
 
         state.airspeedMetersPerSecond = max(0, Float(bridge.value(forProperty: "velocities/vtrue-fps")) * feetToMeters)
         state.calibratedAirspeedKnots = max(

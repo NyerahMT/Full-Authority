@@ -19,6 +19,15 @@
 		FA0000000000000000000009 /* JSBSim in Resources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001B /* JSBSim */; };
 		FA000000000000000000000A /* Stage2WorldFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001C /* Stage2WorldFactory.swift */; };
 		FA000000000000000000000B /* Stage2FlightEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001D /* Stage2FlightEffects.swift */; };
+		FA0200000000000000000001 /* Stage020WorldUpgrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000011 /* Stage020WorldUpgrade.swift */; };
+		FA0200000000000000000002 /* Stage020SkyEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000012 /* Stage020SkyEnvironment.swift */; };
+		FA0200000000000000000003 /* Stage020AircraftDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000013 /* Stage020AircraftDetails.swift */; };
+		FA0200000000000000000004 /* Stage020CockpitDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0200000000000000000014 /* Stage020CockpitDetails.swift */; };
+		FA0210000000000000000001 /* Stage021Atmosphere.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0210000000000000000011 /* Stage021Atmosphere.swift */; };
+		FA0220000000000000000001 /* Stage022RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0220000000000000000011 /* Stage022RootView.swift */; };
+		FA0220000000000000000002 /* Stage022MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0220000000000000000012 /* Stage022MainMenu.swift */; };
+		FA0230000000000000000001 /* Stage023TerrainSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0230000000000000000011 /* Stage023TerrainSystem.swift */; };
+		FA0240000000000000000001 /* Stage024RealMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0240000000000000000011 /* Stage024RealMap.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +46,15 @@
 		FA000000000000000000001C /* Stage2WorldFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage2WorldFactory.swift; sourceTree = "<group>"; };
 		FA000000000000000000001D /* Stage2FlightEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage2FlightEffects.swift; sourceTree = "<group>"; };
 		FA000000000000000000001E /* PrototypeCockpitFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrototypeCockpitFactory.swift; sourceTree = "<group>"; };
+		FA0200000000000000000011 /* Stage020WorldUpgrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020WorldUpgrade.swift; sourceTree = "<group>"; };
+		FA0200000000000000000012 /* Stage020SkyEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020SkyEnvironment.swift; sourceTree = "<group>"; };
+		FA0200000000000000000013 /* Stage020AircraftDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020AircraftDetails.swift; sourceTree = "<group>"; };
+		FA0200000000000000000014 /* Stage020CockpitDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage020CockpitDetails.swift; sourceTree = "<group>"; };
+		FA0210000000000000000011 /* Stage021Atmosphere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage021Atmosphere.swift; sourceTree = "<group>"; };
+		FA0220000000000000000011 /* Stage022RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage022RootView.swift; sourceTree = "<group>"; };
+		FA0220000000000000000012 /* Stage022MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage022MainMenu.swift; sourceTree = "<group>"; };
+		FA0230000000000000000011 /* Stage023TerrainSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage023TerrainSystem.swift; sourceTree = "<group>"; };
+		FA0240000000000000000011 /* Stage024RealMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage024RealMap.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +87,13 @@
 				FA0000000000000000000013 /* PrototypeSceneView.swift */,
 				FA000000000000000000001C /* Stage2WorldFactory.swift */,
 				FA000000000000000000001D /* Stage2FlightEffects.swift */,
+				FA0200000000000000000011 /* Stage020WorldUpgrade.swift */,
+				FA0200000000000000000012 /* Stage020SkyEnvironment.swift */,
+				FA0210000000000000000011 /* Stage021Atmosphere.swift */,
+				FA0220000000000000000011 /* Stage022RootView.swift */,
+				FA0220000000000000000012 /* Stage022MainMenu.swift */,
+				FA0230000000000000000011 /* Stage023TerrainSystem.swift */,
+				FA0240000000000000000011 /* Stage024RealMap.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -86,6 +111,8 @@
 			children = (
 				FA0000000000000000000014 /* PrototypeAircraftFactory.swift */,
 				FA000000000000000000001E /* PrototypeCockpitFactory.swift */,
+				FA0200000000000000000013 /* Stage020AircraftDetails.swift */,
+				FA0200000000000000000014 /* Stage020CockpitDetails.swift */,
 			);
 			path = Aircraft;
 			sourceTree = "<group>";
@@ -185,6 +212,15 @@
 				FA0000000000000000000003 /* PrototypeSceneView.swift in Sources */,
 				FA000000000000000000000A /* Stage2WorldFactory.swift in Sources */,
 				FA000000000000000000000B /* Stage2FlightEffects.swift in Sources */,
+				FA0200000000000000000001 /* Stage020WorldUpgrade.swift in Sources */,
+				FA0200000000000000000002 /* Stage020SkyEnvironment.swift in Sources */,
+				FA0210000000000000000001 /* Stage021Atmosphere.swift in Sources */,
+				FA0220000000000000000001 /* Stage022RootView.swift in Sources */,
+				FA0220000000000000000002 /* Stage022MainMenu.swift in Sources */,
+				FA0230000000000000000001 /* Stage023TerrainSystem.swift in Sources */,
+				FA0240000000000000000001 /* Stage024RealMap.swift in Sources */,
+				FA0200000000000000000003 /* Stage020AircraftDetails.swift in Sources */,
+				FA0200000000000000000004 /* Stage020CockpitDetails.swift in Sources */,
 				FA0000000000000000000004 /* PrototypeAircraftFactory.swift in Sources */,
 				FA000000000000000000000C /* PrototypeCockpitFactory.swift in Sources */,
 				FA0000000000000000000005 /* FlightControls.swift in Sources */,
