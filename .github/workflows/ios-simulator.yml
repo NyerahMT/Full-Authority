@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - stage022-malta-full-import
     paths:
       - 'App/**'
       - 'Simulation/**'
