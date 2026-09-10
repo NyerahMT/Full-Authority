@@ -1,0 +1,44 @@
+name: Stage024 inspect Helsinki tile
+on:
+  push:
+    branches: [stage024-real-reno-map]
+    paths: ['.github/workflows/tmp-stage024-inspect-helsinki.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Inspect Malmi official reality-mesh tile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet remotezip
+          python3 - <<'PY'
+          from remotezip import RemoteZip
+          from collections import defaultdict
+          url='https://3d.hel.ninja/data/mesh/Helsinki3D-MESH_2017_OBJ_2km-250m_ZIP/Helsinki3D_2017_OBJ_682502x2.zip'
+          print('URL', url)
+          with RemoteZip(url) as z:
+              infos=z.infolist()
+              print('entries', len(infos))
+              print('uncompressed MiB', round(sum(i.file_size for i in infos)/1048576,2))
+              print('compressed MiB', round(sum(i.compress_size for i in infos)/1048576,2))
+              bylod=defaultdict(lambda:[0,0,0])
+              for i in infos:
+                  n=i.filename
+                  for lod in range(12,22):
+                      tag=f'_L{lod}_'
+                      if tag in n:
+                          bylod[lod][0]+=1
+                          bylod[lod][1]+=i.file_size
+                          bylod[lod][2]+=i.compress_size
+                          break
+              for lod,v in sorted(bylod.items()):
+                  print(f'LOD{lod}: entries={v[0]} raw={v[1]/1048576:.2f}MiB compressed={v[2]/1048576:.2f}MiB')
+              print('--- sample L16 ---')
+              for i in [x for x in infos if '_L16_' in x.filename][:120]:
+                  print(i.filename, i.file_size, i.compress_size)
+          PY
