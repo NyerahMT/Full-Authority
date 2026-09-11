@@ -45,16 +45,21 @@ struct PrototypeSceneView: View {
                     content.environment = .default
 
                     let world = Stage022MaltaWorld.make(base: Stage2WorldFactory.make(includeLegacyRegionalRoads: false))
-                    // Stage 016 cinematic lighting: reduce the flat default IBL so
-                    // directional sunlight and material roughness can actually shape terrain.
+                    // Let the directional key and real terrain normals carry form.
+                    // Apple exposes environmentLightingWeight specifically to scale
+                    // ambient/environment contribution; too much was washing out the
+                    // terrain and making the saturated blue fill dominate shadows.
                     world.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.48
+                        environmentLightingWeight: 0.30
                     ))
                     content.add(world)
 
                     let aircraft = PrototypeAircraftFactory.make()
+                    // The aircraft gets more environment response than the terrain so
+                    // its Hill Gray paint remains readable in a chase camera without
+                    // raising global fill and flattening the mountains.
                     aircraft.components.set(EnvironmentLightingConfigurationComponent(
-                        environmentLightingWeight: 0.56
+                        environmentLightingWeight: 0.64
                     ))
                     aircraft.position = simulation.state.positionMeters
                     aircraft.orientation = simulation.state.orientation
@@ -74,25 +79,32 @@ struct PrototypeSceneView: View {
                     positionCamera(camera, forceSnap: true)
                     content.add(camera)
 
+                    // One dominant daylight key gives the terrain an intentional
+                    // light direction. The previous 10.4k warm key clipped snow and
+                    // green slopes; this more neutral daylight leaves headroom while
+                    // still producing strong readable relief.
                     let sun = Entity()
                     sun.name = "FA.sun"
                     sun.components.set([
                         DirectionalLightComponent(
-                            color: UIColor(red: 1.0, green: 0.88, blue: 0.72, alpha: 1),
-                            intensity: 10_400
+                            color: UIColor(red: 1.0, green: 0.945, blue: 0.855, alpha: 1),
+                            intensity: 7_250
                         ),
                         DirectionalLightComponent.Shadow()
                     ])
-                    sun.look(at: .zero, from: [-9_600, 5_600, -3_200], relativeTo: nil)
+                    sun.look(at: .zero, from: [-10_400, 6_600, -5_300], relativeTo: nil)
                     content.add(sun)
 
+                    // A weak neutral-cool skylight substitute opens the darkest
+                    // faces without painting them cyan. It intentionally stays far
+                    // below the key light so we keep directional contrast.
                     let fill = Entity()
                     fill.name = "FA.fill"
                     fill.components.set(DirectionalLightComponent(
-                        color: UIColor(red: 0.42, green: 0.58, blue: 0.86, alpha: 1),
-                        intensity: 210
+                        color: UIColor(red: 0.64, green: 0.72, blue: 0.82, alpha: 1),
+                        intensity: 95
                     ))
-                    fill.look(at: .zero, from: [6_800, 6_200, 7_600], relativeTo: nil)
+                    fill.look(at: .zero, from: [6_800, 7_100, 8_400], relativeTo: nil)
                     content.add(fill)
                 } update: { content in
                     guard let aircraft = content.entities.first(where: { $0.name == PrototypeAircraftFactory.aircraftName }) else {
@@ -162,16 +174,17 @@ struct PrototypeSceneView: View {
     }
 
     private var stage2Sky: some View {
-        // Stage 016 cinematic sky. The zenith-to-horizon progression follows the
-        // aerial-perspective structure described by Bruneton & Neyret, while the
-        // warmer low horizon is intentionally pushed for a readable game palette.
+        // A restrained aviation-daylight gradient: enough zenith saturation to
+        // frame a gray aircraft, but a brighter desaturated horizon so distant
+        // terrain naturally loses contrast instead of sitting against navy.
         LinearGradient(
             stops: [
-                .init(color: Color(red: 0.008, green: 0.070, blue: 0.205), location: 0.00),
-                .init(color: Color(red: 0.025, green: 0.205, blue: 0.455), location: 0.38),
-                .init(color: Color(red: 0.225, green: 0.455, blue: 0.655), location: 0.68),
-                .init(color: Color(red: 0.565, green: 0.625, blue: 0.640), location: 0.86),
-                .init(color: Color(red: 0.760, green: 0.665, blue: 0.535), location: 1.00)
+                .init(color: Color(red: 0.012, green: 0.073, blue: 0.185), location: 0.00),
+                .init(color: Color(red: 0.030, green: 0.160, blue: 0.330), location: 0.28),
+                .init(color: Color(red: 0.080, green: 0.300, blue: 0.515), location: 0.50),
+                .init(color: Color(red: 0.285, green: 0.475, blue: 0.625), location: 0.72),
+                .init(color: Color(red: 0.535, green: 0.610, blue: 0.650), location: 0.88),
+                .init(color: Color(red: 0.675, green: 0.625, blue: 0.535), location: 1.00)
             ],
             startPoint: .top,
             endPoint: .bottom
