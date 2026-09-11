@@ -197,6 +197,15 @@ export function buildRoadNetwork(settlements, sampleHeightSlopeWater, worldFromR
     }
     let pts = path.map(i => worldFromRoadGrid(i % size, (i / size) | 0));
     pts = safeSimplifyRoad(pts, sampleHeightSlopeWater);
+
+    // A* runs on a coarse routing grid, but the authored destination is the
+    // actual settlement/base center. Terminating on those exact coordinates
+    // guarantees that regional roads physically meet local streets and the apron.
+    if (pts.length >= 2) {
+      pts[0] = [nodes[a].east, nodes[a].north];
+      pts[pts.length - 1] = [nodes[b].east, nodes[b].north];
+    }
+
     const cls = (a === 0 || b === 0 || nodes[a].kind === 'town' || nodes[b].kind === 'town') ? 'primary' : 'secondary';
     roads.push({
       class: cls,
