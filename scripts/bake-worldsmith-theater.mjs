@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Full Authority fixed theater bake.
-// Terrain/noise/biome equations are adapted from Worldsmith by Hridhaan Shah
+// Terrain/noise equations are adapted from Worldsmith by Hridhaan Shah
 // (MIT), adapted from commit 5c131b42990bf8f3b79a343b722bc466990ee4ee.
 // This script runs at build time only. The app ships and loads static assets;
 // it does not generate or reroll terrain at runtime.
@@ -26,31 +26,19 @@ const THEATER = {
   sourceSize: 4097,
   outputSize: 1025,
   sourceStride: 4,
+  theaterMeters: 150000,
+  verticalScaleMeters: 4500,
   viewOriginX: -30.8224,
   viewOriginY: -13.5516,
   viewSpanX: 12.2743,
   viewSpanY: 22.1486,
 };
 
-// Worldsmith's ridge pass can legitimately push the normalized terrain above 1.0.
+// Worldsmith's ridge pass can legitimately push normalized terrain above 1.0.
 // RAW16 still stores 0...65535, so reserve enough encoding headroom for the full
 // generator range instead of clipping every value above 1.0 into a flat plateau.
 // Runtime sampling decodes this factor before applying the existing meter scale.
 const HEIGHT_ENCODING_MAX = 1.36;
-
-const COLORS = [
-  [20, 44, 76], [32, 72, 112], [60, 112, 152], [216, 202, 160],
-  [222, 199, 148], [193, 186, 122], [143, 165, 101], [156, 157, 117],
-  [94, 129, 83], [76, 132, 78], [56, 108, 68],
-  [76, 108, 95], [164, 170, 154], [140, 133, 124], [240, 242, 240],
-];
-
-const B = {
-  DEEP: 0, OCEAN: 1, SHALLOW: 2, BEACH: 3,
-  DESERT: 4, SAVANNA: 5, GRASSLAND: 6, SHRUBLAND: 7,
-  TEMPERATE_FOREST: 8, TROPICAL_FOREST: 9, RAINFOREST: 10,
-  TAIGA: 11, TUNDRA: 12, ROCK: 13, SNOW: 14,
-};
 
 function hash2(x, y, seed) {
   let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(seed | 0, 1442695041)) | 0;
@@ -66,6 +54,17 @@ function smoothstep(edge0, edge1, x) {
 }
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 function lerp(a, b, t) { return a + (b - a) * t; }
+function mixColor(a, b, t) {
+  const k = clamp01(t);
+  return [
+    lerp(a[0], b[0], k),
+    lerp(a[1], b[1], k),
+    lerp(a[2], b[2], k),
+  ];
+}
+function scaleColor(color, scale) {
+  return color.map((channel) => Math.max(0, Math.min(255, channel * scale)));
+}
 
 const GRAD2 = [
   [1, 1], [-1, 1], [1, -1], [-1, -1],
@@ -140,24 +139,53 @@ function temperatureAt(y, elev, seaLevel) {
   return clamp01(lat + 0.06 - lapse);
 }
 
-function classify(e, m, t, seaLevel) {
-  if (e < seaLevel - 0.12) return B.DEEP;
-  if (e < seaLevel - 0.035) return B.OCEAN;
-  if (e < seaLevel) return B.SHALLOW;
-  if (e < seaLevel + 0.012) return B.BEACH;
-  if (e > 0.88) return B.SNOW;
-  if (e > 0.78) return t < 0.32 ? B.SNOW : B.ROCK;
-  if (t < 0.20) return e > seaLevel + 0.2 ? B.SNOW : B.TUNDRA;
-  if (t < 0.38) return m > 0.45 ? B.TAIGA : B.TUNDRA;
-  if (t < 0.68) {
-    if (m < 0.28) return B.SHRUBLAND;
-    if (m < 0.50) return B.GRASSLAND;
-    return B.TEMPERATE_FOREST;
+// GPU Gems' terrain texturing guidance uses surface normal/slope and altitude to
+// keep cliffs rocky while flatter areas carry vegetation. We bake that same idea
+// into one mobile-friendly macro albedo instead of asking RealityKit to run a
+// multi-texture terrain shader every frame. Water is gated strictly by sea level.
+function terrainColor(e, moisture, temperature, steepness, variation, seaLevel) {
+  if (e < seaLevel) {
+    const depth = smoothstep(0.015, 0.16, seaLevel - e);
+    return scaleColor(
+      mixColor([46, 78, 96], [15, 35, 52], depth),
+      0.97 + variation * 0.03
+    );
   }
-  if (m < 0.24) return B.DESERT;
-  if (m < 0.42) return B.SAVANNA;
-  if (m < 0.62) return B.TROPICAL_FOREST;
-  return B.RAINFOREST;
+
+  const aboveSea = e - seaLevel;
+  const high = smoothstep(0.68, 1.04, e);
+  const veryHigh = smoothstep(0.94, 1.20, e);
+  const cliff = smoothstep(0.055, 0.32, steepness);
+  const wet = smoothstep(0.36, 0.74, moisture);
+  const cold = 1 - smoothstep(0.26, 0.62, temperature);
+
+  const dryGrass = [128, 125, 79];
+  const greenGrass = [79, 111, 68];
+  const forest = [48, 76, 54];
+  const lowland = mixColor(dryGrass, greenGrass, moisture * 0.92);
+  let color = mixColor(lowland, forest, wet * (1 - high) * 0.56);
+
+  const lowRock = [102, 101, 94];
+  const alpineRock = [145, 141, 130];
+  const rock = mixColor(lowRock, alpineRock, high);
+  const rockWeight = Math.max(cliff * 0.90, high * 0.46);
+  color = mixColor(color, rock, rockWeight);
+
+  // Snow prefers genuinely high/cold terrain and recedes on the steepest faces,
+  // leaving readable exposed rock instead of flat white billboard-like patches.
+  const snowAltitude = smoothstep(0.96, 1.18, e);
+  const snowWeight = clamp01(snowAltitude * (0.62 + cold * 0.38) * (1 - cliff * 0.52));
+  color = mixColor(color, [218, 220, 214], snowWeight);
+
+  // A restrained shoreline band is the only bright transition next to water.
+  // This prevents low-elevation blue from bleeding visually onto nearby slopes.
+  const shore = 1 - smoothstep(0.006, 0.024, aboveSea);
+  color = mixColor(color, [168, 153, 116], shore * (1 - cliff));
+
+  // Keep the macro map free of baked directional shadows. Runtime PBR lighting
+  // owns form; the bake only adds low-frequency natural color variation.
+  const brightness = 0.965 + variation * 0.070 + veryHigh * 0.015;
+  return scaleColor(color, brightness);
 }
 
 function crc32(buffer) {
@@ -187,7 +215,7 @@ function writePNG24(file, width, height, rgb) {
   const scanlines = Buffer.alloc((rowBytes + 1) * height);
   for (let y = 0; y < height; y++) {
     const row = y * (rowBytes + 1);
-    scanlines[row] = 0; // PNG filter: None
+    scanlines[row] = 0;
     Buffer.from(rgb.buffer, rgb.byteOffset + y * rowBytes, rowBytes)
       .copy(scanlines, row + 1);
   }
@@ -195,11 +223,11 @@ function writePNG24(file, width, height, rgb) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 2;  // truecolor RGB
-  ihdr[10] = 0; // compression
-  ihdr[11] = 0; // filter
-  ihdr[12] = 0; // no interlace
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
 
   fs.writeFileSync(file, Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -207,6 +235,48 @@ function writePNG24(file, width, height, rgb) {
     pngChunk("IDAT", zlib.deflateSync(scanlines, { level: 9 })),
     pngChunk("IEND", Buffer.alloc(0)),
   ]));
+}
+
+function writeWaterNormalMap(file) {
+  const size = 256;
+  const rgb = new Uint8Array(size * size * 3);
+  const waves = [
+    [3, 1, 0.34, 0.2],
+    [-2, 5, 0.20, 1.4],
+    [7, 3, 0.10, 2.3],
+    [5, -6, 0.07, 4.1],
+  ];
+  const normalStrength = 0.020;
+
+  for (let y = 0; y < size; y++) {
+    const v = y / size;
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      let du = 0;
+      let dv = 0;
+      for (const [fx, fy, amplitude, phase] of waves) {
+        const angle = Math.PI * 2 * (fx * u + fy * v) + phase;
+        const c = Math.cos(angle) * Math.PI * 2 * amplitude;
+        du += c * fx;
+        dv += c * fy;
+      }
+
+      let nx = -du * normalStrength;
+      let ny = -dv * normalStrength;
+      let nz = 1;
+      const length = Math.hypot(nx, ny, nz) || 1;
+      nx /= length;
+      ny /= length;
+      nz /= length;
+
+      const o = (y * size + x) * 3;
+      rgb[o] = Math.round((nx * 0.5 + 0.5) * 255);
+      rgb[o + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      rgb[o + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+    }
+  }
+
+  writePNG24(file, size, size, rgb);
 }
 
 const outDir = process.argv[2] || path.join("Assets", "JSBSim", "visuals", "world");
@@ -250,36 +320,54 @@ for (let i = 0; i < heights.length; i++) raw.writeUInt16LE(heights[i], i * 2);
 const heightPath = path.join(outDir, "worldsmith_1337_height_1025.r16");
 fs.writeFileSync(heightPath, raw);
 
-const albedoN = 1024;
-const rgb = new Uint8Array(albedoN * albedoN * 3);
 const sample = (x, y) => (
   heights[Math.max(0, Math.min(n - 1, y)) * n + Math.max(0, Math.min(n - 1, x))] /
   65535 * HEIGHT_ENCODING_MAX
 );
+
+const albedoN = 1024;
+const rgb = new Uint8Array(albedoN * albedoN * 3);
+const metersPerTexel = THEATER.theaterMeters / (n - 1);
 for (let y = 0; y < albedoN; y++) {
   const wy = worldYs[y];
   for (let x = 0; x < albedoN; x++) {
     const e = sample(x, y);
-    const m = moistureAt(worldXs[x], wy, THEATER.seed, e, THEATER.seaLevel);
-    const t = temperatureAt(wy, e, THEATER.seaLevel);
-    const biome = classify(e, m, t, THEATER.seaLevel);
-    const base = COLORS[biome];
+    const moisture = moistureAt(worldXs[x], wy, THEATER.seed, e, THEATER.seaLevel);
+    const temperature = temperatureAt(wy, e, THEATER.seaLevel);
 
-    const dx = sample(x + 1, y) - sample(x - 1, y);
-    const dy = sample(x, y + 1) - sample(x, y - 1);
-    const relief = Math.max(-0.22, Math.min(0.22, (-dx * 1.15 - dy * 0.75) * 6.0));
-    const highLift = e > 0.72 ? Math.min(0.08, (e - 0.72) * 0.25) : 0;
-    const brightness = 1.0 + relief + highLift;
+    const dx = (sample(x + 1, y) - sample(x - 1, y)) * 0.5;
+    const dy = (sample(x, y + 1) - sample(x, y - 1)) * 0.5;
+    const gx = dx * THEATER.verticalScaleMeters / metersPerTexel;
+    const gy = dy * THEATER.verticalScaleMeters / metersPerTexel;
+    const normalY = 1 / Math.sqrt(1 + gx * gx + gy * gy);
+    const steepness = 1 - normalY;
+
+    const macroNoise = gradNoise2D(
+      worldXs[x] * 0.72 + 18.0,
+      wy * 0.72 - 11.0,
+      THEATER.seed + 1709
+    );
+    const color = terrainColor(
+      e,
+      moisture,
+      temperature,
+      steepness,
+      macroNoise - 0.5,
+      THEATER.seaLevel
+    );
 
     const o = (y * albedoN + x) * 3;
-    rgb[o] = Math.max(0, Math.min(255, Math.round(base[0] * brightness)));
-    rgb[o + 1] = Math.max(0, Math.min(255, Math.round(base[1] * brightness)));
-    rgb[o + 2] = Math.max(0, Math.min(255, Math.round(base[2] * brightness)));
+    rgb[o] = Math.round(color[0]);
+    rgb[o + 1] = Math.round(color[1]);
+    rgb[o + 2] = Math.round(color[2]);
   }
 }
 
 const albedoPath = path.join(outDir, "worldsmith_1337_albedo_1024.png");
 writePNG24(albedoPath, albedoN, albedoN, rgb);
+
+const waterNormalPath = path.join(outDir, "worldsmith_water_normal_256.png");
+writeWaterNormalMap(waterNormalPath);
 
 const manifest = {
   name: "Full Authority fixed Worldsmith theater",
@@ -289,6 +377,10 @@ const manifest = {
   seed: THEATER.seed,
   octaves: THEATER.octaves,
   seaLevel: THEATER.seaLevel,
+  heightEncodingMax: HEIGHT_ENCODING_MAX,
+  maxGeneratedElevation: maxElevation,
+  albedoModel: "slope-height-moisture-v2",
+  waterNormal: path.basename(waterNormalPath),
   viewOrigin: [THEATER.viewOriginX, THEATER.viewOriginY],
   viewSpan: [THEATER.viewSpanX, THEATER.viewSpanY],
   squareOrigin: [squareOriginX, squareOriginY],
@@ -296,11 +388,10 @@ const manifest = {
   sourceSize: THEATER.sourceSize,
   outputSize: THEATER.outputSize,
   sourceStride: THEATER.sourceStride,
-  heightEncodingMax: HEIGHT_ENCODING_MAX,
-  maxElevation,
   heightSHA256: crypto.createHash("sha256").update(raw).digest("hex"),
 };
 fs.writeFileSync(path.join(outDir, "worldsmith_1337_manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 console.log(`wrote ${heightPath} (${raw.length} bytes)`);
 console.log(`wrote ${albedoPath}`);
+console.log(`wrote ${waterNormalPath}`);
 console.log(JSON.stringify(manifest, null, 2));
