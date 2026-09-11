@@ -56,6 +56,7 @@ jobs:
           node scripts/bake-worldsmith-theater.mjs
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_height_1025.r16
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png
+          test -s Assets/JSBSim/visuals/world/worldsmith_water_normal_256.png
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_manifest.json
 
       - name: Show Apple toolchain
@@ -102,6 +103,7 @@ jobs:
           test -s "$APP_PATH/JSBSim/visuals/f16/f16_static.obj"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_height_1025.r16"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png"
+          test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_water_normal_256.png"
           test -s "$APP_PATH/JSBSim/visuals/world/LICENSE-Worldsmith.txt"
 
       - name: Package simulator app
@@ -135,6 +137,7 @@ jobs:
           node scripts/bake-worldsmith-theater.mjs
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_height_1025.r16
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png
+          test -s Assets/JSBSim/visuals/world/worldsmith_water_normal_256.png
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_manifest.json
 
       - name: Show Apple toolchain
@@ -180,6 +183,7 @@ jobs:
           test -s "$APP_PATH/JSBSim/visuals/f16/f16_static.obj"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_height_1025.r16"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png"
+          test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_water_normal_256.png"
           test -s "$APP_PATH/JSBSim/visuals/world/LICENSE-Worldsmith.txt"
 
       - name: Package unsigned IPA
