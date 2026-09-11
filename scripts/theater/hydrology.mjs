@@ -95,14 +95,23 @@ export function extractRivers(downstream, accumulation, hydroSurface, seaMask, n
     if (!channel[source] || upstreamCount[source] !== 0) continue;
     const cells = [];
     let current = source, guard = 0, maxAccum = 0;
+    let reachedSea = false;
     while (current >= 0 && guard++ < n * 4) {
       cells.push(current);
       maxAccum = Math.max(maxAccum, accumulation[current]);
       const d = downstream[current];
-      if (d < 0 || seaMask[d]) { if (d >= 0) cells.push(d); break; }
+      if (d < 0) break;
+      if (seaMask[d]) {
+        cells.push(d);
+        reachedSea = true;
+        break;
+      }
       current = d;
     }
-    if (cells.length < 22) continue;
+
+    // A line that dies on an inland sink/border is not a production river.
+    // Keep only drainage paths that demonstrably terminate in the ocean.
+    if (!reachedSea || cells.length < 22) continue;
     const approxLengthMeters = cells.length * THEATER.theaterMeters / (n - 1);
     candidates.push({ cells, maxAccum, score: approxLengthMeters * Math.log2(maxAccum + 2) });
   }
@@ -117,8 +126,9 @@ export function extractRivers(downstream, accumulation, hydroSurface, seaMask, n
 
     const rawPoints = candidate.cells.map((i) => {
       const x = i % n, y = (i / n) | 0, p = worldAt(x, y);
-      const width = Math.max(6.5, Math.min(52,
-        5.5 + 5.0 * Math.log2(accumulation[i] / RIVER_ACCUMULATION_THRESHOLD + 1)));
+      // Keep regional channels visually subordinate from a fast aircraft.
+      const width = Math.max(5.0, Math.min(30,
+        4.5 + 3.7 * Math.log2(accumulation[i] / RIVER_ACCUMULATION_THRESHOLD + 1)));
       return [p[0], p[1], hydroSurface[i], width];
     });
     const simplified = rdp(rawPoints, 190);
@@ -134,49 +144,17 @@ export function extractRivers(downstream, accumulation, hydroSurface, seaMask, n
 }
 
 export function selectLakes(mask, n, original, filled, worldAt) {
-  const seen = new Uint8Array(mask.length);
-  const queue = new Int32Array(mask.length);
-  const components = [];
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || seen[start]) continue;
-    let head = 0, tail = 0;
-    queue[tail++] = start;
-    seen[start] = 1;
-    const cells = [];
-    let surface = -Infinity, maxDepth = 0;
-    while (head < tail) {
-      const i = queue[head++];
-      cells.push(i);
-      surface = Math.max(surface, filled[i]);
-      maxDepth = Math.max(maxDepth, filled[i] - original[i]);
-      const x = i % n, y = (i / n) | 0;
-      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
-        const ni = ny * n + nx;
-        if (mask[ni] && !seen[ni]) { seen[ni] = 1; queue[tail++] = ni; }
-      }
-    }
-    if (cells.length >= LAKE_MIN_CELLS && maxDepth >= 2.5) components.push({ cells, surface, maxDepth });
-  }
-
-  components.sort((a, b) => b.cells.length - a.cells.length);
-  const selected = components.slice(0, 6);
-  const lakeMask = new Uint8Array(mask.length);
-  const lakes = selected.map(component => {
-    const patches = [];
-    for (const i of component.cells) {
-      lakeMask[i] = 1;
-      const x = i % n, y = (i / n) | 0, p = worldAt(x, y);
-      patches.push([+p[0].toFixed(1), +p[1].toFixed(1)]);
-    }
-    return {
-      surfaceMeters: +component.surface.toFixed(2),
-      maxDepthMeters: +component.maxDepth.toFixed(2),
-      patches,
-    };
-  });
-  return { lakes, lakeMask };
+  // Deliberately disabled for the current synthetic elevation source.
+  // Priority-Flood correctly identifies closed depressions, but a depression is
+  // not evidence that persistent surface water exists. The first visual pass
+  // turned broad mountain basins into implausible cyan lakes. Until the theater
+  // is backed by a validated DEM + hydrography source, inland water is opt-in
+  // only. Returning an empty mask also guarantees the macro albedo cannot paint
+  // those synthetic basins blue.
+  return {
+    lakes: [],
+    lakeMask: new Uint8Array(n * n),
+  };
 }
 
 export function multiSourceDistance(mask, n, maxDistance = 255) {

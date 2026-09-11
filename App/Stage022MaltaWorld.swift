@@ -68,7 +68,6 @@ enum Stage022MaltaWorld {
 
         runtime = Runtime(root: root, terrainMaterial: makeTerrainMaterial())
         update(base: base, center: .zero)
-        Stage023TheaterFeatures.attach(to: base)
         return base
     }
 
