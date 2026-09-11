@@ -50,12 +50,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Bake fixed Worldsmith theater
+      - name: Bake coherent fixed theater
         run: |
           set -euo pipefail
           node scripts/bake-worldsmith-theater.mjs
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_height_1025.r16
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png
+          test -s Assets/JSBSim/visuals/world/worldsmith_1337_landclass_1024.png
+          test -s Assets/JSBSim/visuals/world/worldsmith_1337_features.json
           test -s Assets/JSBSim/visuals/world/worldsmith_water_normal_256.png
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_manifest.json
 
@@ -103,6 +105,8 @@ jobs:
           test -s "$APP_PATH/JSBSim/visuals/f16/f16_static.obj"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_height_1025.r16"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png"
+          test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_landclass_1024.png"
+          test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_features.json"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_water_normal_256.png"
           test -s "$APP_PATH/JSBSim/visuals/world/LICENSE-Worldsmith.txt"
 
@@ -131,12 +135,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Bake fixed Worldsmith theater
+      - name: Bake coherent fixed theater
         run: |
           set -euo pipefail
           node scripts/bake-worldsmith-theater.mjs
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_height_1025.r16
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png
+          test -s Assets/JSBSim/visuals/world/worldsmith_1337_landclass_1024.png
+          test -s Assets/JSBSim/visuals/world/worldsmith_1337_features.json
           test -s Assets/JSBSim/visuals/world/worldsmith_water_normal_256.png
           test -s Assets/JSBSim/visuals/world/worldsmith_1337_manifest.json
 
@@ -183,6 +189,8 @@ jobs:
           test -s "$APP_PATH/JSBSim/visuals/f16/f16_static.obj"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_height_1025.r16"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png"
+          test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_landclass_1024.png"
+          test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_1337_features.json"
           test -s "$APP_PATH/JSBSim/visuals/world/worldsmith_water_normal_256.png"
           test -s "$APP_PATH/JSBSim/visuals/world/LICENSE-Worldsmith.txt"
 
