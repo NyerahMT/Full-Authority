@@ -173,10 +173,11 @@ enum PrototypeAircraftFactory {
     }
 
     private static func makeF16Materials() throws -> [PhysicallyBasedMaterial] {
-        // Stage 016 material hierarchy: keep the permissively licensed FlightSim_F16
-        // geometry, but let PBR response carry much more of the visual quality.
-        // This follows the standard metallic/roughness workflow rather than adding
-        // expensive geometry simply to create highlights.
+        // Preserve the licensed authored geometry and use the standard
+        // metallic/roughness PBR workflow for form definition. Painted zones are
+        // dielectrics with a restrained polyurethane highlight; only the nozzle is
+        // truly metallic. The value range is intentionally wider than the old pass
+        // so the aircraft stays readable without turning into a reflective toy.
         func material(
             _ tint: UIColor,
             roughness: Float,
@@ -195,18 +196,15 @@ enum PrototypeAircraftFactory {
             return result
         }
 
-        // Stage 017: the fuselage is painted polyurethane, not bare metal. Keep the
-        // canopy and nozzle glossy, but push every painted zone toward a diffuse,
-        // low-specular dielectric response so sunlight reads as a soft highlight.
         return [
-            material(UIColor(red: 0.300, green: 0.325, blue: 0.340, alpha: 1), roughness: 0.70, metallic: 0.000, specular: 0.20, clearcoat: 0.015, clearcoatRoughness: 0.72),
-            material(UIColor(red: 0.470, green: 0.490, blue: 0.500, alpha: 1), roughness: 0.73, metallic: 0.000, specular: 0.18, clearcoat: 0.010, clearcoatRoughness: 0.76),
-            material(UIColor(red: 0.145, green: 0.153, blue: 0.158, alpha: 1), roughness: 0.82, metallic: 0.000, specular: 0.14, clearcoat: 0.000, clearcoatRoughness: 0.90),
-            material(UIColor(red: 0.020, green: 0.050, blue: 0.072, alpha: 1), roughness: 0.055, metallic: 0.08, specular: 1.00, clearcoat: 1.00, clearcoatRoughness: 0.020),
-            material(UIColor(red: 0.105, green: 0.095, blue: 0.082, alpha: 1), roughness: 0.21, metallic: 0.98, specular: 0.78, clearcoat: 0.03, clearcoatRoughness: 0.30),
-            material(UIColor(red: 0.315, green: 0.340, blue: 0.355, alpha: 1), roughness: 0.72, metallic: 0.000, specular: 0.18, clearcoat: 0.010, clearcoatRoughness: 0.76),
-            material(UIColor(red: 0.245, green: 0.270, blue: 0.285, alpha: 1), roughness: 0.71, metallic: 0.000, specular: 0.19, clearcoat: 0.012, clearcoatRoughness: 0.74),
-            material(UIColor(red: 0.270, green: 0.295, blue: 0.310, alpha: 1), roughness: 0.69, metallic: 0.000, specular: 0.20, clearcoat: 0.014, clearcoatRoughness: 0.72)
+            material(UIColor(red: 0.345, green: 0.365, blue: 0.375, alpha: 1), roughness: 0.63, metallic: 0.000, specular: 0.24, clearcoat: 0.032, clearcoatRoughness: 0.61),
+            material(UIColor(red: 0.515, green: 0.530, blue: 0.535, alpha: 1), roughness: 0.67, metallic: 0.000, specular: 0.21, clearcoat: 0.024, clearcoatRoughness: 0.66),
+            material(UIColor(red: 0.170, green: 0.177, blue: 0.180, alpha: 1), roughness: 0.78, metallic: 0.000, specular: 0.14, clearcoat: 0.000, clearcoatRoughness: 0.90),
+            material(UIColor(red: 0.026, green: 0.055, blue: 0.075, alpha: 1), roughness: 0.075, metallic: 0.04, specular: 0.96, clearcoat: 1.00, clearcoatRoughness: 0.030),
+            material(UIColor(red: 0.115, green: 0.108, blue: 0.098, alpha: 1), roughness: 0.27, metallic: 0.92, specular: 0.72, clearcoat: 0.02, clearcoatRoughness: 0.34),
+            material(UIColor(red: 0.375, green: 0.395, blue: 0.405, alpha: 1), roughness: 0.68, metallic: 0.000, specular: 0.20, clearcoat: 0.024, clearcoatRoughness: 0.67),
+            material(UIColor(red: 0.295, green: 0.315, blue: 0.325, alpha: 1), roughness: 0.65, metallic: 0.000, specular: 0.22, clearcoat: 0.028, clearcoatRoughness: 0.63),
+            material(UIColor(red: 0.320, green: 0.340, blue: 0.350, alpha: 1), roughness: 0.64, metallic: 0.000, specular: 0.23, clearcoat: 0.030, clearcoatRoughness: 0.62)
         ]
     }
 
