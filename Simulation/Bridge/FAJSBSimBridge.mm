@@ -41,6 +41,7 @@ constexpr double kWorldsmithMapHeadingRadians = 1.038470904936626; // 59.5 deg
 constexpr double kWorldsmithRunwayCenterNorthMeters = 1800.0;
 constexpr double kWorldsmithBaselineNormalized = 0.49768830303526773;
 constexpr double kWorldsmithSeaLevelNormalized = 0.465;
+constexpr double kWorldsmithHeightEncodingMax = 1.36;
 constexpr double kWorldsmithVerticalScaleMeters = 4500.0;
 constexpr double kOutsideMapNormalized = kWorldsmithSeaLevelNormalized - 0.14;
 
@@ -127,7 +128,8 @@ double SampleWorldsmithNormalized(double eastMeters, double northMeters) {
 
     const auto sample = [](int x, int y) {
         const std::size_t index = static_cast<std::size_t>(y) * kWorldsmithResolution + x;
-        return static_cast<double>(gWorldsmithTerrain[index]) / 65535.0;
+        return static_cast<double>(gWorldsmithTerrain[index]) / 65535.0 *
+            kWorldsmithHeightEncodingMax;
     };
 
     const double h00 = sample(x0, y0);
