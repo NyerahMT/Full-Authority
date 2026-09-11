@@ -32,6 +32,12 @@ const THEATER = {
   viewSpanY: 22.1486,
 };
 
+// Worldsmith's ridge pass can legitimately push the normalized terrain above 1.0.
+// RAW16 still stores 0...65535, so reserve enough encoding headroom for the full
+// generator range instead of clipping every value above 1.0 into a flat plateau.
+// Runtime sampling decodes this factor before applying the existing meter scale.
+const HEIGHT_ENCODING_MAX = 1.36;
+
 const COLORS = [
   [20, 44, 76], [32, 72, 112], [60, 112, 152], [216, 202, 160],
   [222, 199, 148], [193, 186, 122], [143, 165, 101], [156, 157, 117],
@@ -119,7 +125,7 @@ function elevationAt(x, y, seed, octaves) {
       Math.min(octaves, WORLD.RIDGE_OCTAVES), 2, 0.5);
     base += ridge * mask * WORLD.RIDGE;
   }
-  return clamp01(base);
+  return Math.max(0, base);
 }
 
 function moistureAt(x, y, seed, elev, seaLevel) {
@@ -219,13 +225,24 @@ for (let i = 0; i < n; i++) {
   worldYs[i] = squareOriginY + (i * THEATER.sourceStride) * sourceScale;
 }
 
+let maxElevation = 0;
+let encodingOverflowSamples = 0;
 for (let y = 0; y < n; y++) {
   if ((y & 63) === 0) process.stdout.write(`bake height ${y}/${n}\n`);
   const wy = worldYs[y];
   for (let x = 0; x < n; x++) {
     const e = elevationAt(worldXs[x], wy, THEATER.seed, THEATER.octaves);
-    heights[y * n + x] = Math.round(e * 65535);
+    maxElevation = Math.max(maxElevation, e);
+    if (e >= HEIGHT_ENCODING_MAX) encodingOverflowSamples += 1;
+    heights[y * n + x] = Math.round(Math.min(1, e / HEIGHT_ENCODING_MAX) * 65535);
   }
+}
+
+if (encodingOverflowSamples > 0) {
+  throw new Error(
+    `Worldsmith height encoding overflow: ${encodingOverflowSamples} samples reached ` +
+    `${HEIGHT_ENCODING_MAX}; raise HEIGHT_ENCODING_MAX instead of clipping terrain.`
+  );
 }
 
 const raw = Buffer.alloc(heights.length * 2);
@@ -235,7 +252,10 @@ fs.writeFileSync(heightPath, raw);
 
 const albedoN = 1024;
 const rgb = new Uint8Array(albedoN * albedoN * 3);
-const sample = (x, y) => heights[Math.max(0, Math.min(n - 1, y)) * n + Math.max(0, Math.min(n - 1, x))] / 65535;
+const sample = (x, y) => (
+  heights[Math.max(0, Math.min(n - 1, y)) * n + Math.max(0, Math.min(n - 1, x))] /
+  65535 * HEIGHT_ENCODING_MAX
+);
 for (let y = 0; y < albedoN; y++) {
   const wy = worldYs[y];
   for (let x = 0; x < albedoN; x++) {
@@ -276,6 +296,8 @@ const manifest = {
   sourceSize: THEATER.sourceSize,
   outputSize: THEATER.outputSize,
   sourceStride: THEATER.sourceStride,
+  heightEncodingMax: HEIGHT_ENCODING_MAX,
+  maxElevation,
   heightSHA256: crypto.createHash("sha256").update(raw).digest("hex"),
 };
 fs.writeFileSync(path.join(outDir, "worldsmith_1337_manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
