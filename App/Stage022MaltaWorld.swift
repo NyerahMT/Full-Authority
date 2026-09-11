@@ -254,7 +254,7 @@ enum Stage022MaltaWorld {
             subdirectory: "JSBSim/visuals/world"
         ), let textureResource = try? TextureResource.load(
             contentsOf: url,
-            withName: "Worldsmith 1337 macro albedo"
+            withName: "Worldsmith 1337 art-directed macro albedo"
         ) {
             var texture = MaterialParameters.Texture(textureResource)
             texture.sampler.modify { sampler in
@@ -268,12 +268,15 @@ enum Stage022MaltaWorld {
             material.baseColor = .init(tint: .white, texture: texture)
         } else {
             material.baseColor = .init(
-                tint: UIColor(red: 0.30, green: 0.40, blue: 0.22, alpha: 1)
+                tint: UIColor(red: 0.31, green: 0.39, blue: 0.24, alpha: 1)
             )
         }
-        material.roughness = .init(floatLiteral: 0.93)
+
+        // Land is a rough dielectric. Keeping specular restrained lets the sun
+        // describe the mesh normals without turning every ridge into plastic.
+        material.roughness = .init(floatLiteral: 0.88)
         material.metallic = .init(floatLiteral: 0.0)
-        material.specular = .init(floatLiteral: 0.23)
+        material.specular = .init(floatLiteral: 0.12)
         material.faceCulling = .none
         return material
     }
@@ -281,11 +284,42 @@ enum Stage022MaltaWorld {
     private static func addOcean(to root: Entity) {
         var water = PhysicallyBasedMaterial()
         water.baseColor = .init(
-            tint: UIColor(red: 0.025, green: 0.145, blue: 0.235, alpha: 1)
+            tint: UIColor(red: 0.018, green: 0.090, blue: 0.135, alpha: 1)
         )
-        water.roughness = .init(floatLiteral: 0.16)
+        water.roughness = .init(floatLiteral: 0.105)
         water.metallic = .init(floatLiteral: 0.0)
-        water.specular = .init(floatLiteral: 0.82)
+        water.specular = .init(floatLiteral: 0.96)
+        water.clearcoat = .init(floatLiteral: 0.72)
+        water.clearcoatRoughness = .init(floatLiteral: 0.075)
+        water.faceCulling = .none
+
+        // Normal mapping is a standard PBR way to get small highlight/shadow
+        // variation without tessellating a 260 km ocean. The map is generated at
+        // build time and tiled heavily so it reads as surface breakup, not terrain.
+        if let url = Bundle.main.url(
+            forResource: "worldsmith_water_normal_256",
+            withExtension: "png",
+            subdirectory: "JSBSim/visuals/world"
+        ), let normalResource = try? TextureResource.load(
+            contentsOf: url,
+            withName: "Full Authority ocean normal"
+        ) {
+            var normalTexture = MaterialParameters.Texture(normalResource)
+            normalTexture.sampler.modify { sampler in
+                sampler.sAddressMode = .repeat
+                sampler.tAddressMode = .repeat
+                sampler.mipFilter = .linear
+                sampler.minFilter = .linear
+                sampler.magFilter = .linear
+                sampler.maxAnisotropy = 8
+            }
+            water.normal = PhysicallyBasedMaterial.Normal(texture: normalTexture)
+            water.textureCoordinateTransform = .init(
+                offset: SIMD2<Float>(repeating: 0),
+                scale: SIMD2<Float>(repeating: 5_200),
+                rotation: 0.13
+            )
+        }
 
         let sea = ModelEntity(
             mesh: .generatePlane(width: 260_000, depth: 260_000),
