@@ -10,4 +10,4 @@ Expected SHA-256:
 
 CI runs `scripts/install-f16-nato-assets.sh`, verifies the archive hash, expands it into `Assets/JSBSim/visuals/f16_nato/`, validates the FAM2 meshes, and then builds both the iOS Simulator and unsigned iPhone targets.
 
-Do not upload the 75 MB source FBX here. Upload the optimized runtime ZIP only.
+The upload should be the optimized runtime ZIP prepared for this branch, not the 75 MB source FBX.
