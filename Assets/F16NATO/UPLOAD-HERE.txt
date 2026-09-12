@@ -1,0 +1,6 @@
+Upload the optimized runtime archive here on branch stage026-nato-f16 as:
+
+f16_nato_runtime_assets.zip
+
+Expected SHA-256:
+7d6a5af9854f39dceb1b3c041e60eeb48da4920b0f2ad96dabbf0aed097e843d
