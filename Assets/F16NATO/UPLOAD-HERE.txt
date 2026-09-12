@@ -1,8 +1,0 @@
-UPLOAD THIS FILE HERE ON BRANCH stage026-nato-f16:
-
-f16_nato_runtime_assets.zip
-
-Expected SHA-256:
-7d6a5af9854f39dceb1b3c041e60eeb48da4920b0f2ad96dabbf0aed097e843d
-
-After upload, CI will verify and unpack it automatically.
