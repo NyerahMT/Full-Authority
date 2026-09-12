@@ -15,5 +15,9 @@ Assets/JSBSim/visuals/world/worldsmith_1337_height_1025.r16
 Assets/JSBSim/visuals/world/worldsmith_1337_albedo_1024.png
 Assets/JSBSim/visuals/world/worldsmith_1337_manifest.json
 
+# Build-time expanded NATO F-16 assets. The checked-in source of truth is the
+# CC-BY runtime archive at Assets/F16NATO/f16_nato_runtime_assets.zip.
+Assets/JSBSim/visuals/f16_nato/
+
 # macOS
 .DS_Store
