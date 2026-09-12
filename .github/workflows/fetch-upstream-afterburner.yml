@@ -1,0 +1,27 @@
+name: Fetch Upstream Afterburner
+
+on:
+  push:
+    branches:
+      - stage026-nato-f16
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: macos-latest
+    steps:
+      - name: Fetch pinned MIT afterburner FBX
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output afterburner.fbx \
+            "https://media.githubusercontent.com/media/vazgriz/FlightSim_F16/df9a4162f0afbdae92bf386ed9503737e0edbecd/Assets/Models/afterburner.fbx"
+          test "$(stat -f%z afterburner.fbx)" = "12492"
+          echo "f75d65c424ab12eddcb50ade4ec04d270559979730e23262c3942d364d12dee2  afterburner.fbx" | shasum -a 256 -c -
+
+      - name: Upload authored afterburner asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-afterburner-fbx
+          path: afterburner.fbx
+          if-no-files-found: error
