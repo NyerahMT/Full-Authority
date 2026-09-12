@@ -10,18 +10,26 @@ jobs:
   fetch:
     runs-on: macos-latest
     steps:
-      - name: Fetch pinned MIT afterburner FBX
+      - name: Fetch pinned MIT afterburner assets
         run: |
           set -euo pipefail
           curl --fail --location --retry 3 \
             --output afterburner.fbx \
             "https://media.githubusercontent.com/media/vazgriz/FlightSim_F16/df9a4162f0afbdae92bf386ed9503737e0edbecd/Assets/Models/afterburner.fbx"
-          test "$(stat -f%z afterburner.fbx)" = "12492"
-          echo "f75d65c424ab12eddcb50ade4ec04d270559979730e23262c3942d364d12dee2  afterburner.fbx" | shasum -a 256 -c -
+          curl --fail --location --retry 3 \
+            --output afterburner.png \
+            "https://media.githubusercontent.com/media/vazgriz/FlightSim_F16/df9a4162f0afbdae92bf386ed9503737e0edbecd/Assets/Textures/afterburner.png"
 
-      - name: Upload authored afterburner asset
+          test "$(stat -f%z afterburner.fbx)" = "12492"
+          test "$(stat -f%z afterburner.png)" = "562"
+          echo "f75d65c424ab12eddcb50ade4ec04d270559979730e23262c3942d364d12dee2  afterburner.fbx" | shasum -a 256 -c -
+          echo "7ad561e948d9143bffd7e9153b2965b30975eb471b2b7c6a8710bc18c85b715a  afterburner.png" | shasum -a 256 -c -
+
+      - name: Upload authored afterburner assets
         uses: actions/upload-artifact@v4
         with:
-          name: upstream-afterburner-fbx
-          path: afterburner.fbx
+          name: upstream-afterburner-assets
+          path: |
+            afterburner.fbx
+            afterburner.png
           if-no-files-found: error
